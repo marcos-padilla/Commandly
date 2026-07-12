@@ -8,63 +8,68 @@ struct PermissionsSettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
-                SettingsPageHeader(title: viewModel.selectedPane.title, subtitle: viewModel.selectedPane.subtitle)
-
-                permissionCard(
-                    kind: .calendar,
-                    icon: "calendar",
-                    color: .red,
-                    title: "Calendar",
-                    subtitle: "Surface upcoming meetings from the launcher."
+                SettingsPageHeader(
+                    title: viewModel.selectedPane.title,
+                    subtitle: viewModel.selectedPane.subtitle
                 )
 
-                permissionCard(
-                    kind: .contacts,
-                    icon: "person.crop.circle",
-                    color: .orange,
-                    title: "Contacts",
-                    subtitle: "Find people quickly without leaving the keyboard."
-                )
+                SettingsCard {
+                    permissionRow(
+                        kind: .calendar,
+                        icon: "calendar",
+                        title: "Calendar",
+                        subtitle: "Upcoming meetings in the launcher."
+                    )
 
-                permissionCard(
-                    kind: .files,
-                    icon: "folder.fill",
-                    color: .blue,
-                    title: "Files and Folders",
-                    subtitle: "Search folders you explicitly allow Commandly to use."
-                )
+                    SettingsDivider()
 
-                permissionCard(
-                    kind: .accessibility,
-                    icon: "accessibility",
-                    color: .purple,
-                    title: "Accessibility",
-                    subtitle: "Enable window layouts and deeper keyboard automation."
-                )
+                    permissionRow(
+                        kind: .contacts,
+                        icon: "person",
+                        title: "Contacts",
+                        subtitle: "Find people from the keyboard."
+                    )
+
+                    SettingsDivider()
+
+                    permissionRow(
+                        kind: .files,
+                        icon: "folder",
+                        title: "Files and Folders",
+                        subtitle: "Search folders you allow."
+                    )
+
+                    SettingsDivider()
+
+                    permissionRow(
+                        kind: .accessibility,
+                        icon: "accessibility",
+                        title: "Accessibility",
+                        subtitle: "Window layouts and automation."
+                    )
+                }
             }
-            .padding(Spacing.lg.rawValue)
+            .padding(.horizontal, Spacing.md.rawValue)
+            .padding(.vertical, Spacing.md.rawValue)
         }
     }
 
-    private func permissionCard(
+    private func permissionRow(
         kind: PermissionKind,
         icon: String,
-        color: Color,
         title: String,
         subtitle: String
     ) -> some View {
         let state = viewModel.state(for: kind)
-        return SettingsCard {
-            SettingsActionRow(
-                icon: icon,
-                iconColor: color,
-                title: title,
-                subtitle: subtitle,
-                actionTitle: actionTitle(for: state),
-                actionDisabled: state == .authorized,
-                action: { viewModel.requestPermission(kind) }
-            )
-        }
+        return SettingsActionRow(
+            icon: icon,
+            title: title,
+            subtitle: subtitle,
+            actionTitle: actionTitle(for: state),
+            actionDisabled: state == .authorized,
+            action: { viewModel.requestPermission(kind) }
+        )
+        .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: state)
     }
 
     private func actionTitle(for state: PermissionState) -> String {

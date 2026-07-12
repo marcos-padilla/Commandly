@@ -17,7 +17,7 @@ enum AppAppearancePreference: String, CaseIterable, Sendable, Equatable, Identif
     }
 }
 
-/// Preferred UI text density for upcoming launcher surfaces.
+/// Preferred UI text density for launcher and settings surfaces.
 enum AppTextSizePreference: String, CaseIterable, Sendable, Equatable, Identifiable {
     case standard
     case larger

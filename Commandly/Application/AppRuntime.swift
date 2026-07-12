@@ -9,12 +9,15 @@ final class AppRuntime {
     let container: AppContainer
     var showsOnboarding: Bool
     var showMenuBarIcon: Bool
+    var textSize: AppTextSizePreference
     private var cachedSettingsViewModel: SettingsViewModel?
 
     init(container: AppContainer = .bootstrap()) {
         self.container = container
+        let settings = container.dependencies.appSettingsStore.load()
         self.showsOnboarding = container.appState.route == .onboarding
-        self.showMenuBarIcon = container.dependencies.appSettingsStore.load().showMenuBarIcon
+        self.showMenuBarIcon = settings.showMenuBarIcon
+        self.textSize = settings.textSize
     }
 
     func makeOnboardingViewModel() -> OnboardingViewModel {
@@ -27,9 +30,14 @@ final class AppRuntime {
         if let cachedSettingsViewModel {
             return cachedSettingsViewModel
         }
-        let viewModel = container.makeSettingsViewModel { [weak self] showIcon in
-            self?.showMenuBarIcon = showIcon
-        }
+        let viewModel = container.makeSettingsViewModel(
+            onMenuBarIconChange: { [weak self] showIcon in
+                self?.showMenuBarIcon = showIcon
+            },
+            onTextSizeChange: { [weak self] textSize in
+                self?.textSize = textSize
+            }
+        )
         cachedSettingsViewModel = viewModel
         return viewModel
     }
@@ -45,6 +53,7 @@ final class AppRuntime {
         container.router.navigate(to: .onboarding)
         showsOnboarding = true
         showMenuBarIcon = true
+        textSize = .standard
 
         Task {
             try? await dependencies.loginItemManager.setEnabled(false)

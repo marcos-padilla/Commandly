@@ -8,46 +8,33 @@ struct AboutSettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
-                SettingsPageHeader(title: viewModel.selectedPane.title, subtitle: viewModel.selectedPane.subtitle)
-
-                SettingsCard {
-                    HStack(spacing: Spacing.md.rawValue) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(BrandPalette.accent.gradient)
-                                .frame(width: 52, height: 52)
-                            Image(systemName: "command")
-                                .font(.system(size: 22, weight: .bold))
-                                .foregroundStyle(.white)
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(viewModel.metadata.name)
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                            Text("Version \(viewModel.metadata.version) (\(viewModel.metadata.build))")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                            Text(viewModel.metadata.bundleIdentifier)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        Spacer()
-                    }
-                }
+                SettingsPageHeader(
+                    title: viewModel.selectedPane.title,
+                    subtitle: viewModel.selectedPane.subtitle
+                )
 
                 SettingsCard {
                     VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+                        Text(viewModel.metadata.name)
+                            .commandlyFont(size: 14, weight: .semibold)
+                        Text("Version \(viewModel.metadata.version) (\(viewModel.metadata.build))")
+                            .commandlyFont(size: 11)
+                            .foregroundStyle(.secondary)
+                        Text(viewModel.metadata.bundleIdentifier)
+                            .commandlyFont(size: 10, design: .monospaced)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 2)
+
                         Text("A keyboard-first productivity launcher for macOS.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                        Text("Private by design. Built to feel fast and dependable.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .commandlyFont(size: 11)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, Spacing.xs.rawValue)
                     }
+                    .padding(.vertical, 6)
                 }
             }
-            .padding(Spacing.lg.rawValue)
+            .padding(.horizontal, Spacing.md.rawValue)
+            .padding(.vertical, Spacing.md.rawValue)
         }
     }
 }

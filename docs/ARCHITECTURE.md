@@ -58,7 +58,7 @@ Prefer initializer injection. Do not introduce a DI framework.
 - Views receive focused view models; they do not reach into global mutable state.
 - First-run onboarding lives under `Commandly/Scenes/Onboarding` and opens when `OnboardingStatusStoring` reports incomplete. Completion persists via a non-secret preference store and routes to `.root`.
 - Onboarding permissions use `PermissionServicing` (mocked in tests; `SystemPermissionService` in production) and never block finishing the flow.
-- After onboarding, Commandly runs as a **menu bar agent** (`MenuBarExtra` + `LSUIElement` / accessory activation policy): no persistent center-screen window, Dock icon hidden. Settings open via the standard Settings scene; Quit is available from the status item menu.
+- After onboarding, Commandly runs as a **menu bar agent** (`MenuBarExtra` + `LSUIElement` / accessory activation policy): no persistent center-screen window, Dock icon hidden. Settings open via the standard Settings scene; Quit is available from the status item menu. Opening Settings activates the app and orders the Settings window front (above other Commandly windows such as onboarding) without using a permanent floating window level.
 - Settings use a glass sidebar + card pages under `Commandly/Scenes/Settings`, backed by `AppSettingsStoring` and permission/login-item services.
 
 ## Concurrency rules

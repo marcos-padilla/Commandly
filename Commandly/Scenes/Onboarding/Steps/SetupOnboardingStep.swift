@@ -56,7 +56,7 @@ struct SetupOnboardingStep: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.md.rawValue) {
             Text("Setup")
-                .font(.system(size: 11, weight: .semibold))
+                .commandlyFont(size: 11, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(BrandPalette.accentSoft)
                 .padding(.horizontal, Spacing.sm.rawValue)
@@ -67,12 +67,12 @@ struct SetupOnboardingStep: View {
                 )
 
             Text("Make it feel familiar")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .commandlyFont(size: 36, weight: .bold, design: .rounded)
                 .foregroundStyle(SemanticColors.color(for: .primaryText))
                 .accessibilityAddTraits(.isHeader)
 
             Text("Two quick choices. Change them anytime later—nothing here leaves your Mac.")
-                .font(.system(size: 15, weight: .regular))
+                .commandlyFont(size: 15, weight: .regular)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
                 .frame(maxWidth: 480, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -88,11 +88,11 @@ struct SetupOnboardingStep: View {
     private func statusBanner(text: String, tone: BannerTone) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm.rawValue) {
             Image(systemName: tone == .error ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .commandlyFont(size: 13, weight: .semibold)
                 .foregroundStyle(tone == .error ? SemanticColors.color(for: .danger) : BrandPalette.accentSoft)
 
             Text(text)
-                .font(.system(size: 12, weight: .medium))
+                .commandlyFont(size: 12, weight: .medium)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -125,18 +125,18 @@ private struct SetupPreferenceCard: View {
                     .frame(width: 44, height: 44)
 
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .commandlyFont(size: 18, weight: .semibold)
                     .foregroundStyle(BrandPalette.accentSoft)
                     .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: Spacing.xxs.rawValue) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .commandlyFont(size: 15, weight: .semibold)
                     .foregroundStyle(SemanticColors.color(for: .primaryText))
 
                 Text(subtitle)
-                    .font(.system(size: 12, weight: .regular))
+                    .commandlyFont(size: 12, weight: .regular)
                     .foregroundStyle(SemanticColors.color(for: .secondaryText))
                     .fixedSize(horizontal: false, vertical: true)
             }

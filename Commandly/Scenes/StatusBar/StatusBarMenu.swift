@@ -5,6 +5,7 @@ import AppKit
 struct StatusBarMenu: View {
     @Bindable var runtime: AppRuntime
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -17,8 +18,8 @@ struct StatusBarMenu: View {
 
             Divider()
 
-            SettingsLink {
-                Text("Settings…")
+            Button("Settings…") {
+                presentSettings()
             }
             .keyboardShortcut(",", modifiers: .command)
 
@@ -39,6 +40,12 @@ struct StatusBarMenu: View {
             }
             .keyboardShortcut("q", modifiers: .command)
         }
+    }
+
+    private func presentSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+        BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.settings)
     }
 }
 

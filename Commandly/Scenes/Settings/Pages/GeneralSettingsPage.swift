@@ -7,61 +7,33 @@ struct GeneralSettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
-                SettingsPageHeader(title: viewModel.selectedPane.title, subtitle: viewModel.selectedPane.subtitle)
+                SettingsPageHeader(
+                    title: viewModel.selectedPane.title,
+                    subtitle: viewModel.selectedPane.subtitle
+                )
 
                 SettingsCard {
                     SettingsToggleRow(
-                        icon: "power.circle.fill",
-                        iconColor: .green,
+                        icon: "power",
                         title: "Open at Login",
-                        subtitle: "Launch Commandly automatically when you sign in to your Mac.",
+                        subtitle: "Launch Commandly when you sign in.",
                         isOn: Binding(
                             get: { viewModel.opensAtLogin },
                             set: { viewModel.setOpensAtLogin($0) }
                         ),
                         isDisabled: viewModel.isUpdatingLoginItem
                     )
-                }
 
-                SettingsCard {
-                    HStack(alignment: .center, spacing: Spacing.sm.rawValue) {
-                        settingsIcon("keyboard.fill", color: BrandPalette.accent)
+                    SettingsDivider()
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Commandly Hotkey")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(
-                                viewModel.hasConfirmedOptionSpaceHotkey
-                                    ? "Press this shortcut to open Commandly from anywhere."
-                                    : "Default launcher shortcut. Global registration comes next."
-                            )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                        }
+                    HotkeySettingsRow(hotkeyDisplay: viewModel.hotkeyDisplay)
 
-                        Spacer(minLength: Spacing.sm.rawValue)
+                    SettingsDivider()
 
-                        Text(viewModel.hotkeyDisplay)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color.primary.opacity(0.08))
-                            )
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                            )
-                    }
-                }
-
-                SettingsCard {
                     SettingsToggleRow(
                         icon: "menubar.rectangle",
-                        iconColor: .purple,
-                        title: "Show Menu Bar Icon",
-                        subtitle: "Keep Commandly available from the menu bar for Settings and Quit.",
+                        title: "Menu Bar Icon",
+                        subtitle: "Show Commandly in the menu bar.",
                         isOn: Binding(
                             get: { viewModel.showMenuBarIcon },
                             set: { viewModel.setShowMenuBarIcon($0) }
@@ -70,109 +42,60 @@ struct GeneralSettingsPage: View {
                 }
 
                 SettingsCard {
-                    VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
+                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                         HStack(spacing: Spacing.sm.rawValue) {
-                            settingsIcon("textformat.size", color: .orange)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Text Size")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Affects upcoming launcher surfaces.")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
+                            settingsGlyph("textformat.size")
+                            Text("Text Size")
+                                .commandlyFont(size: 12.5, weight: .medium)
                             Spacer()
                         }
 
-                        HStack(spacing: Spacing.xs.rawValue) {
+                        HStack(spacing: 6) {
                             ForEach(AppTextSizePreference.allCases) { size in
-                                Button {
+                                SettingsChoiceChip(
+                                    label: "Aa",
+                                    fontSize: size == .standard ? 11 : 14,
+                                    selected: viewModel.textSize == size
+                                ) {
                                     viewModel.setTextSize(size)
-                                } label: {
-                                    Text("Aa")
-                                        .font(.system(size: size == .standard ? 13 : 17, weight: .semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                                                .fill(
-                                                    viewModel.textSize == size
-                                                        ? BrandPalette.accent.opacity(0.28)
-                                                        : Color.primary.opacity(0.05)
-                                                )
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                                                .strokeBorder(
-                                                    viewModel.textSize == size
-                                                        ? BrandPalette.accent.opacity(0.55)
-                                                        : Color.primary.opacity(0.08),
-                                                    lineWidth: 1
-                                                )
-                                        )
                                 }
-                                .buttonStyle(.plain)
                                 .accessibilityLabel(size.title)
                             }
                         }
                     }
-                }
+                    .padding(.vertical, 6)
 
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
+                    SettingsDivider()
+
+                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                         HStack(spacing: Spacing.sm.rawValue) {
-                            settingsIcon("circle.lefthalf.filled", color: .cyan)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Appearance")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Match your Mac or lock Commandly to light or dark.")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
+                            settingsGlyph("circle.lefthalf.filled")
+                            Text("Appearance")
+                                .commandlyFont(size: 12.5, weight: .medium)
                             Spacer()
                         }
 
-                        HStack(spacing: Spacing.xs.rawValue) {
+                        HStack(spacing: 6) {
                             ForEach(AppAppearancePreference.allCases) { mode in
-                                Button {
+                                SettingsChoiceChip(
+                                    label: mode.title,
+                                    fontSize: 11,
+                                    selected: viewModel.appearance == mode,
+                                    accessory: { appearanceGlyph(mode) }
+                                ) {
                                     viewModel.setAppearance(mode)
-                                } label: {
-                                    VStack(spacing: 6) {
-                                        appearanceGlyph(mode)
-                                        Text(mode.title)
-                                            .font(.system(size: 10, weight: .medium))
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                                            .fill(
-                                                viewModel.appearance == mode
-                                                    ? BrandPalette.accent.opacity(0.28)
-                                                    : Color.primary.opacity(0.05)
-                                            )
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                                            .strokeBorder(
-                                                viewModel.appearance == mode
-                                                    ? BrandPalette.accent.opacity(0.55)
-                                                    : Color.primary.opacity(0.08),
-                                                lineWidth: 1
-                                            )
-                                    )
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
+                    .padding(.vertical, 6)
                 }
 
                 SettingsCard {
                     SettingsToggleRow(
-                        icon: "face.smiling.inverse",
-                        iconColor: .pink,
-                        title: "Commandly Emoji Picker",
-                        subtitle: "Remember this preference for when the emoji picker ships.",
+                        icon: "face.smiling",
+                        title: "Emoji Picker Preference",
+                        subtitle: "Saved for when Commandly’s picker ships.",
                         isOn: Binding(
                             get: { viewModel.prefersCommandlyEmojiPicker },
                             set: { viewModel.setPrefersCommandlyEmojiPicker($0) }
@@ -182,37 +105,82 @@ struct GeneralSettingsPage: View {
 
                 if let message = viewModel.statusMessage {
                     Text(message)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, Spacing.xxs.rawValue)
+                        .commandlyFont(size: 10.5)
+                        .foregroundStyle(.tertiary)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: message)
                 }
             }
-            .padding(Spacing.lg.rawValue)
+            .padding(.horizontal, Spacing.md.rawValue)
+            .padding(.vertical, Spacing.md.rawValue)
         }
     }
+}
 
-    @ViewBuilder
-    private func appearanceGlyph(_ mode: AppAppearancePreference) -> some View {
-        switch mode {
-        case .light:
-            Circle()
-                .fill(Color.white)
-                .frame(width: 18, height: 18)
-                .overlay(Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1))
-        case .dark:
-            Circle()
-                .fill(Color.black)
-                .frame(width: 18, height: 18)
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
-        case .system:
-            Circle()
-                .fill(
-                    AngularGradient(
-                        colors: [.white, .black, .white],
-                        center: .center
-                    )
+@ViewBuilder
+private func appearanceGlyph(_ mode: AppAppearancePreference) -> some View {
+    switch mode {
+    case .light:
+        Circle()
+            .fill(Color.white)
+            .frame(width: 12, height: 12)
+            .overlay(Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1))
+    case .dark:
+        Circle()
+            .fill(Color.black)
+            .frame(width: 12, height: 12)
+            .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 1))
+    case .system:
+        Circle()
+            .fill(
+                AngularGradient(
+                    colors: [.white, .black, .white],
+                    center: .center
                 )
-                .frame(width: 18, height: 18)
+            )
+            .frame(width: 12, height: 12)
+            .overlay(Circle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
+    }
+}
+
+private struct HotkeySettingsRow: View {
+    let hotkeyDisplay: String
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Spacing.sm.rawValue) {
+            settingsGlyph("keyboard", emphasized: isHovered)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hotkey")
+                    .commandlyFont(size: 12.5, weight: .medium)
+                Text("Opens Commandly from anywhere.")
+                    .commandlyFont(size: 10.5)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: Spacing.xs.rawValue)
+
+            Text(hotkeyDisplay)
+                .commandlyFont(size: 11, weight: .medium, design: .rounded)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.primary.opacity(isHovered ? 0.08 : 0.05))
+                )
+                .scaleEffect(isHovered ? 1.03 : 1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(isHovered ? 0.045 : 0))
+        )
+        .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
 }

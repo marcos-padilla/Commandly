@@ -13,11 +13,13 @@ struct CommandlyApp: App {
 
         MenuBarExtra("Commandly", systemImage: "command", isInserted: $runtime.showMenuBarIcon) {
             StatusBarMenu(runtime: runtime)
+                .commandlyContentSize(runtime.textSize)
         }
         .menuBarExtraStyle(.menu)
 
         Window("Commandly Setup", id: AppWindowID.onboarding) {
             OnboardingWindowHost(runtime: runtime)
+                .commandlyContentSize(runtime.textSize)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -29,6 +31,7 @@ struct CommandlyApp: App {
 
         Settings {
             SettingsRootView(viewModel: runtime.makeSettingsViewModel())
+                .commandlyContentSize(runtime.textSize)
         }
         .defaultSize(
             width: LayoutConstants.settingsMinWidth,

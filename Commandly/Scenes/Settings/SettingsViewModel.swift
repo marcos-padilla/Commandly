@@ -34,9 +34,9 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
 
     var systemImage: String {
         switch self {
-        case .general: return "gearshape.fill"
-        case .permissions: return "lock.shield.fill"
-        case .about: return "info.circle.fill"
+        case .general: return "gearshape"
+        case .permissions: return "lock.shield"
+        case .about: return "info.circle"
         }
     }
 }
@@ -61,6 +61,7 @@ final class SettingsViewModel {
     private(set) var isUpdatingLoginItem = false
     private(set) var statusMessage: String?
     var onMenuBarIconChange: ((Bool) -> Void)?
+    var onTextSizeChange: ((AppTextSizePreference) -> Void)?
 
     init(
         settingsStore: any AppSettingsStoring,
@@ -68,7 +69,8 @@ final class SettingsViewModel {
         permissionService: any PermissionServicing,
         privacySettingsOpener: any PrivacySettingsOpening,
         metadata: ApplicationMetadata,
-        onMenuBarIconChange: ((Bool) -> Void)? = nil
+        onMenuBarIconChange: ((Bool) -> Void)? = nil,
+        onTextSizeChange: ((AppTextSizePreference) -> Void)? = nil
     ) {
         self.settingsStore = settingsStore
         self.loginItemManager = loginItemManager
@@ -76,6 +78,7 @@ final class SettingsViewModel {
         self.privacySettingsOpener = privacySettingsOpener
         self.metadata = metadata
         self.onMenuBarIconChange = onMenuBarIconChange
+        self.onTextSizeChange = onTextSizeChange
 
         let settings = settingsStore.load()
         self.opensAtLogin = settings.opensAtLogin
@@ -139,6 +142,7 @@ final class SettingsViewModel {
     func setTextSize(_ value: AppTextSizePreference) {
         textSize = value
         persist()
+        onTextSizeChange?(value)
     }
 
     func refreshPermissions() async {

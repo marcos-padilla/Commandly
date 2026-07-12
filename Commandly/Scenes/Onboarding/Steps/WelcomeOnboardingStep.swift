@@ -10,13 +10,13 @@ struct WelcomeOnboardingStep: View {
 
             VStack(spacing: Spacing.sm.rawValue) {
                 Text("Command your Mac.")
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .commandlyFont(size: 40, weight: .bold, design: .rounded)
                     .foregroundStyle(BrandPalette.accent)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
 
                 Text("Let's set you up with a fast, private, keyboard-first launcher for everyday work.")
-                    .font(.system(size: 16, weight: .regular))
+                    .commandlyFont(size: 16, weight: .regular)
                     .foregroundStyle(SemanticColors.color(for: .secondaryText))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)

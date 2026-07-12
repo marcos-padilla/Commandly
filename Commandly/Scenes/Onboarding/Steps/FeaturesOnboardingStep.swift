@@ -25,7 +25,7 @@ struct FeaturesOnboardingStep: View {
     private var introHeader: some View {
         VStack(alignment: .leading, spacing: Spacing.md.rawValue) {
             Text("Built-in")
-                .font(.system(size: 11, weight: .semibold))
+                .commandlyFont(size: 11, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(BrandPalette.accentSoft)
                 .padding(.horizontal, Spacing.sm.rawValue)
@@ -36,12 +36,12 @@ struct FeaturesOnboardingStep: View {
                 )
 
             Text("From the start")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .commandlyFont(size: 36, weight: .bold, design: .rounded)
                 .foregroundStyle(SemanticColors.color(for: .primaryText))
                 .accessibilityAddTraits(.isHeader)
 
             Text("Commandly ships the everyday productivity tools that keep you moving—without leaving the keyboard.")
-                .font(.system(size: 15, weight: .regular))
+                .commandlyFont(size: 15, weight: .regular)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
                 .frame(maxWidth: 520, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -141,7 +141,7 @@ struct FeatureShowcaseCard: View {
             .shadow(color: BrandPalette.accent.opacity(0.12), radius: 18, y: 8)
 
             Text(feature.title)
-                .font(.system(size: 13, weight: .semibold))
+                .commandlyFont(size: 13, weight: .semibold)
                 .foregroundStyle(SemanticColors.color(for: .primaryText))
                 .multilineTextAlignment(.center)
                 .frame(width: width)
@@ -172,7 +172,7 @@ private struct FeaturePreviewIllustration: View {
                 windowsPreview
             default:
                 Image(systemName: "sparkles")
-                    .font(.system(size: 28, weight: .medium))
+                    .commandlyFont(size: 28, weight: .medium)
                     .foregroundStyle(BrandPalette.accentSoft)
             }
         }
@@ -188,9 +188,9 @@ private struct FeaturePreviewIllustration: View {
                 .overlay(alignment: .leading) {
                     HStack(spacing: Spacing.xxs.rawValue) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 9, weight: .semibold))
+                            .commandlyFont(size: 9, weight: .semibold)
                         Text("Open…")
-                            .font(.system(size: 10, weight: .medium))
+                            .commandlyFont(size: 10, weight: .medium)
                     }
                     .foregroundStyle(Color.white.opacity(0.45))
                     .padding(.leading, Spacing.xs.rawValue)
@@ -229,7 +229,7 @@ private struct FeaturePreviewIllustration: View {
                         .frame(width: 36, height: 44)
                         .overlay {
                             Image(systemName: icon)
-                                .font(.system(size: 12, weight: .semibold))
+                                .commandlyFont(size: 12, weight: .semibold)
                                 .foregroundStyle(BrandPalette.accentSoft)
                         }
                 }
@@ -245,16 +245,16 @@ private struct FeaturePreviewIllustration: View {
             ) { icon, label in
                 HStack(spacing: Spacing.xs.rawValue) {
                     Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
+                        .commandlyFont(size: 11, weight: .semibold)
                         .foregroundStyle(BrandPalette.accentSoft)
                         .frame(width: 22, height: 22)
                         .background(Circle().fill(Color.white.opacity(0.08)))
                     Text(label)
-                        .font(.system(size: 11, weight: .medium))
+                        .commandlyFont(size: 11, weight: .medium)
                         .foregroundStyle(Color.white.opacity(0.75))
                     Spacer(minLength: 0)
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .commandlyFont(size: 9, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.28))
                 }
                 .padding(.horizontal, Spacing.xs.rawValue)
@@ -271,7 +271,7 @@ private struct FeaturePreviewIllustration: View {
     private var snippetsPreview: some View {
         VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
             Text(";addr")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .commandlyFont(size: 12, weight: .semibold, design: .monospaced)
                 .foregroundStyle(BrandPalette.accentSoft)
                 .padding(.horizontal, Spacing.xs.rawValue)
                 .padding(.vertical, Spacing.xxs.rawValue)
@@ -319,9 +319,9 @@ private struct FeaturePreviewIllustration: View {
     private func capsuleRow(icon: String, text: String, emphasized: Bool) -> some View {
         HStack(spacing: Spacing.xxs.rawValue) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
+                .commandlyFont(size: 9, weight: .semibold)
             Text(text)
-                .font(.system(size: 10, weight: .medium))
+                .commandlyFont(size: 10, weight: .medium)
                 .lineLimit(1)
         }
         .foregroundStyle(emphasized ? Color.white.opacity(0.85) : Color.white.opacity(0.45))
@@ -338,10 +338,10 @@ private struct FeaturePreviewIllustration: View {
         HStack {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold))
+                    .commandlyFont(size: 10, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.8))
                 Text(subtitle)
-                    .font(.system(size: 9, weight: .regular))
+                    .commandlyFont(size: 9, weight: .regular)
                     .foregroundStyle(Color.white.opacity(0.35))
             }
             Spacer(minLength: 0)

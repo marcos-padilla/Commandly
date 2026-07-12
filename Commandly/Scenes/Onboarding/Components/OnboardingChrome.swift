@@ -21,7 +21,7 @@ struct OnboardingMark: View {
                 .frame(width: size * 1.15, height: size * 1.15)
 
             Image(systemName: "command")
-                .font(.system(size: size * 0.42, weight: .semibold))
+                .commandlyFont(size: size * 0.42, weight: .semibold)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [BrandPalette.accentSoft, BrandPalette.accent],
@@ -124,7 +124,7 @@ struct OnboardingFooter: View {
                 if showsBackButton {
                     Button(action: onBack) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .semibold))
+                            .commandlyFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.white.opacity(0.85))
                             .frame(width: 32, height: 32)
                             .background(circleChrome)
@@ -141,7 +141,7 @@ struct OnboardingFooter: View {
                     OnboardingProgressIndicator(currentIndex: stepIndex, total: stepCount)
 
                     Text("Step \(stepIndex + 1) of \(stepCount)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .commandlyFont(size: 10, weight: .medium, design: .rounded)
                         .foregroundStyle(Color.white.opacity(0.38))
                         .contentTransition(.numericText())
                         .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: stepIndex)
@@ -154,11 +154,11 @@ struct OnboardingFooter: View {
                 Button(action: onPrimary) {
                     HStack(spacing: Spacing.xs.rawValue) {
                         Text(primaryTitle)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .commandlyFont(size: 13, weight: .semibold, design: .rounded)
                             .contentTransition(.opacity)
 
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .commandlyFont(size: 11, weight: .semibold)
                     }
                     .foregroundStyle(Color.white)
                     .padding(.horizontal, Spacing.lg.rawValue)

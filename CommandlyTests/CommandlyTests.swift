@@ -8,6 +8,7 @@ import Persistence
 import SecurityKit
 import Observability
 import Infrastructure
+import DesignSystem
 
 struct CommandlyTests {
     @Test @MainActor func dependencyContainerBootstrapsToRootWhenOnboarded() {
@@ -162,6 +163,59 @@ struct CommandlyTests {
         #expect(loaded.showMenuBarIcon == false)
     }
 
+    @Test func textSizePreferenceScaleFactorsMatchDesignTokens() {
+        #expect(AppTextSizePreference.standard.scaleFactor == CommandlyTextScale.standard)
+        #expect(AppTextSizePreference.larger.scaleFactor == CommandlyTextScale.larger)
+        #expect(AppTextSizePreference.larger.scaleFactor > AppTextSizePreference.standard.scaleFactor)
+    }
+
+    @Test @MainActor func settingsTextSizeChangeNotifiesRuntimeCallback() {
+        let settings = InMemoryAppSettingsStore()
+        var received: AppTextSizePreference?
+        let viewModel = SettingsViewModel(
+            settingsStore: settings,
+            loginItemManager: InMemoryLoginItemManager(),
+            permissionService: InMemoryPermissionService(),
+            privacySettingsOpener: InMemoryPrivacySettingsOpener(),
+            metadata: ApplicationMetadata(
+                name: "Commandly",
+                version: "1.0",
+                build: "1",
+                bundleIdentifier: "com.businessmate360.Commandly",
+                environment: .testing
+            ),
+            onTextSizeChange: { received = $0 }
+        )
+
+        viewModel.setTextSize(.larger)
+
+        #expect(received == .larger)
+        #expect(settings.load().textSize == .larger)
+    }
+
+    @Test @MainActor func appRuntimeTracksTextSizeFromSettings() {
+        let settings = InMemoryAppSettingsStore(
+            settings: AppSettings(
+                opensAtLogin: false,
+                prefersCommandlyEmojiPicker: false,
+                hasConfirmedOptionSpaceHotkey: false,
+                showMenuBarIcon: true,
+                appearance: .system,
+                textSize: .larger
+            )
+        )
+        let container = makeTestContainer(
+            hasCompletedOnboarding: true,
+            appSettingsStore: settings
+        )
+        let runtime = AppRuntime(container: container)
+        #expect(runtime.textSize == .larger)
+
+        let viewModel = runtime.makeSettingsViewModel()
+        viewModel.setTextSize(.standard)
+        #expect(runtime.textSize == .standard)
+    }
+
     @Test @MainActor func appRuntimeRestartOnboardingResetsProgress() async {
         let store = InMemoryOnboardingStatusStore(hasCompletedOnboarding: true)
         let settings = InMemoryAppSettingsStore(
@@ -191,6 +245,7 @@ struct CommandlyTests {
         #expect(settings.load() == .default)
         #expect(folderAccess.bookmarkData.isEmpty)
         #expect(runtime.showsOnboarding)
+        #expect(runtime.textSize == .standard)
         #expect(container.appState.route == .onboarding)
 
         let restarted = runtime.makeOnboardingViewModel()

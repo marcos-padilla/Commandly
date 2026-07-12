@@ -77,7 +77,7 @@ struct ReadyOnboardingStep: View {
     private var header: some View {
         VStack(spacing: Spacing.sm.rawValue) {
             Text("Hotkey")
-                .font(.system(size: 11, weight: .semibold))
+                .commandlyFont(size: 11, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(BrandPalette.accentSoft)
                 .padding(.horizontal, Spacing.sm.rawValue)
@@ -88,13 +88,13 @@ struct ReadyOnboardingStep: View {
                 )
 
             Text("Open Commandly instantly")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .commandlyFont(size: 28, weight: .bold, design: .rounded)
                 .foregroundStyle(SemanticColors.color(for: .primaryText))
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
             Text("Press any key to see it light up. Then hit ⌥ Space to open Commandly.")
-                .font(.system(size: 14, weight: .regular))
+                .commandlyFont(size: 14, weight: .regular)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 520)
@@ -108,7 +108,7 @@ struct ReadyOnboardingStep: View {
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
             keyBadge("Space")
             Text("to open")
-                .font(.system(size: 13, weight: .medium))
+                .commandlyFont(size: 13, weight: .medium)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
         }
         .padding(.horizontal, Spacing.md.rawValue)
@@ -126,7 +126,7 @@ struct ReadyOnboardingStep: View {
 
     private func keyBadge(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .commandlyFont(size: 13, weight: .semibold, design: .rounded)
             .foregroundStyle(Color.white)
             .padding(.horizontal, Spacing.sm.rawValue)
             .padding(.vertical, Spacing.xxs.rawValue + 1)
@@ -139,16 +139,16 @@ struct ReadyOnboardingStep: View {
     private var successBanner: some View {
         HStack(spacing: Spacing.sm.rawValue) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 22, weight: .semibold))
+                .commandlyFont(size: 22, weight: .semibold)
                 .foregroundStyle(BrandPalette.accentSoft)
                 .symbolEffect(.bounce, value: successOpacity)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.hasConfirmedOptionSpaceHotkey ? "Shortcut locked in" : "You're in")
-                    .font(.system(size: 16, weight: .semibold))
+                    .commandlyFont(size: 16, weight: .semibold)
                     .foregroundStyle(SemanticColors.color(for: .primaryText))
                 Text("Opening Commandly…")
-                    .font(.system(size: 12, weight: .regular))
+                    .commandlyFont(size: 12, weight: .regular)
                     .foregroundStyle(SemanticColors.color(for: .secondaryText))
             }
         }

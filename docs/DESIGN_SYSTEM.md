@@ -5,10 +5,20 @@
 - Spacing
 - Corner radius
 - Typography roles
+- Text scale (`CommandlyTextScale` + `commandlyFont` / `commandlyTextScale`)
 - Motion durations
 - Layout constants (including onboarding window sizes)
 - Semantic color roles (system-mapped for light/dark)
 - `BrandPalette` blue accents for branded moments such as onboarding
+
+## Text size
+
+User preference (`AppTextSizePreference` in settings) maps to a scale factor via `commandlyContentSize(_:)`:
+
+- **Default** → `CommandlyTextScale.standard` (`1.0`) and Dynamic Type `.medium`
+- **Larger** → `CommandlyTextScale.larger` (`1.2`) and Dynamic Type `.xLarge`
+
+Feature UI should prefer `.commandlyFont(size:weight:design:)` for chrome and copy so the preference takes effect. Keep fixed `.font(.system(size:))` only for intentionally non-scaling details (for example decorative keyboard key caps).
 
 ## Rules
 

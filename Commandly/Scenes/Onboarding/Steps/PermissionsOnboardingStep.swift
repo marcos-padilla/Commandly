@@ -54,7 +54,7 @@ struct PermissionsOnboardingStep: View {
             .frame(maxWidth: 720, alignment: .leading)
 
             Text("Everything here is optional. You can grant access now or enable features later in Settings.")
-                .font(.system(size: 12, weight: .regular))
+                .commandlyFont(size: 12, weight: .regular)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
                 .padding(.horizontal, Spacing.xxl.rawValue)
                 .padding(.top, Spacing.md.rawValue)
@@ -71,7 +71,7 @@ struct PermissionsOnboardingStep: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.md.rawValue) {
             Text("Permissions")
-                .font(.system(size: 11, weight: .semibold))
+                .commandlyFont(size: 11, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(BrandPalette.accentSoft)
                 .padding(.horizontal, Spacing.sm.rawValue)
@@ -82,12 +82,12 @@ struct PermissionsOnboardingStep: View {
                 )
 
             Text("Only what you need")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .commandlyFont(size: 36, weight: .bold, design: .rounded)
                 .foregroundStyle(SemanticColors.color(for: .primaryText))
                 .accessibilityAddTraits(.isHeader)
 
             Text("Commandly asks for access when a feature needs it—and explains why first. Grant what you want now, skip the rest.")
-                .font(.system(size: 15, weight: .regular))
+                .commandlyFont(size: 15, weight: .regular)
                 .foregroundStyle(SemanticColors.color(for: .secondaryText))
                 .frame(maxWidth: 520, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -109,18 +109,18 @@ private struct PermissionAccessRow: View {
                     .frame(width: 44, height: 44)
 
                 Image(systemName: item.systemImage)
-                    .font(.system(size: 18, weight: .semibold))
+                    .commandlyFont(size: 18, weight: .semibold)
                     .foregroundStyle(BrandPalette.accentSoft)
                     .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: Spacing.xxs.rawValue) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .commandlyFont(size: 15, weight: .semibold)
                     .foregroundStyle(SemanticColors.color(for: .primaryText))
 
                 Text(item.subtitle)
-                    .font(.system(size: 12, weight: .regular))
+                    .commandlyFont(size: 12, weight: .regular)
                     .foregroundStyle(SemanticColors.color(for: .secondaryText))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -147,7 +147,7 @@ private struct PermissionAccessRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(BrandPalette.accentSoft)
                 Text("Granted")
-                    .font(.system(size: 12, weight: .semibold))
+                    .commandlyFont(size: 12, weight: .semibold)
                     .foregroundStyle(SemanticColors.color(for: .primaryText))
             }
             .frame(minWidth: 108)
@@ -155,7 +155,7 @@ private struct PermissionAccessRow: View {
         } else {
             Button(action: onAction) {
                 Text(status.actionTitle)
-                    .font(.system(size: 12, weight: .semibold))
+                    .commandlyFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.white)
                     .padding(.horizontal, Spacing.md.rawValue)
                     .padding(.vertical, Spacing.xs.rawValue)
