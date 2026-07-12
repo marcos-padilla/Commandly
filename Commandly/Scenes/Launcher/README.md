@@ -34,11 +34,13 @@ Root search has no footer bar. Command surfaces use footer chrome driven by `Com
 Fully implemented first command surface:
 
 - Monitors the system pasteboard in the **background** (text, images, file URLs) without activating Commandly or raising windows
-- Search + type filter
+- Search + type filter over **capture-time** metadata (never re-runs Vision/PDFKit while typing)
+- Images: on-device Vision OCR + classification labels (e.g. search “flower”); Live Text overlay on the detail preview
+- Files: PDFKit text, plain-text/RTF extraction where readable; otherwise filename-only (sandbox may skip some paths)
 - Split list / preview / metadata (image pasteboard items and image file URLs show a detail preview)
 - Copy, Delete, Clear History via footer + Actions menu; hover Copy on list rows
 - Re-copy write-backs are not recorded as new history entries
-- Never logs clipboard contents
+- Never logs clipboard contents or OCR / extracted text
 
 Clipboard capture updates the in-memory store only. The launcher must not re-raise on store changes (`LauncherWindowConfigurator` applies chrome without calling `BringHostingWindowToFront`).
 

@@ -11,7 +11,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 | Files and Folders | Search folders the user selects | Onboarding Grant Access shows a folder picker; security-scoped bookmarks are stored | Re-run picker or System Settings → Files and Folders |
 | Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
-| Clipboard History | Browse and re-copy recent pasteboard items from the launcher | Activating the Clipboard History command (no TCC prompt) | Clear history from the command Actions menu |
+| Clipboard History | Browse and re-copy recent pasteboard items from the launcher; on-device Vision/PDFKit indexes images and readable files for search | Activating the Clipboard History command (no TCC prompt for pasteboard monitoring or on-device analysis) | Clear history from the command Actions menu |
 
 ## Entitlements and usage strings
 
@@ -23,7 +23,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 
 ## Not requested yet
 
-Apple Events, Screen Recording, Notifications, Camera, Microphone, and Location remain unimplemented. Clipboard history is opt-in and does not use a TCC prompt, but content must never be logged.
+Apple Events, Screen Recording, Notifications, Camera, Microphone, and Location remain unimplemented. Clipboard history is opt-in and does not use a TCC prompt, but content must never be logged. Capture-time OCR and file-text extraction stay on-device; sandbox may prevent reading some pasted file URLs (those entries remain filename-searchable only).
 
 ## Login items
 

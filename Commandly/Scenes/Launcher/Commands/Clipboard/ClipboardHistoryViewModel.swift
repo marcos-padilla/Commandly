@@ -74,6 +74,7 @@ final class ClipboardHistoryViewModel {
     var filteredEntries: [ClipboardHistoryEntry] {
         // Read observable inputs before touching `store` so Observation always
         // registers query/filter dependencies (including when entries is empty).
+        // Matching uses capture-time metadata only — never runs Vision/PDFKit here.
         let activeFilter = filter
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let needle = trimmed.lowercased()
@@ -82,6 +83,8 @@ final class ClipboardHistoryViewModel {
             guard trimmed.isEmpty == false else { return true }
             return entry.preview.lowercased().contains(needle)
                 || (entry.text?.lowercased().contains(needle) ?? false)
+                || (entry.searchableText?.lowercased().contains(needle) ?? false)
+                || entry.classificationLabels.contains { $0.lowercased().contains(needle) }
                 || (entry.sourceAppName?.lowercased().contains(needle) ?? false)
         }
     }

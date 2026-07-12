@@ -34,7 +34,9 @@ final class AppRuntime {
         self.textSize = settings.textSize
         self.viewMode = settings.viewMode
         self.commandCatalog = .makeBuiltIn()
-        self.clipboardHistoryStore = ClipboardHistoryStore()
+        self.clipboardHistoryStore = ClipboardHistoryStore(
+            enricher: VisionClipboardContentEnricher()
+        )
         startHotkeyMonitor()
         registerBuiltInCommands()
     }

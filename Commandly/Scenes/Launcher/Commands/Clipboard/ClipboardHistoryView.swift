@@ -133,11 +133,15 @@ struct ClipboardHistoryView: View {
         HStack(spacing: 0) {
             listPane
                 .frame(width: 280)
+                .layoutPriority(1)
+                .clipped()
             Divider().opacity(0.35)
             detailPane
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(0)
+                .clipped()
         }
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var listPane: some View {
@@ -215,13 +219,15 @@ struct ClipboardHistoryView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(density.spacing(.md))
                     }
-                    .frame(maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     Divider().opacity(0.35)
 
                     information(for: entry)
                         .padding(density.spacing(.md))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: density.spacing(.xs)) {
                     Image(systemName: "clipboard")
@@ -247,7 +253,7 @@ struct ClipboardHistoryView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .image:
-            imagePreview(tiffData: entry.imageTIFFData)
+            liveImagePreview(tiffData: entry.imageTIFFData, analysisKey: entry.id.uuidString)
         case .fileURL:
             fileURLPreview(for: entry)
         }
@@ -257,7 +263,7 @@ struct ClipboardHistoryView: View {
     private func fileURLPreview(for entry: ClipboardHistoryEntry) -> some View {
         VStack(alignment: .leading, spacing: density.spacing(.sm)) {
             if let imageURL = entry.firstImageFileURL {
-                fileImagePreview(at: imageURL)
+                fileImagePreview(at: imageURL, analysisKey: "\(entry.id.uuidString)-\(imageURL.path)")
             }
             VStack(alignment: .leading, spacing: density.spacing(.xs)) {
                 ForEach(entry.fileURLs, id: \.self) { url in
@@ -270,14 +276,9 @@ struct ClipboardHistoryView: View {
     }
 
     @ViewBuilder
-    private func fileImagePreview(at url: URL) -> some View {
+    private func fileImagePreview(at url: URL, analysisKey: String) -> some View {
         if let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: 220)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
-                .accessibilityLabel("Image preview")
+            constrainedLiveTextPreview(image: image, analysisKey: analysisKey)
         } else {
             Text("Image preview unavailable")
                 .commandlyFont(size: 12)
@@ -286,19 +287,24 @@ struct ClipboardHistoryView: View {
     }
 
     @ViewBuilder
-    private func imagePreview(tiffData: Data?) -> some View {
+    private func liveImagePreview(tiffData: Data?, analysisKey: String) -> some View {
         if let data = tiffData, let image = NSImage(data: data) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: 220)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
-                .accessibilityLabel("Image preview")
+            constrainedLiveTextPreview(image: image, analysisKey: analysisKey)
         } else {
             Text("Image preview unavailable")
                 .commandlyFont(size: 12)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// Fixed-height preview so large screenshots cannot expand the detail pane.
+    private func constrainedLiveTextPreview(image: NSImage, analysisKey: String) -> some View {
+        ClipboardLiveTextImageView(image: image, analysisKey: analysisKey)
+            .frame(maxWidth: .infinity)
+            .frame(height: 220)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
+            .accessibilityLabel("Image preview")
     }
 
     private func information(for entry: ClipboardHistoryEntry) -> some View {
@@ -313,8 +319,34 @@ struct ClipboardHistoryView: View {
                 infoRow(label: "Characters", value: "\(entry.characterCount)")
                 infoRow(label: "Words", value: "\(entry.wordCount)")
             }
+            if entry.enrichmentStatus == .pending {
+                infoRow(label: "Search index", value: "Indexing for search…")
+            } else if entry.enrichmentStatus == .ready {
+                infoRow(label: "Search index", value: enrichmentReadySummary(for: entry))
+            } else if entry.enrichmentStatus == .failed {
+                infoRow(label: "Search index", value: "Unavailable")
+            } else if entry.enrichmentStatus == .skipped, entry.contentType != .text {
+                infoRow(label: "Search index", value: "Filename only")
+            }
+            if entry.classificationLabels.isEmpty == false {
+                infoRow(
+                    label: "Labels",
+                    value: entry.classificationLabels.prefix(6).joined(separator: ", ")
+                )
+            }
             infoRow(label: "Copied", value: viewModel.copiedLabel(for: entry))
         }
+    }
+
+    private func enrichmentReadySummary(for entry: ClipboardHistoryEntry) -> String {
+        var parts: [String] = []
+        if let text = entry.searchableText, text.isEmpty == false {
+            parts.append("Text indexed")
+        }
+        if entry.classificationLabels.isEmpty == false {
+            parts.append("\(entry.classificationLabels.count) labels")
+        }
+        return parts.isEmpty ? "Ready" : parts.joined(separator: " · ")
     }
 
     private func infoRow(label: String, value: String) -> some View {

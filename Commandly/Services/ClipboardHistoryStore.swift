@@ -38,6 +38,39 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     let fileURLs: [URL]
     let sourceAppName: String?
     let sourceBundleIdentifier: String?
+    /// OCR / PDF / file body indexed at capture time. Never logged.
+    var searchableText: String?
+    /// Vision classification labels (e.g. Flower). Indexed at capture time.
+    var classificationLabels: [String]
+    var enrichmentStatus: ClipboardEnrichmentStatus
+
+    init(
+        id: UUID,
+        createdAt: Date,
+        contentType: ClipboardContentType,
+        preview: String,
+        text: String?,
+        imageTIFFData: Data?,
+        fileURLs: [URL],
+        sourceAppName: String?,
+        sourceBundleIdentifier: String?,
+        searchableText: String? = nil,
+        classificationLabels: [String] = [],
+        enrichmentStatus: ClipboardEnrichmentStatus = .notNeeded
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.contentType = contentType
+        self.preview = preview
+        self.text = text
+        self.imageTIFFData = imageTIFFData
+        self.fileURLs = fileURLs
+        self.sourceAppName = sourceAppName
+        self.sourceBundleIdentifier = sourceBundleIdentifier
+        self.searchableText = searchableText
+        self.classificationLabels = classificationLabels
+        self.enrichmentStatus = enrichmentStatus
+    }
 
     var characterCount: Int {
         text?.count ?? 0
@@ -71,6 +104,9 @@ enum ClipboardImageFile {
 /// app, open windows, or raise UI. Presentation is owned solely by explicit open
 /// paths (launcher hotkey / Open Commandly).
 ///
+/// Image/file entries are enriched once at capture time (Vision OCR, labels, PDF /
+/// text extraction). Search only matches cached fields — never re-runs Vision while typing.
+///
 /// Never logs pasteboard contents. `@unchecked Sendable` is not used — this type is `@MainActor`.
 @Observable
 @MainActor
@@ -85,18 +121,22 @@ final class ClipboardHistoryStore {
     private var pollTask: Task<Void, Never>?
     private let dateProvider: () -> Date
     private let uuidProvider: () -> UUID
+    private let enrichmentCoordinator: ClipboardEnrichmentCoordinator
 
     init(
         maxEntries: Int = 200,
         pasteboard: NSPasteboard = .general,
         dateProvider: @escaping () -> Date = Date.init,
-        uuidProvider: @escaping () -> UUID = UUID.init
+        uuidProvider: @escaping () -> UUID = UUID.init,
+        enricher: any ClipboardContentEnriching = NoOpClipboardContentEnricher()
     ) {
         self.maxEntries = maxEntries
         self.pasteboard = pasteboard
         self.lastChangeCount = pasteboard.changeCount
         self.dateProvider = dateProvider
         self.uuidProvider = uuidProvider
+        self.enrichmentCoordinator = ClipboardEnrichmentCoordinator(enricher: enricher)
+        self.enrichmentCoordinator.attach(store: self)
     }
 
     func startMonitoring() {
@@ -139,10 +179,7 @@ final class ClipboardHistoryStore {
         if let first = entries.first, first.preview == entry.preview, first.contentType == entry.contentType {
             return
         }
-        entries.insert(entry, at: 0)
-        if entries.count > maxEntries {
-            entries = Array(entries.prefix(maxEntries))
-        }
+        insertCaptured(entry)
     }
 
     func entry(id: UUID) -> ClipboardHistoryEntry? {
@@ -175,16 +212,53 @@ final class ClipboardHistoryStore {
     }
 
     func delete(id: UUID) {
+        enrichmentCoordinator.cancel(id: id)
         entries.removeAll { $0.id == id }
     }
 
     func clear() {
+        enrichmentCoordinator.cancelAll()
         entries.removeAll()
     }
 
-    /// Seed helper for tests — does not touch the real pasteboard.
+    /// Applies capture-time enrichment to a live entry. Ignores unknown IDs.
+    func applyEnrichment(id: UUID, enrichment: ClipboardEnrichment) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].searchableText = enrichment.searchableText
+        entries[index].classificationLabels = enrichment.classificationLabels
+        entries[index].enrichmentStatus = enrichment.status
+    }
+
+    /// Seed helper for tests — does not touch the real pasteboard or enqueue enrichment.
     func replaceEntriesForTesting(_ entries: [ClipboardHistoryEntry]) {
+        enrichmentCoordinator.cancelAll()
         self.entries = entries
+    }
+
+    /// Test helper: enqueue enrichment for an existing entry.
+    func enqueueEnrichmentForTesting(_ entry: ClipboardHistoryEntry) {
+        enrichmentCoordinator.enqueue(entry)
+    }
+
+    private func insertCaptured(_ entry: ClipboardHistoryEntry) {
+        var stored = entry
+        switch stored.contentType {
+        case .text:
+            stored.enrichmentStatus = .notNeeded
+        case .image, .fileURL:
+            stored.enrichmentStatus = .pending
+        }
+        entries.insert(stored, at: 0)
+        if entries.count > maxEntries {
+            let removed = entries.suffix(from: maxEntries)
+            for stale in removed {
+                enrichmentCoordinator.cancel(id: stale.id)
+            }
+            entries = Array(entries.prefix(maxEntries))
+        }
+        if stored.enrichmentStatus == .pending {
+            enrichmentCoordinator.enqueue(stored)
+        }
     }
 
     private func captureCurrentPasteboard() -> ClipboardHistoryEntry? {
@@ -207,7 +281,8 @@ final class ClipboardHistoryStore {
                 imageTIFFData: nil,
                 fileURLs: fileURLs,
                 sourceAppName: sourceName,
-                sourceBundleIdentifier: sourceBundle
+                sourceBundleIdentifier: sourceBundle,
+                enrichmentStatus: .pending
             )
         }
 
@@ -221,7 +296,8 @@ final class ClipboardHistoryStore {
                 imageTIFFData: imageData,
                 fileURLs: [],
                 sourceAppName: sourceName,
-                sourceBundleIdentifier: sourceBundle
+                sourceBundleIdentifier: sourceBundle,
+                enrichmentStatus: .pending
             )
         }
 
@@ -242,7 +318,8 @@ final class ClipboardHistoryStore {
                 imageTIFFData: nil,
                 fileURLs: [],
                 sourceAppName: sourceName,
-                sourceBundleIdentifier: sourceBundle
+                sourceBundleIdentifier: sourceBundle,
+                enrichmentStatus: .notNeeded
             )
         }
 

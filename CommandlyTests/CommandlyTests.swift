@@ -429,6 +429,112 @@ struct CommandlyTests {
         #expect(pasteboard.string(forType: .string) == "Hello Commandly")
     }
 
+    @Test @MainActor func clipboardHistoryFiltersMatchSearchableTextAndLabels() {
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.enrichFilter.\(UUID().uuidString)"))
+        let store = ClipboardHistoryStore(pasteboard: pasteboard)
+        let imageEntry = ClipboardHistoryEntry(
+            id: UUID(),
+            createdAt: Date(),
+            contentType: .image,
+            preview: "Image",
+            text: nil,
+            imageTIFFData: Data([0x00]),
+            fileURLs: [],
+            sourceAppName: "Preview",
+            sourceBundleIdentifier: "com.apple.Preview",
+            searchableText: "Invoice total due Friday",
+            classificationLabels: ["Flower", "Plant"],
+            enrichmentStatus: .ready
+        )
+        store.replaceEntriesForTesting([imageEntry])
+        let viewModel = ClipboardHistoryViewModel(
+            store: store,
+            onGoBack: {},
+            onDismiss: {}
+        )
+
+        viewModel.query = "invoice"
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.query = "flower"
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.query = "nomatch-xyz"
+        #expect(viewModel.filteredEntries.isEmpty)
+        viewModel.query = ""
+        viewModel.filter = .image
+        #expect(viewModel.filteredEntries.count == 1)
+    }
+
+    @Test @MainActor func clipboardEnrichmentAppliesAndIgnoresStaleIDs() async {
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.enrichApply.\(UUID().uuidString)"))
+        let stub = StubClipboardContentEnricher(
+            result: .ready(searchableText: "OCR hello", labels: ["Document"])
+        )
+        let store = ClipboardHistoryStore(pasteboard: pasteboard, enricher: stub)
+        let entryID = UUID()
+        let entry = ClipboardHistoryEntry(
+            id: entryID,
+            createdAt: Date(),
+            contentType: .image,
+            preview: "Image",
+            text: nil,
+            imageTIFFData: Data([0x01, 0x02]),
+            fileURLs: [],
+            sourceAppName: nil,
+            sourceBundleIdentifier: nil,
+            enrichmentStatus: .pending
+        )
+        store.replaceEntriesForTesting([entry])
+        store.enqueueEnrichmentForTesting(entry)
+
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if store.entry(id: entryID)?.enrichmentStatus == .ready {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
+        let enriched = store.entry(id: entryID)
+        #expect(enriched?.enrichmentStatus == .ready)
+        #expect(enriched?.searchableText == "OCR hello")
+        #expect(enriched?.classificationLabels == ["Document"])
+
+        store.applyEnrichment(
+            id: UUID(),
+            enrichment: .ready(searchableText: "stale", labels: ["Nope"])
+        )
+        #expect(store.entry(id: entryID)?.searchableText == "OCR hello")
+    }
+
+    @Test @MainActor func clipboardDeleteCancelsPendingEnrichment() async {
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.enrichCancel.\(UUID().uuidString)"))
+        let stub = StubClipboardContentEnricher(
+            result: .ready(searchableText: "should not apply", labels: ["X"]),
+            delayNanoseconds: 300_000_000
+        )
+        let store = ClipboardHistoryStore(pasteboard: pasteboard, enricher: stub)
+        let entryID = UUID()
+        let entry = ClipboardHistoryEntry(
+            id: entryID,
+            createdAt: Date(),
+            contentType: .image,
+            preview: "Image",
+            text: nil,
+            imageTIFFData: Data([0x03]),
+            fileURLs: [],
+            sourceAppName: nil,
+            sourceBundleIdentifier: nil,
+            enrichmentStatus: .pending
+        )
+        store.replaceEntriesForTesting([entry])
+        store.enqueueEnrichmentForTesting(entry)
+        store.delete(id: entryID)
+
+        try? await Task.sleep(for: .milliseconds(400))
+        #expect(store.entry(id: entryID) == nil)
+        #expect(store.entries.isEmpty)
+    }
+
     @Test @MainActor func clipboardImageFileURLDetection() {
         #expect(ClipboardImageFile.isImageFileURL(URL(fileURLWithPath: "/tmp/photo.PNG")))
         #expect(ClipboardImageFile.isImageFileURL(URL(fileURLWithPath: "/tmp/shot.webp")))

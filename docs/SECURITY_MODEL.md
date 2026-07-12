@@ -8,7 +8,7 @@
 | Command injection | User text interpolated into shells | Forbidden; no arbitrary shell execution |
 | Unsafe shell execution | Broad process APIs are dangerous | Not implemented; avoid |
 | Credential leakage | Tokens in logs/plists/git | Secrets only via secure storage contracts |
-| Clipboard exposure | Clipboard may contain passwords | Never log pasteboard contents |
+| Clipboard exposure | Clipboard may contain passwords | Never log pasteboard contents; OCR / extracted file text treated the same and stay in-memory only |
 | Unsafe URLs | OpenURL can be abused | Validate before opening |
 | Path traversal | File APIs may escape intended roots | Validate and constrain paths |
 | Excessive permissions | Hard to revoke trust | Least privilege; contextual prompts |
