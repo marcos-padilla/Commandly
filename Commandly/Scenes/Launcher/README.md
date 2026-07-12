@@ -7,6 +7,8 @@ Primary Commandly command palette: a floating, draggable, scrollable panel summo
 The main field is the primary entry point for discovering and running work:
 
 - Focus stays on the search field (not the parent window chrome) so typing always updates the query
+- Launcher chrome stays **borderless** (no titled title-bar / empty chrome strip) and patches `canBecomeKey` for the launcher window identifier so reopen can type; `searchFocusEpoch` / `prepareForPresentation` / `requestSearchFocus` reclaim `@FocusState` after hide
+- Click outside / app deactivate dismisses the launcher (global + local mouse monitors, resign-key, resign-active)
 - Ranked results via SearchKit providers: **commands**, **applications**, and honest **placeholders**
 - Calculator-shaped queries are evaluated via **CalculatorKit** in parallel and pinned in a dedicated **Calculator** two-pane card above other results
 - `CompositeSearchService` merges scores (prefix > keyword > contains) and cancels in-flight work on each keystroke
@@ -22,7 +24,7 @@ Built-in commands register through `CommandCatalog` / `LauncherCommandRegisterin
 - Action mode — runs immediately (example: Open Settings)
 - View mode — pushes a command surface with its own search/list/preview and footer actions (example: Clipboard History)
 
-Footer chrome is driven by `CommandActionDescriptor` values from the active surface so new commands keep a consistent UI.
+Root search has no footer bar. Command surfaces use footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
 
 ## Clipboard History
 

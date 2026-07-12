@@ -211,8 +211,14 @@ final class LauncherViewModel {
     func prepareForPresentation() {
         resetAfterDismiss()
         clipboardHistoryStore.startMonitoring()
-        searchFocusEpoch += 1
+        requestSearchFocus()
         scheduleSearch(loadApplicationsIfNeeded: true)
+    }
+
+    /// Bumps ``searchFocusEpoch`` so the search field reclaims first responder.
+    /// Used when the launcher window is raised again without a full view remount.
+    func requestSearchFocus() {
+        searchFocusEpoch += 1
     }
 
     /// Clears navigation / command-surface state when the launcher is hidden.
@@ -421,7 +427,7 @@ final class LauncherViewModel {
         route = .root
         clipboardViewModel = nil
         statusMessage = nil
-        searchFocusEpoch += 1
+        requestSearchFocus()
     }
 
     func dismiss() {

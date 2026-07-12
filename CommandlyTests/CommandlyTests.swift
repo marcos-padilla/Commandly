@@ -279,6 +279,86 @@ struct CommandlyTests {
         #expect(viewModel.query.isEmpty)
     }
 
+    @Test @MainActor func launcherPrepareAndRequestSearchFocusBumpEpoch() {
+        let viewModel = LauncherViewModel()
+        let initial = viewModel.searchFocusEpoch
+
+        viewModel.prepareForPresentation()
+        #expect(viewModel.searchFocusEpoch == initial + 1)
+        #expect(viewModel.query.isEmpty)
+
+        viewModel.query = "partial"
+        viewModel.requestSearchFocus()
+        #expect(viewModel.searchFocusEpoch == initial + 2)
+        // Focus reclaim alone must not wipe an in-progress query.
+        #expect(viewModel.query == "partial")
+    }
+
+    @Test @MainActor func launcherGoBackRequestsSearchFocus() {
+        let catalog = CommandCatalog.makeBuiltIn()
+        let store = ClipboardHistoryStore()
+        let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+        viewModel.confirmSelection()
+        let epochBeforeReturn = viewModel.searchFocusEpoch
+
+        viewModel.goBack()
+        #expect(viewModel.route == .root)
+        #expect(viewModel.searchFocusEpoch == epochBeforeReturn + 1)
+    }
+
+    @Test @MainActor func launcherWindowChromeKeepsBorderlessKeyable() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        #expect(window.canBecomeKey == false)
+
+        var needsCentering = true
+        LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
+        #expect(window.styleMask.contains(.borderless))
+        #expect(window.styleMask.contains(.titled) == false)
+        #expect(window.canBecomeKey)
+        #expect(needsCentering == false)
+
+        // Second apply must not re-center, but must keep keyability + borderless chrome.
+        LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
+        #expect(needsCentering == false)
+        #expect(window.canBecomeKey)
+        #expect(window.styleMask.contains(.borderless))
+    }
+
+    @Test @MainActor func launcherWindowEnsureKeyablePromotesBorderlessWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        #expect(window.canBecomeKey == false)
+        LauncherWindowConfigurator.ensureKeyable(window)
+        #expect(window.canBecomeKey)
+        // Idempotent when already keyable.
+        LauncherWindowConfigurator.ensureKeyable(window)
+        #expect(window.canBecomeKey)
+    }
+
+    @Test @MainActor func appRuntimeShowLauncherRequestsSearchFocusAfterRaise() async {
+        let container = makeTestContainer(hasCompletedOnboarding: true)
+        let runtime = AppRuntime(container: container)
+        runtime.showsOnboarding = false
+        let viewModel = runtime.makeLauncherViewModel(onOpenSettings: {})
+        let epochBefore = viewModel.searchFocusEpoch
+
+        runtime.showLauncher()
+        #expect(runtime.showsLauncher)
+        // `requestSearchFocus` runs on the next main-queue turn after raise.
+        await yieldMainQueue()
+        #expect(viewModel.searchFocusEpoch == epochBefore + 1)
+    }
+
     @Test @MainActor func appRuntimeHideLauncherClearsClipboardSurfaceObservation() {
         let container = makeTestContainer(hasCompletedOnboarding: true)
         let runtime = AppRuntime(container: container)
@@ -591,6 +671,9 @@ struct CommandlyTests {
         viewModel.confirmSelection()
         await recorder.waitUntilOpened()
         #expect(recorder.opened == "com.example.app")
+        // `dismiss()` runs on the MainActor after `openApplication` returns; yield so
+        // the confirming task can finish before we assert.
+        await yieldMainQueue()
         #expect(dismissed)
     }
 
@@ -815,6 +898,15 @@ struct CommandlyTests {
             logger: Loggers.application
         )
         return AppContainer(dependencies: dependencies)
+    }
+
+    @MainActor
+    private func yieldMainQueue() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
     }
 
     @MainActor

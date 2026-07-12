@@ -114,6 +114,10 @@ final class AppRuntime {
                 self.openLauncherWindow?()
                 BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.launcher)
             }
+            // `onAppear` may not fire when SwiftUI reuses an ordered-out window.
+            // Bump search focus after the window has been raised so the field can
+            // reclaim first responder on every presentation.
+            self.cachedLauncherViewModel?.requestSearchFocus()
         }
     }
 

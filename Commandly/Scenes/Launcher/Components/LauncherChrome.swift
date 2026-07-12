@@ -82,9 +82,18 @@ struct LauncherSearchField: View {
         .padding(.horizontal, density.spacing(.md))
         .padding(.vertical, density.searchVerticalPadding)
         .onAppear {
-            isFocused = true
+            reclaimFocus()
         }
         .onChange(of: focusEpoch) { _, _ in
+            reclaimFocus()
+        }
+    }
+
+    /// Clears then re-applies focus so `@FocusState` is not a no-op when already `true`,
+    /// and so reclaim happens after the launcher window has become key.
+    private func reclaimFocus() {
+        isFocused = false
+        DispatchQueue.main.async {
             isFocused = true
         }
     }

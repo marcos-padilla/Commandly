@@ -46,17 +46,20 @@ struct LauncherRootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            LauncherFooterBar(
-                contextTitle: viewModel.contextTitle,
-                contextSystemImage: viewModel.contextSystemImage,
-                actions: viewModel.footerActions,
-                menuActions: viewModel.menuActions,
-                showsActionsMenu: Binding(
-                    get: { viewModel.showsActionsMenu },
-                    set: { viewModel.showsActionsMenu = $0 }
-                ),
-                onAction: { viewModel.performFooterAction($0) }
-            )
+            // Root search has no footer chrome; command surfaces (e.g. Clipboard) keep actions.
+            if case .command = viewModel.route {
+                LauncherFooterBar(
+                    contextTitle: viewModel.contextTitle,
+                    contextSystemImage: viewModel.contextSystemImage,
+                    actions: viewModel.footerActions,
+                    menuActions: viewModel.menuActions,
+                    showsActionsMenu: Binding(
+                        get: { viewModel.showsActionsMenu },
+                        set: { viewModel.showsActionsMenu = $0 }
+                    ),
+                    onAction: { viewModel.performFooterAction($0) }
+                )
+            }
         }
         .frame(
             width: LayoutConstants.launcherIdealWidth,

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import DesignSystem
+import ObjectiveC
 
 /// Configures the launcher as a floating, draggable, vibrancy panel without traffic lights.
 struct LauncherWindowConfigurator: NSViewRepresentable {
@@ -33,6 +34,68 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         }
     }
 
+    /// Applies borderless floating chrome while keeping the window able to become key.
+    ///
+    /// Stock `.borderless` windows return `false` from `canBecomeKey`, so reopen after
+    /// hide cannot accept typing. Patch `canBecomeKey` / `canBecomeMain` for launcher
+    /// windows (by identifier) without titled chrome or `object_setClass` isa swaps.
+    @MainActor
+    static func applyChrome(to window: NSWindow, centerIfNeeded: inout Bool) {
+        window.identifier = CommandlyWindowIdentifier.launcher
+        // Borderless removes leftover title-bar / safe-area chrome that titled+hidden
+        // titlebar still reserves (empty bottom strip in the launcher panel).
+        window.styleMask = [.borderless, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
+        window.animationBehavior = .utilityWindow
+        window.toolbar = nil
+
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+
+        ensureKeyable(window)
+
+        if centerIfNeeded == false {
+            return
+        }
+        center(window)
+        centerIfNeeded = false
+    }
+
+    /// Makes a borderless launcher window keyable via identifier-aware method patches.
+    ///
+    /// Avoids `object_setClass` (unsafe when SwiftUI owns a private `NSWindow` subclass and
+    /// crashes the test host on teardown). Patches the live class hierarchy once so only
+    /// windows identified as the launcher return `true` from `canBecomeKey` / `canBecomeMain`.
+    @MainActor
+    static func ensureKeyable(_ window: NSWindow) {
+        window.identifier = CommandlyWindowIdentifier.launcher
+        LauncherKeyableWindowSupport.installIfNeeded(for: window)
+    }
+
+    @MainActor
+    private static func center(_ window: NSWindow) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let size = NSSize(
+            width: LayoutConstants.launcherIdealWidth,
+            height: LayoutConstants.launcherIdealHeight
+        )
+        let origin = NSPoint(
+            x: screen.visibleFrame.midX - size.width / 2,
+            y: screen.visibleFrame.midY - size.height / 2
+        )
+        window.setFrame(NSRect(origin: origin, size: size), display: true)
+    }
+
     /// AppKit event monitors and notification callbacks are nonisolated / Sendable.
     /// Mutable state is only read or written on the main queue.
     final class Coordinator: @unchecked Sendable {
@@ -40,8 +103,10 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         private weak var window: NSWindow?
         private var localMouseMonitor: Any?
         private var globalMouseMonitor: Any?
-        private var resignObserver: NSObjectProtocol?
-        private var hasCentered = false
+        private var resignKeyObserver: NSObjectProtocol?
+        private var resignActiveObserver: NSObjectProtocol?
+        private var needsCentering = true
+        private var isClosing = false
 
         init(onRequestClose: @escaping () -> Void) {
             self.onRequestClose = onRequestClose
@@ -51,7 +116,8 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         func attach(to window: NSWindow?) {
             guard let window else { return }
             self.window = window
-            applyChrome(to: window)
+            isClosing = false
+            LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
             installMonitorsIfNeeded()
             // Do not raise or activate here. `updateNSView` calls `attach` on ordinary
             // SwiftUI refreshes — including `@Observable` clipboard history updates —
@@ -64,49 +130,8 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         func tearDown() {
             removeMonitors()
             window = nil
-            hasCentered = false
-        }
-
-        @MainActor
-        private func applyChrome(to window: NSWindow) {
-            window.identifier = CommandlyWindowIdentifier.launcher
-            // Borderless removes the leftover title-bar strip above the search field.
-            window.styleMask = [.borderless, .fullSizeContentView]
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.titlebarSeparatorStyle = .none
-            window.isMovableByWindowBackground = true
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.hasShadow = true
-            window.level = .floating
-            window.hidesOnDeactivate = false
-            window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
-            window.animationBehavior = .utilityWindow
-            window.toolbar = nil
-
-            window.standardWindowButton(.closeButton)?.isHidden = true
-            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            window.standardWindowButton(.zoomButton)?.isHidden = true
-
-            if hasCentered == false {
-                center(window)
-                hasCentered = true
-            }
-        }
-
-        @MainActor
-        private func center(_ window: NSWindow) {
-            guard let screen = window.screen ?? NSScreen.main else { return }
-            let size = NSSize(
-                width: LayoutConstants.launcherIdealWidth,
-                height: LayoutConstants.launcherIdealHeight
-            )
-            let origin = NSPoint(
-                x: screen.visibleFrame.midX - size.width / 2,
-                y: screen.visibleFrame.midY - size.height / 2
-            )
-            window.setFrame(NSRect(origin: origin, size: size), display: true)
+            needsCentering = true
+            isClosing = false
         }
 
         @MainActor
@@ -127,13 +152,27 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
                 }
             }
 
-            resignObserver = NotificationCenter.default.addObserver(
+            resignKeyObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                // Clicking another app/window should dismiss the launcher.
-                self?.requestCloseOnMain()
+                // Defer so we do not dismiss mid resign-key bookkeeping.
+                DispatchQueue.main.async {
+                    self?.requestCloseAfterFocusLoss()
+                }
+            }
+
+            // Accessory (LSUIElement) apps often keep a floating window key when the
+            // user clicks another app; app deactivation is the reliable dismiss signal.
+            resignActiveObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.requestCloseAfterFocusLoss()
+                }
             }
         }
 
@@ -163,6 +202,22 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
 
         @MainActor
         private func requestCloseOnMain() {
+            guard isClosing == false else { return }
+            guard let window, window.isVisible else { return }
+            isClosing = true
+            onRequestClose()
+        }
+
+        /// Dismiss after resign-key / resign-active, ignoring stale callbacks if we
+        /// were already re-activated (e.g. hotkey reopen before the deferred close runs).
+        @MainActor
+        private func requestCloseAfterFocusLoss() {
+            guard isClosing == false else { return }
+            guard let window, window.isVisible else { return }
+            if NSApp.isActive, window.isKeyWindow {
+                return
+            }
+            isClosing = true
             onRequestClose()
         }
 
@@ -176,11 +231,81 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
                 NSEvent.removeMonitor(globalMouseMonitor)
                 self.globalMouseMonitor = nil
             }
-            if let resignObserver {
-                NotificationCenter.default.removeObserver(resignObserver)
-                self.resignObserver = nil
+            if let resignKeyObserver {
+                NotificationCenter.default.removeObserver(resignKeyObserver)
+                self.resignKeyObserver = nil
+            }
+            if let resignActiveObserver {
+                NotificationCenter.default.removeObserver(resignActiveObserver)
+                self.resignActiveObserver = nil
             }
         }
+    }
+}
+
+/// Patches `canBecomeKey` / `canBecomeMain` so borderless launcher windows can accept typing.
+///
+/// Uses identifier-gated IMP replacements on the window’s live class (and `NSWindow` as a
+/// fallback). Does not change an instance’s `isa`, which avoids teardown crashes seen with
+/// `object_setClass` against SwiftUI / AppKit window subclasses.
+enum LauncherKeyableWindowSupport {
+    private static let lock = NSLock()
+    private static var patchedClassNames = Set<String>()
+
+    @MainActor
+    static func installIfNeeded(for window: NSWindow) {
+        let runtimeClass: AnyClass = object_getClass(window) ?? NSWindow.self
+        patch(class: runtimeClass)
+        // Also patch `NSWindow` so inherited lookups and plain test windows are covered.
+        patch(class: NSWindow.self)
+    }
+
+    private static func patch(class cls: AnyClass) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let name = NSStringFromClass(cls)
+        guard patchedClassNames.insert(name).inserted else { return }
+
+        patchGetter(
+            on: cls,
+            selector: #selector(getter: NSWindow.canBecomeKey)
+        )
+        patchGetter(
+            on: cls,
+            selector: #selector(getter: NSWindow.canBecomeMain)
+        )
+    }
+
+    private static func patchGetter(on cls: AnyClass, selector: Selector) {
+        typealias GetterFn = @convention(c) (AnyObject, Selector) -> Bool
+
+        let existingMethod = class_getInstanceMethod(cls, selector)
+        let originalIMP: IMP?
+        if let existingMethod {
+            originalIMP = method_getImplementation(existingMethod)
+        } else {
+            originalIMP = nil
+        }
+
+        let block: @convention(block) (AnyObject) -> Bool = { object in
+            if let window = object as? NSWindow,
+               window.identifier == CommandlyWindowIdentifier.launcher {
+                return true
+            }
+            if let originalIMP {
+                return unsafeBitCast(originalIMP, to: GetterFn.self)(object, selector)
+            }
+            return false
+        }
+        let newIMP = imp_implementationWithBlock(block)
+        let encoding = "B@:"
+
+        // Prefer adding an override on this class when the getter is only inherited.
+        if class_addMethod(cls, selector, newIMP, encoding) {
+            return
+        }
+        class_replaceMethod(cls, selector, newIMP, encoding)
     }
 }
 
