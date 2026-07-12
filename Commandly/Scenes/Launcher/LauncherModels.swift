@@ -30,6 +30,8 @@ enum LauncherItemBadge: String, Sendable, Equatable {
     case settings
     case placeholder
     case calculator
+    case favorite
+    case disabled
 
     var title: String {
         switch self {
@@ -39,6 +41,8 @@ enum LauncherItemBadge: String, Sendable, Equatable {
         case .settings: return "Settings"
         case .placeholder: return "Soon"
         case .calculator: return "Calculator"
+        case .favorite: return "Favorite"
+        case .disabled: return "Disabled"
         }
     }
 }

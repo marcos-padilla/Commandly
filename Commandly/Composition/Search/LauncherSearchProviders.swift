@@ -44,23 +44,47 @@ struct CommandSearchProvider: SearchProviding, Sendable {
 struct ApplicationSearchProvider: SearchProviding, Sendable {
     let id = BuiltInSearchProviderID.applications
     private let applications: [InstalledApplicationSnapshot]
+    private let favoriteBundleIDs: Set<String>
+    private let disabledBundleIDs: Set<String>
+    private let ranking: [String: AppUsageRanking]
 
-    init(applications: [InstalledApplicationSnapshot]) {
+    init(
+        applications: [InstalledApplicationSnapshot],
+        favoriteBundleIDs: Set<String> = [],
+        disabledBundleIDs: Set<String> = [],
+        ranking: [String: AppUsageRanking] = [:]
+    ) {
         self.applications = applications
+        self.favoriteBundleIDs = favoriteBundleIDs
+        self.disabledBundleIDs = disabledBundleIDs
+        self.ranking = ranking
     }
 
     func search(_ query: SearchQuery) async throws -> SearchResult {
         try Task.checkCancellation()
+        let trimmed = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
         var items: [SearchItem] = []
         for app in applications {
             try Task.checkCancellation()
-            guard let score = SearchMatchScorer.score(
+            let disabled = disabledBundleIDs.contains(app.bundleIdentifier)
+            if disabled && trimmed.isEmpty {
+                continue
+            }
+            guard let baseScore = SearchMatchScorer.score(
                 query: query.text,
                 title: app.name,
                 subtitle: app.bundleIdentifier,
                 keywords: [app.name]
             ) else {
                 continue
+            }
+            var score = baseScore
+            if favoriteBundleIDs.contains(app.bundleIdentifier) {
+                score += 0.18
+            }
+            let usage = ranking[app.bundleIdentifier] ?? .empty
+            if usage.openCount > 0 {
+                score += min(0.2, Double(usage.openCount) * 0.02)
             }
             items.append(
                 SearchItem(
@@ -72,10 +96,7 @@ struct ApplicationSearchProvider: SearchProviding, Sendable {
                 )
             )
         }
-        let sorted = items.sorted {
-            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-        }
-        return SearchResult(query: query, items: sorted)
+        return SearchResult(query: query, items: items)
     }
 }
 

@@ -27,7 +27,7 @@ Built-in commands register through `CommandCatalog` / `LauncherCommandRegisterin
 - Action mode — runs immediately (example: Open Settings)
 - View mode — pushes a command surface with its own search/list/preview and footer actions (example: Clipboard History)
 
-Root search shows a footer with an app-menu (Settings, Quit) and an empty **Actions** menu. Command surfaces keep their own footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
+Root search shows a footer with an app-menu (Settings, Quit) and **Actions**. Right-click an application row (or press Actions / ⌘K with an app selected) to open a searchable application-actions panel: open, Finder reveal / Get Info / package contents, favorites, copy name/path/bundle ID, auto-quit, disable, uninstall, and reset ranking. **Uninstall** opens a review surface that lists the app plus related support files (filter/sort/select) and moves the selected items to the Trash. Command surfaces keep their own footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
 
 ## Clipboard History
 

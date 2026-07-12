@@ -10,5 +10,38 @@
 	<true/>
 	<key>com.apple.security.personal-information.addressbook</key>
 	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.apple.finder</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Library/</string>
+		<string>/Library/Application Support/</string>
+		<string>/Library/Caches/</string>
+		<string>/Library/Preferences/</string>
+		<string>/Library/HTTPStorages/</string>
+		<string>/Library/Cookies/</string>
+		<string>/Library/WebKit/</string>
+		<string>/Library/Containers/</string>
+		<string>/Library/Group Containers/</string>
+		<string>/Library/Saved Application State/</string>
+		<string>/Library/LaunchAgents/</string>
+		<string>/Library/LaunchDaemons/</string>
+		<string>/Library/Logs/</string>
+		<string>/Library/Application Scripts/</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+	<array>
+		<string>/Applications/</string>
+		<string>/Library/</string>
+		<string>/Library/Application Support/</string>
+		<string>/Library/Caches/</string>
+		<string>/Library/LaunchAgents/</string>
+		<string>/Library/LaunchDaemons/</string>
+		<string>/Library/PrivilegedHelperTools/</string>
+	</array>
 </dict>
 </plist>

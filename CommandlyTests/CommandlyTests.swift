@@ -302,6 +302,305 @@ struct CommandlyTests {
         #expect(didQuit)
     }
 
+    @Test @MainActor func applicationActionsPanelExposesFullActionSet() async {
+        let app = InstalledApplication(
+            bundleIdentifier: "com.example.demo",
+            name: "Demo",
+            path: "/Applications/Demo.app"
+        )
+        let prefs = InMemoryApplicationPreferencesStore()
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: [app]),
+            applicationPreferencesStore: prefs
+        )
+        await viewModel.flushSearchForTesting()
+        viewModel.cachedApplications = [
+            InstalledApplicationSnapshot(
+                bundleIdentifier: app.bundleIdentifier,
+                name: app.name,
+                path: app.path
+            )
+        ]
+        viewModel.select("app:\(app.bundleIdentifier)")
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+
+        let ids = viewModel.filteredApplicationActions.map(\.id)
+        #expect(ids.contains(BuiltInCommandActionID.openApplication))
+        #expect(ids.contains(BuiltInCommandActionID.showInFinder))
+        #expect(ids.contains(BuiltInCommandActionID.showInfoInFinder))
+        #expect(ids.contains(BuiltInCommandActionID.showPackageContents))
+        #expect(ids.contains(BuiltInCommandActionID.toggleFavorite))
+        #expect(ids.contains(BuiltInCommandActionID.copyAppName))
+        #expect(ids.contains(BuiltInCommandActionID.copyAppPath))
+        #expect(ids.contains(BuiltInCommandActionID.copyBundleIdentifier))
+        #expect(ids.contains(BuiltInCommandActionID.toggleAutoQuit))
+        #expect(ids.contains(BuiltInCommandActionID.toggleDisableApplication))
+        #expect(ids.contains(BuiltInCommandActionID.uninstallApplication))
+        #expect(ids.contains(BuiltInCommandActionID.resetAppRanking))
+    }
+
+    @Test @MainActor func applicationActionsCopyNamePathAndBundleID() async {
+        let app = InstalledApplication(
+            bundleIdentifier: "com.example.copy",
+            name: "CopyApp",
+            path: "/Applications/CopyApp.app"
+        )
+        let pasteboard = InMemoryPasteboard()
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: [app]),
+            pasteboard: pasteboard
+        )
+        viewModel.cachedApplications = [
+            InstalledApplicationSnapshot(
+                bundleIdentifier: app.bundleIdentifier,
+                name: app.name,
+                path: app.path
+            )
+        ]
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+
+        viewModel.performApplicationAction(BuiltInCommandActionID.copyAppName)
+        await waitUntil { await pasteboard.currentValue == "CopyApp" }
+        #expect(pasteboard.currentValue == "CopyApp")
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.copyAppPath)
+        await waitUntil { await pasteboard.currentValue == "/Applications/CopyApp.app" }
+        #expect(pasteboard.currentValue == "/Applications/CopyApp.app")
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.copyBundleIdentifier)
+        await waitUntil { await pasteboard.currentValue == "com.example.copy" }
+        #expect(pasteboard.currentValue == "com.example.copy")
+    }
+
+    @Test @MainActor func applicationActionsToggleFavoriteDisableAndReveal() async {
+        let app = InstalledApplication(
+            bundleIdentifier: "com.example.fav",
+            name: "FavApp",
+            path: "/Applications/FavApp.app"
+        )
+        let prefs = InMemoryApplicationPreferencesStore()
+        let revealer = InMemoryFileRevealer()
+        let bundles = InMemoryApplicationBundleManager()
+        let info = InMemoryFinderInfoPresenter()
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: [app]),
+            applicationPreferencesStore: prefs,
+            fileRevealer: revealer,
+            bundleManager: bundles,
+            finderInfoPresenter: info
+        )
+        viewModel.cachedApplications = [
+            InstalledApplicationSnapshot(
+                bundleIdentifier: app.bundleIdentifier,
+                name: app.name,
+                path: app.path
+            )
+        ]
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+
+        viewModel.performApplicationAction(BuiltInCommandActionID.toggleFavorite)
+        await waitUntil { prefs.load().isFavorite(app.bundleIdentifier) }
+        #expect(prefs.load().isFavorite(app.bundleIdentifier))
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.toggleAutoQuit)
+        await waitUntil { prefs.load().isAutoQuitEnabled(app.bundleIdentifier) }
+        #expect(prefs.load().isAutoQuitEnabled(app.bundleIdentifier))
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.showInFinder)
+        await waitUntil { revealer.revealedURLs.isEmpty == false }
+        #expect(revealer.revealedURLs.map(\.path).contains("/Applications/FavApp.app"))
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.showPackageContents)
+        await waitUntil { bundles.packageContentPaths.isEmpty == false }
+        #expect(bundles.packageContentPaths.contains("/Applications/FavApp.app"))
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.showInfoInFinder)
+        await waitUntil { info.infoPaths.isEmpty == false }
+        #expect(info.infoPaths.contains("/Applications/FavApp.app"))
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.toggleDisableApplication)
+        await waitUntil { prefs.load().isDisabled(app.bundleIdentifier) }
+        #expect(prefs.load().isDisabled(app.bundleIdentifier))
+    }
+
+    @Test @MainActor func applicationActionsUninstallOpensReviewAndTrashesSelection() async {
+        let app = InstalledApplication(
+            bundleIdentifier: "com.example.trash",
+            name: "TrashMe",
+            path: "/Applications/TrashMe.app"
+        )
+        let related = [
+            ApplicationRelatedItem(
+                name: "TrashMe.app",
+                containerPath: "/Applications",
+                path: "/Applications/TrashMe.app",
+                byteCount: 1_000,
+                kind: .application
+            ),
+            ApplicationRelatedItem(
+                name: "com.example.trash",
+                containerPath: "~/Library/Caches",
+                path: "/Users/test/Library/Caches/com.example.trash",
+                byteCount: 200,
+                kind: .folder
+            )
+        ]
+        let prefs = InMemoryApplicationPreferencesStore(
+            preferences: ApplicationPreferences(
+                favoriteBundleIDs: ["com.example.trash"],
+                disabledBundleIDs: [],
+                autoQuitBundleIDs: [],
+                ranking: ["com.example.trash": AppUsageRanking(openCount: 4, lastOpenedAt: Date())]
+            )
+        )
+        let bundles = InMemoryApplicationBundleManager()
+        let discoverer = InMemoryApplicationUninstallDiscoverer(
+            itemsByBundleID: [app.bundleIdentifier: related]
+        )
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: [app]),
+            applicationPreferencesStore: prefs,
+            bundleManager: bundles,
+            uninstallDiscoverer: discoverer
+        )
+        viewModel.cachedApplications = [
+            InstalledApplicationSnapshot(
+                bundleIdentifier: app.bundleIdentifier,
+                name: app.name,
+                path: app.path
+            )
+        ]
+
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.uninstallApplication)
+        await waitUntil { viewModel.uninstallViewModel != nil }
+        #expect(viewModel.route == .uninstallReview(bundleIdentifier: app.bundleIdentifier))
+
+        guard let uninstall = viewModel.uninstallViewModel else {
+            Issue.record("Expected uninstall view model")
+            return
+        }
+        uninstall.load()
+        await waitUntil { uninstall.isLoading == false }
+        #expect(uninstall.items.count == 2)
+        #expect(uninstall.selectedPaths.count == 2)
+
+        uninstall.confirmUninstall()
+        await waitUntil { viewModel.route == .root }
+        #expect(bundles.trashedPaths.contains("/Applications/TrashMe.app"))
+        #expect(bundles.trashedPaths.contains("/Users/test/Library/Caches/com.example.trash"))
+        #expect(prefs.load().favoriteBundleIDs.contains(app.bundleIdentifier) == false)
+        #expect(prefs.load().ranking[app.bundleIdentifier] == nil)
+    }
+
+    @Test @MainActor func uninstallDiscovererMatchesHelperBundlePrefixes() {
+        let needles = WorkspaceApplicationUninstallDiscoverer.matchNeedles(
+            bundleIdentifier: "com.openai.atlas",
+            appName: "ChatGPT Atlas"
+        )
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("com.openai.atlas", matchesNeedles: needles))
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("com.openai.atlas.local-agent-xpc-helper", matchesNeedles: needles))
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("com.openai.atlas.update-helper.plist", matchesNeedles: needles))
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("com.openai.atlas.binarycookies", matchesNeedles: needles))
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("com.openai.atlas.web.plist", matchesNeedles: needles))
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("ChatGPT Atlas", matchesNeedles: needles))
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("unrelated.app", matchesNeedles: needles) == false)
+        #expect(WorkspaceApplicationUninstallDiscoverer.name("com.apple.Safari", matchesNeedles: needles) == false)
+    }
+
+    @Test @MainActor func applicationActionsResetRanking() async {
+        let app = InstalledApplication(
+            bundleIdentifier: "com.example.rank",
+            name: "RankMe",
+            path: "/Applications/RankMe.app"
+        )
+        let prefs = InMemoryApplicationPreferencesStore(
+            preferences: ApplicationPreferences(
+                favoriteBundleIDs: [],
+                disabledBundleIDs: [],
+                autoQuitBundleIDs: [],
+                ranking: ["com.example.rank": AppUsageRanking(openCount: 4, lastOpenedAt: Date())]
+            )
+        )
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: [app]),
+            applicationPreferencesStore: prefs
+        )
+        viewModel.cachedApplications = [
+            InstalledApplicationSnapshot(
+                bundleIdentifier: app.bundleIdentifier,
+                name: app.name,
+                path: app.path
+            )
+        ]
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        viewModel.performApplicationAction(BuiltInCommandActionID.resetAppRanking)
+        await waitUntil { prefs.load().ranking[app.bundleIdentifier] == nil }
+        #expect(prefs.load().ranking[app.bundleIdentifier] == nil)
+    }
+
+    @Test @MainActor func applicationSearchHidesDisabledAppsOnEmptyQuery() async {
+        let apps = [
+            InstalledApplication(bundleIdentifier: "com.example.a", name: "Alpha", path: "/A.app"),
+            InstalledApplication(bundleIdentifier: "com.example.b", name: "Beta", path: "/B.app")
+        ]
+        let prefs = InMemoryApplicationPreferencesStore(
+            preferences: ApplicationPreferences(
+                favoriteBundleIDs: [],
+                disabledBundleIDs: ["com.example.b"],
+                autoQuitBundleIDs: [],
+                ranking: [:]
+            )
+        )
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: apps),
+            applicationPreferencesStore: prefs,
+            placeholderItems: []
+        )
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.contains { $0.id == "app:com.example.a" })
+        #expect(viewModel.rootItems.contains { $0.id == "app:com.example.b" } == false)
+
+        viewModel.query = "Beta"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.contains { $0.id == "app:com.example.b" })
+        #expect(viewModel.rootItems.first { $0.id == "app:com.example.b" }?.badge == .disabled)
+    }
+
+    @Test @MainActor func autoQuitServiceTerminatesIdleListedApps() async {
+        let prefs = InMemoryApplicationPreferencesStore(
+            preferences: ApplicationPreferences(
+                favoriteBundleIDs: [],
+                disabledBundleIDs: [],
+                autoQuitBundleIDs: ["com.example.idle"],
+                ranking: [:]
+            )
+        )
+        let running = InMemoryRunningApplicationController(
+            frontmost: "com.apple.finder",
+            running: [
+                RunningApplicationSnapshot(bundleIdentifier: "com.example.idle", isActive: false),
+                RunningApplicationSnapshot(bundleIdentifier: "com.apple.finder", isActive: true)
+            ]
+        )
+        let now = Date(timeIntervalSince1970: 1_000)
+        let service = AutoQuitService(
+            preferencesStore: prefs,
+            runningApps: running,
+            now: { now }
+        )
+        service.setLastActiveAtForTesting("com.example.idle", date: now.addingTimeInterval(-AutoQuitService.idleThreshold - 1))
+        await service.evaluate()
+        #expect(running.terminated.contains("com.example.idle"))
+    }
+
     @Test @MainActor func launcherResetAfterDismissClearsClipboardSurface() {
         let catalog = CommandCatalog.makeBuiltIn()
         let store = ClipboardHistoryStore()
@@ -1140,6 +1439,7 @@ struct CommandlyTests {
             privacySettingsOpener: InMemoryPrivacySettingsOpener(),
             onboardingStatusStore: store,
             appSettingsStore: appSettingsStore ?? InMemoryAppSettingsStore(),
+            applicationPreferencesStore: InMemoryApplicationPreferencesStore(),
             folderAccessStore: folderAccessStore ?? InMemoryFolderAccessStore(),
             loginItemManager: InMemoryLoginItemManager(),
             logger: Loggers.application

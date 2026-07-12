@@ -58,6 +58,233 @@ public protocol URLOpening: Sendable {
     func openURL(_ url: URL) async throws
 }
 
+/// Reveals files or folders in Finder.
+public protocol FileRevealing: Sendable {
+    /// Selects the given file URLs in a Finder window.
+    func revealInFinder(urls: [URL]) async throws
+}
+
+/// Application-bundle file operations (package contents, trash).
+public protocol ApplicationBundleManaging: Sendable {
+    /// Opens the `Contents` directory inside an `.app` bundle.
+    func showPackageContents(atApplicationPath path: String) async throws
+    /// Moves a file or folder to the Trash when the sandbox allows it.
+    func moveItemToTrash(atPath path: String) async throws
+}
+
+extension ApplicationBundleManaging {
+    /// Moves an application bundle to the Trash when the sandbox allows it.
+    public func moveApplicationToTrash(atPath path: String) async throws {
+        try await moveItemToTrash(atPath: path)
+    }
+}
+
+/// Kind of related uninstall candidate.
+public enum ApplicationRelatedItemKind: String, Sendable, Equatable, Hashable {
+    case application
+    case folder
+    case file
+    case preferences
+}
+
+/// A file or folder associated with an installed application.
+public struct ApplicationRelatedItem: Sendable, Equatable, Identifiable, Hashable {
+    public var id: String { path }
+    public let name: String
+    /// Parent directory shown as muted path text (e.g. `~/Library/Caches`).
+    public let containerPath: String
+    public let path: String
+    public let byteCount: Int64
+    public let kind: ApplicationRelatedItemKind
+
+    public init(
+        name: String,
+        containerPath: String,
+        path: String,
+        byteCount: Int64,
+        kind: ApplicationRelatedItemKind
+    ) {
+        self.name = name
+        self.containerPath = containerPath
+        self.path = path
+        self.byteCount = byteCount
+        self.kind = kind
+    }
+}
+
+/// Discovers support files and folders related to an installed application.
+public protocol ApplicationUninstallDiscovering: Sendable {
+    /// Returns related items for the given application (may be empty beyond the `.app`).
+    func relatedItems(for application: InstalledApplication) async -> [ApplicationRelatedItem]
+}
+
+/// Presents Finder’s Get Info window for a path (may require Apple Events).
+public protocol FinderInfoPresenting: Sendable {
+    /// Opens the Get Info window for the item at `path`.
+    func showGetInfo(atPath path: String) async throws
+}
+
+/// Snapshot of a running application for auto-quit and workspace introspection.
+public struct RunningApplicationSnapshot: Sendable, Equatable, Hashable {
+    public let bundleIdentifier: String
+    public let isActive: Bool
+
+    public init(bundleIdentifier: String, isActive: Bool) {
+        self.bundleIdentifier = bundleIdentifier
+        self.isActive = isActive
+    }
+}
+
+/// Controls running applications (introspection + terminate).
+public protocol RunningApplicationControlling: Sendable {
+    /// Bundle identifier of the frontmost app, if any.
+    func frontmostBundleIdentifier() async -> String?
+    /// Currently running user applications with bundle identifiers.
+    func runningApplications() async -> [RunningApplicationSnapshot]
+    /// Requests a graceful terminate for the given bundle identifier.
+    @discardableResult
+    func terminate(bundleIdentifier: String) async -> Bool
+}
+
+/// Errors from workspace / Finder / URL adapters.
+public enum WorkspaceServiceError: Error, Sendable, Equatable {
+    case notFound(String)
+    case failed(String)
+}
+
+/// No-op URL opener for tests.
+public struct NoOpURLOpener: URLOpening {
+    public init() {}
+
+    public func openURL(_ url: URL) async throws {
+        _ = url
+    }
+}
+
+/// In-memory file revealer for tests.
+public final class InMemoryFileRevealer: FileRevealing, @unchecked Sendable {
+    private let lock = NSLock()
+    public private(set) var revealedURLs: [URL] = []
+    public var shouldFail = false
+
+    public init() {}
+
+    public func revealInFinder(urls: [URL]) async throws {
+        try lock.withLock {
+            if shouldFail {
+                throw WorkspaceServiceError.failed("reveal")
+            }
+            revealedURLs.append(contentsOf: urls)
+        }
+    }
+}
+
+/// In-memory application bundle manager for tests.
+public final class InMemoryApplicationBundleManager: ApplicationBundleManaging, @unchecked Sendable {
+    private let lock = NSLock()
+    public private(set) var packageContentPaths: [String] = []
+    public private(set) var trashedPaths: [String] = []
+    public var shouldFailTrash = false
+    public var shouldFailPackageContents = false
+
+    public init() {}
+
+    public func showPackageContents(atApplicationPath path: String) async throws {
+        try lock.withLock {
+            if shouldFailPackageContents {
+                throw WorkspaceServiceError.failed("package")
+            }
+            packageContentPaths.append(path)
+        }
+    }
+
+    public func moveItemToTrash(atPath path: String) async throws {
+        try lock.withLock {
+            if shouldFailTrash {
+                throw WorkspaceServiceError.failed("trash")
+            }
+            trashedPaths.append(path)
+        }
+    }
+}
+
+/// In-memory uninstall discoverer for tests.
+public final class InMemoryApplicationUninstallDiscoverer: ApplicationUninstallDiscovering, @unchecked Sendable {
+    private let lock = NSLock()
+    public var itemsByBundleID: [String: [ApplicationRelatedItem]] = [:]
+
+    public init(itemsByBundleID: [String: [ApplicationRelatedItem]] = [:]) {
+        self.itemsByBundleID = itemsByBundleID
+    }
+
+    public func relatedItems(for application: InstalledApplication) async -> [ApplicationRelatedItem] {
+        lock.withLock {
+            if let items = itemsByBundleID[application.bundleIdentifier] {
+                return items
+            }
+            return [
+                ApplicationRelatedItem(
+                    name: URL(fileURLWithPath: application.path).lastPathComponent,
+                    containerPath: URL(fileURLWithPath: application.path).deletingLastPathComponent().path,
+                    path: application.path,
+                    byteCount: 0,
+                    kind: .application
+                )
+            ]
+        }
+    }
+}
+
+/// In-memory Finder Get Info presenter for tests.
+public final class InMemoryFinderInfoPresenter: FinderInfoPresenting, @unchecked Sendable {
+    private let lock = NSLock()
+    public private(set) var infoPaths: [String] = []
+    public var shouldFail = false
+
+    public init() {}
+
+    public func showGetInfo(atPath path: String) async throws {
+        try lock.withLock {
+            if shouldFail {
+                throw WorkspaceServiceError.failed("getInfo")
+            }
+            infoPaths.append(path)
+        }
+    }
+}
+
+/// Controllable running-application source for tests.
+public final class InMemoryRunningApplicationController: RunningApplicationControlling, @unchecked Sendable {
+    private let lock = NSLock()
+    public var frontmost: String?
+    public var running: [RunningApplicationSnapshot] = []
+    public private(set) var terminated: [String] = []
+
+    public init(frontmost: String? = nil, running: [RunningApplicationSnapshot] = []) {
+        self.frontmost = frontmost
+        self.running = running
+    }
+
+    public func frontmostBundleIdentifier() async -> String? {
+        lock.withLock { frontmost }
+    }
+
+    public func runningApplications() async -> [RunningApplicationSnapshot] {
+        lock.withLock { running }
+    }
+
+    public func terminate(bundleIdentifier: String) async -> Bool {
+        lock.withLock {
+            terminated.append(bundleIdentifier)
+            running.removeAll { $0.bundleIdentifier == bundleIdentifier }
+            if frontmost == bundleIdentifier {
+                frontmost = nil
+            }
+            return true
+        }
+    }
+}
+
 /// Constrained filesystem access boundary.
 public protocol FileSystemAccessing: Sendable {
     /// Checks whether a path exists.

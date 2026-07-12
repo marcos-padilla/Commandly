@@ -5,11 +5,13 @@ import SearchKit
 import Infrastructure
 import CalculatorKit
 import SwiftUI
+import AppKit
 
 /// Navigation stack inside the launcher window.
 enum LauncherRoute: Equatable {
     case root
     case command(CommandID)
+    case uninstallReview(bundleIdentifier: String)
 }
 
 /// Tracks whether the user is navigating with keyboard or pointer.
@@ -29,7 +31,17 @@ final class LauncherViewModel {
     @ObservationIgnored
     private let applicationQuery: any InstalledApplicationQuerying
     @ObservationIgnored
-    private let pasteboard: any PasteboardAccessing
+    let applicationPreferencesStore: any ApplicationPreferencesStoring
+    @ObservationIgnored
+    let fileRevealer: any FileRevealing
+    @ObservationIgnored
+    let bundleManager: any ApplicationBundleManaging
+    @ObservationIgnored
+    let finderInfoPresenter: any FinderInfoPresenting
+    @ObservationIgnored
+    let pasteboard: any PasteboardAccessing
+    @ObservationIgnored
+    let uninstallDiscoverer: any ApplicationUninstallDiscovering
     @ObservationIgnored
     private let calculator: any CalculatorEvaluating
     @ObservationIgnored
@@ -51,7 +63,7 @@ final class LauncherViewModel {
         }
     }
     var selectedID: String?
-    private(set) var statusMessage: String?
+    var statusMessage: String?
     private(set) var shouldScrollToSelection = false
     private(set) var inputDevice: LauncherInputDevice = .pointer
     /// True while the results list is scrolling; pointer hover must not move selection.
@@ -59,6 +71,10 @@ final class LauncherViewModel {
     private var hoveredID: String?
     var route: LauncherRoute = .root
     var clipboardViewModel: ClipboardHistoryViewModel?
+    var uninstallViewModel: ApplicationUninstallViewModel?
+    /// When non-nil, the application actions panel is presented for this bundle ID.
+    var applicationActionsTargetBundleID: String?
+    var applicationActionsQuery: String = ""
     @ObservationIgnored
     private var resultsScrollEndTask: Task<Void, Never>?
 
@@ -69,7 +85,7 @@ final class LauncherViewModel {
     @ObservationIgnored
     private var searchTask: Task<Void, Never>?
     @ObservationIgnored
-    private var cachedApplications: [InstalledApplicationSnapshot] = []
+    var cachedApplications: [InstalledApplicationSnapshot] = []
     @ObservationIgnored
     private var didLoadApplications = false
     private var calculatorSuggestion: CalculatorSuggestion?
@@ -79,6 +95,11 @@ final class LauncherViewModel {
         clipboardHistoryStore: ClipboardHistoryStore = ClipboardHistoryStore(),
         applicationOpener: any ApplicationOpening = NoOpApplicationOpener(),
         applicationQuery: any InstalledApplicationQuerying = InMemoryInstalledApplicationQuery(),
+        applicationPreferencesStore: any ApplicationPreferencesStoring = InMemoryApplicationPreferencesStore(),
+        fileRevealer: any FileRevealing = InMemoryFileRevealer(),
+        bundleManager: any ApplicationBundleManaging = InMemoryApplicationBundleManager(),
+        finderInfoPresenter: any FinderInfoPresenting = InMemoryFinderInfoPresenter(),
+        uninstallDiscoverer: any ApplicationUninstallDiscovering = InMemoryApplicationUninstallDiscoverer(),
         pasteboard: any PasteboardAccessing = SystemPasteboard(),
         calculator: any CalculatorEvaluating = CalculatorService(),
         calculatorSession: CalculatorSessionStore = CalculatorSessionStore(),
@@ -91,6 +112,11 @@ final class LauncherViewModel {
         self.clipboardHistoryStore = clipboardHistoryStore
         self.applicationOpener = applicationOpener
         self.applicationQuery = applicationQuery
+        self.applicationPreferencesStore = applicationPreferencesStore
+        self.fileRevealer = fileRevealer
+        self.bundleManager = bundleManager
+        self.finderInfoPresenter = finderInfoPresenter
+        self.uninstallDiscoverer = uninstallDiscoverer
         self.pasteboard = pasteboard
         self.calculator = calculator
         self.calculatorSession = calculatorSession
@@ -133,6 +159,8 @@ final class LauncherViewModel {
             return "Commandly"
         case .command(let id):
             return catalog.command(for: id)?.manifest.title ?? "Command"
+        case .uninstallReview:
+            return uninstallViewModel?.applicationName ?? "Uninstall"
         }
     }
 
@@ -142,6 +170,8 @@ final class LauncherViewModel {
             return "command"
         case .command(let id):
             return catalog.command(for: id)?.manifest.systemImage ?? "command"
+        case .uninstallReview:
+            return "trash"
         }
     }
 
@@ -161,9 +191,34 @@ final class LauncherViewModel {
         ]
     }
 
-    /// Root footer Actions menu items. Empty until root actions are defined.
+    /// Root footer Actions: application actions when an app is selected; otherwise empty.
     var rootActionsMenuItems: [CommandActionDescriptor] {
-        []
+        applicationActions(for: selectedApplicationBundleID).map(\.descriptor)
+    }
+
+    var showsApplicationActionsPanel: Bool {
+        applicationActionsTargetBundleID != nil
+    }
+
+    var applicationActionsPanelTitle: String {
+        guard let bundleID = applicationActionsTargetBundleID,
+              let app = cachedApplications.first(where: { $0.bundleIdentifier == bundleID })
+        else {
+            return "Actions"
+        }
+        return app.name
+    }
+
+    var filteredApplicationActions: [LauncherApplicationAction] {
+        let actions = applicationActions(for: applicationActionsTargetBundleID)
+        let trimmed = applicationActionsQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return actions }
+        return actions.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
+    }
+
+    var selectedApplicationBundleID: String? {
+        guard case .openApplication(let bundleID) = selectedItem?.action else { return nil }
+        return bundleID
     }
 
     var footerActions: [CommandActionDescriptor] {
@@ -180,6 +235,8 @@ final class LauncherViewModel {
             return clipboardViewModel?.footerActions
                 ?? catalog.command(for: BuiltInCommandID.clipboardHistory)?.manifest.defaultActions
                 ?? []
+        case .uninstallReview:
+            return []
         }
     }
 
@@ -254,7 +311,9 @@ final class LauncherViewModel {
         inputDevice = .pointer
         route = .root
         clipboardViewModel = nil
+        uninstallViewModel = nil
         activeCalculatorResult = nil
+        dismissApplicationActionsPanel()
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }
 
@@ -395,7 +454,7 @@ final class LauncherViewModel {
         case BuiltInCommandActionID.quit:
             onQuit()
         case BuiltInCommandActionID.openActions:
-            break
+            presentApplicationActionsForSelection()
         default:
             switch id.rawValue {
             case "copyAnswer":
@@ -525,6 +584,7 @@ final class LauncherViewModel {
     func goBack() {
         route = .root
         clipboardViewModel = nil
+        uninstallViewModel = nil
         statusMessage = nil
         requestSearchFocus()
     }
@@ -534,11 +594,17 @@ final class LauncherViewModel {
     }
 
     func handleEscape() -> Bool {
-        if case .command = route {
-            goBack()
+        if showsApplicationActionsPanel {
+            dismissApplicationActionsPanel()
             return true
         }
-        return false
+        switch route {
+        case .command, .uninstallReview:
+            goBack()
+            return true
+        case .root:
+            return false
+        }
     }
 
     /// Awaits the in-flight search task (tests).
@@ -557,9 +623,10 @@ final class LauncherViewModel {
         }
     }
 
-    private func openApplication(bundleIdentifier: String) async {
+    func openApplication(bundleIdentifier: String) async {
         do {
             try await applicationOpener.openApplication(bundleIdentifier: bundleIdentifier)
+            recordApplicationOpen(bundleIdentifier: bundleIdentifier)
             dismiss()
         } catch {
             statusMessage = "Couldn’t open that application."
@@ -575,7 +642,7 @@ final class LauncherViewModel {
         }
     }
 
-    private func scheduleSearch(loadApplicationsIfNeeded: Bool = false) {
+    func scheduleSearch(loadApplicationsIfNeeded: Bool = false) {
         searchTask?.cancel()
         calculatorSuggestion = nil
         autocompleteCompletion = nil
@@ -684,10 +751,16 @@ final class LauncherViewModel {
     }
 
     private func makeSearchService() -> CompositeSearchService {
-        CompositeSearchService(
+        let preferences = applicationPreferencesStore.load()
+        return CompositeSearchService(
             providers: [
                 CommandSearchProvider(manifests: catalog.allManifests()),
-                ApplicationSearchProvider(applications: cachedApplications),
+                ApplicationSearchProvider(
+                    applications: cachedApplications,
+                    favoriteBundleIDs: preferences.favoriteBundleIDs,
+                    disabledBundleIDs: preferences.disabledBundleIDs,
+                    ranking: preferences.ranking
+                ),
                 PlaceholderSearchProvider(placeholders: LauncherPlaceholderCatalog.searchRecords)
             ]
         )
@@ -718,13 +791,22 @@ final class LauncherViewModel {
             } else {
                 icon = .system("app.fill")
             }
+            let preferences = applicationPreferencesStore.load()
+            let badge: LauncherItemBadge
+            if preferences.isDisabled(item.id) {
+                badge = .disabled
+            } else if preferences.isFavorite(item.id) {
+                badge = .favorite
+            } else {
+                badge = .application
+            }
             return LauncherItem(
                 id: "app:\(item.id)",
                 section: .applications,
                 title: item.title,
                 subtitle: item.subtitle,
                 icon: icon,
-                badge: .application,
+                badge: badge,
                 keywords: [item.title],
                 action: .openApplication(bundleIdentifier: item.id)
             )

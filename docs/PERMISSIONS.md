@@ -12,6 +12,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 | Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
 | Clipboard History | Browse and re-copy recent pasteboard items from the launcher; on-device Vision/PDFKit indexes images and readable files for search | Activating the Clipboard History command (no TCC prompt for pasteboard monitoring or on-device analysis) | Clear history from the command Actions menu |
+| Automation (Finder) | Show Info in Finder from the application actions panel | First use of **Show Info in Finder** | System Settings → Privacy & Security → Automation → Commandly → Finder |
 
 ## Entitlements and usage strings
 
@@ -19,11 +20,13 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 - `com.apple.security.files.user-selected.read-only` for folder picks.
 - `com.apple.security.personal-information.calendars`
 - `com.apple.security.personal-information.addressbook`
-- Info.plist includes `NSCalendarsFullAccessUsageDescription`, `NSCalendarsUsageDescription`, and `NSContactsUsageDescription`.
+- `com.apple.security.automation.apple-events` plus a Finder temporary exception for Get Info
+- Temporary home-relative and absolute path read-write exceptions for application uninstall discovery/trash (`~/Library`, `/Applications`, `/Library`)
+- Info.plist includes `NSCalendarsFullAccessUsageDescription`, `NSCalendarsUsageDescription`, `NSContactsUsageDescription`, and `NSAppleEventsUsageDescription`.
 
 ## Not requested yet
 
-Apple Events, Screen Recording, Notifications, Camera, Microphone, and Location remain unimplemented. Clipboard history is opt-in and does not use a TCC prompt, but content must never be logged. Capture-time OCR and file-text extraction stay on-device; sandbox may prevent reading some pasted file URLs (those entries remain filename-searchable only).
+Screen Recording, Notifications, Camera, Microphone, and Location remain unimplemented. Clipboard history is opt-in and does not use a TCC prompt, but content must never be logged. Capture-time OCR and file-text extraction stay on-device; sandbox may prevent reading some pasted file URLs (those entries remain filename-searchable only). Application uninstall discovers related files under the **real** user `~/Library` (not the sandbox container home) plus `/Applications`, using temporary file-access exceptions. The review list matches the app bundle ID and helper prefixes (e.g. `com.example.app.helper.plist`). Protected or sandboxed paths may still fail; Commandly reports partial failures instead of claiming a complete wipe.
 
 ## Login items
 

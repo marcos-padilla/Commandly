@@ -28,6 +28,13 @@ struct LauncherRootView: View {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                case .uninstallReview:
+                    if let uninstallViewModel = viewModel.uninstallViewModel {
+                        ApplicationUninstallView(viewModel: uninstallViewModel)
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 case .command:
                     Text("This command has no surface yet.")
                         .commandlyFont(size: 13)
@@ -37,7 +44,9 @@ struct LauncherRootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if let statusMessage = activeStatusMessage {
+            if case .uninstallReview = viewModel.route {
+                EmptyView()
+            } else if let statusMessage = activeStatusMessage {
                 Text(statusMessage)
                     .commandlyFont(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
@@ -67,6 +76,8 @@ struct LauncherRootView: View {
                     ),
                     onAction: { viewModel.performFooterAction($0) }
                 )
+            case .uninstallReview:
+                EmptyView()
             }
         }
         .frame(
@@ -84,12 +95,50 @@ struct LauncherRootView: View {
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
         .ignoresSafeArea()
+        .overlay {
+            if viewModel.showsApplicationActionsPanel {
+                ZStack(alignment: .bottomTrailing) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            viewModel.dismissApplicationActionsPanel()
+                        }
+
+                    ApplicationActionsPanel(
+                        title: viewModel.applicationActionsPanelTitle,
+                        actions: viewModel.filteredApplicationActions,
+                        query: $viewModel.applicationActionsQuery,
+                        onSelect: { viewModel.performApplicationAction($0) },
+                        onDismiss: { viewModel.dismissApplicationActionsPanel() }
+                    )
+                    .padding(.trailing, density.spacing(.md))
+                    .padding(.bottom, 52)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
+                }
+            }
+        }
+        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: viewModel.showsApplicationActionsPanel)
         .launcherWindowChrome(onRequestClose: { closeLauncher() })
         .onKeyPress(.escape) {
             if viewModel.handleEscape() == false {
                 closeLauncher()
             }
             return .handled
+        }
+        .onKeyPress(keys: [KeyEquivalent("k")], phases: .down) { press in
+            if press.modifiers.contains(.command), viewModel.route == .root {
+                viewModel.presentApplicationActionsForSelection()
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(phases: .down) { press in
+            guard viewModel.showsApplicationActionsPanel else { return .ignored }
+            let handled = viewModel.handleApplicationActionsKeyPress(
+                characters: press.characters,
+                modifiers: press.modifiers
+            )
+            return handled ? .handled : .ignored
         }
         .onAppear {
             viewModel.prepareForPresentation()
@@ -170,6 +219,13 @@ struct LauncherRootView: View {
                                             } else {
                                                 viewModel.clearHovered(item.id)
                                             }
+                                        },
+                                        onContextAction: {
+                                            guard case .openApplication(let bundleID) = item.action else {
+                                                return
+                                            }
+                                            viewModel.select(item.id)
+                                            viewModel.presentApplicationActions(forBundleID: bundleID)
                                         }
                                     ) {
                                         viewModel.select(item.id)

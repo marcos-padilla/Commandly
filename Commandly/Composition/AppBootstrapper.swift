@@ -37,6 +37,7 @@ enum AppBootstrapper {
             privacySettingsOpener: WorkspacePrivacySettingsOpener(),
             onboardingStatusStore: UserDefaultsOnboardingStatusStore(),
             appSettingsStore: UserDefaultsAppSettingsStore(),
+            applicationPreferencesStore: UserDefaultsApplicationPreferencesStore(),
             folderAccessStore: folderAccessStore,
             loginItemManager: SMAppServiceLoginItemManager(),
             logger: Loggers.application

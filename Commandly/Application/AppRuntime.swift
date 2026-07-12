@@ -25,6 +25,10 @@ final class AppRuntime {
     /// Views that need history observe the store through command view models.
     @ObservationIgnored
     let clipboardHistoryStore: ClipboardHistoryStore
+    @ObservationIgnored
+    let applicationPreferencesStore: any ApplicationPreferencesStoring
+    @ObservationIgnored
+    private let autoQuitService: AutoQuitService
 
     init(container: AppContainer = .bootstrap()) {
         self.container = container
@@ -37,13 +41,19 @@ final class AppRuntime {
         self.clipboardHistoryStore = ClipboardHistoryStore(
             enricher: VisionClipboardContentEnricher()
         )
+        let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
+        self.applicationPreferencesStore = applicationPreferencesStore
+        self.autoQuitService = AutoQuitService(preferencesStore: applicationPreferencesStore)
         startHotkeyMonitor()
         registerBuiltInCommands()
+        if showsOnboarding == false {
+            autoQuitService.start()
+        }
     }
 
     func makeOnboardingViewModel() -> OnboardingViewModel {
         container.makeOnboardingViewModel { [weak self] in
-            self?.showsOnboarding = false
+            self?.onboardingDidFinish()
         }
     }
 
@@ -85,6 +95,11 @@ final class AppRuntime {
             clipboardHistoryStore: clipboardHistoryStore,
             applicationOpener: WorkspaceApplicationOpener(),
             applicationQuery: WorkspaceInstalledApplicationQuery(),
+            applicationPreferencesStore: applicationPreferencesStore,
+            fileRevealer: WorkspaceFileRevealer(),
+            bundleManager: WorkspaceApplicationBundleManager(),
+            finderInfoPresenter: FinderAppleScriptInfoPresenter(),
+            uninstallDiscoverer: WorkspaceApplicationUninstallDiscoverer(),
             onDismiss: { [weak self] in
                 self?.hideLauncher()
             },
@@ -155,10 +170,17 @@ final class AppRuntime {
         showMenuBarIcon = true
         textSize = .standard
         viewMode = .comfortable
+        autoQuitService.stop()
 
         Task {
             try? await dependencies.loginItemManager.setEnabled(false)
         }
+    }
+
+    /// Called when onboarding finishes so background services can start.
+    func onboardingDidFinish() {
+        showsOnboarding = false
+        autoQuitService.start()
     }
 
     private func startHotkeyMonitor() {

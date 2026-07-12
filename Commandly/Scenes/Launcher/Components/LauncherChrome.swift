@@ -139,6 +139,7 @@ struct LauncherResultRow: View {
     let item: LauncherItem
     let isSelected: Bool
     var onHoverChange: ((Bool) -> Void)?
+    var onContextAction: (() -> Void)?
     let action: () -> Void
     @Environment(\.commandlyLayoutDensity) private var density
 
@@ -183,6 +184,13 @@ struct LauncherResultRow: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, density.spacing(.xs))
+        .background {
+            if onContextAction != nil {
+                LauncherRightClickCatcher {
+                    onContextAction?()
+                }
+            }
+        }
         .onHover { hovering in
             onHoverChange?(hovering)
         }
@@ -236,14 +244,12 @@ struct LauncherRootFooterBar: View {
                 }
 
                 if action.id == BuiltInCommandActionID.openActions {
-                    LauncherUpwardMenuButton(
-                        actions: menuActions,
-                        emptyPlaceholderTitle: "No actions yet",
+                    LauncherFooterActionButton(
+                        title: action.title,
+                        keys: action.keyHint?.symbols ?? [],
                         isEnabled: action.isEnabled,
-                        onAction: onAction
-                    ) {
-                        footerLabel(action)
-                    }
+                        action: { onAction(action.id) }
+                    )
                     .accessibilityLabel(action.title)
                 } else {
                     LauncherFooterActionButton(
@@ -687,6 +693,61 @@ private func footerChrome(
             )
     }
     .scaleEffect(isPressed ? 0.97 : (isHovered || didSucceed ? 1.03 : 1))
+}
+
+/// Captures secondary clicks so application rows can open the actions panel.
+private struct LauncherRightClickCatcher: NSViewRepresentable {
+    var onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> RightClickView {
+        let view = RightClickView()
+        view.onRightClick = onRightClick
+        return view
+    }
+
+    func updateNSView(_ nsView: RightClickView, context: Context) {
+        nsView.onRightClick = onRightClick
+    }
+
+    final class RightClickView: NSView {
+        var onRightClick: (() -> Void)?
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                installMonitorIfNeeded()
+            } else {
+                removeMonitor()
+            }
+        }
+
+        deinit {
+            removeMonitor()
+        }
+
+        private func installMonitorIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+                guard let self, self.window != nil else { return event }
+                let location = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(location) else { return event }
+                self.onRightClick?()
+                return nil
+            }
+        }
+
+        private func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+    }
 }
 
 @ViewBuilder
