@@ -2,6 +2,7 @@ import SwiftUI
 import Observability
 import DesignSystem
 import AppKit
+import CommandKit
 
 @main
 struct CommandlyApp: App {
@@ -30,7 +31,7 @@ struct CommandlyApp: App {
             width: LayoutConstants.launcherIdealWidth,
             height: LayoutConstants.launcherIdealHeight
         )
-        .defaultLaunchBehavior(.suppressed)
+        .defaultLaunchBehavior(CommandlyDebugLaunchOptions.showsLauncherAtLaunch ? .presented : .suppressed)
 
         Window("Commandly Setup", id: AppWindowID.onboarding) {
             OnboardingWindowHost(runtime: runtime)
@@ -56,6 +57,25 @@ struct CommandlyApp: App {
             height: LayoutConstants.settingsMinHeight
         )
     }
+}
+
+enum CommandlyDebugLaunchOptions {
+    #if DEBUG
+    static let showsLauncherAtLaunch = ProcessInfo.processInfo.arguments.contains(
+        "--commandly-show-launcher"
+    )
+    static let fileSearchQuery: String? = {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "--commandly-file-search-query"),
+              arguments.indices.contains(flagIndex + 1) else {
+            return nil
+        }
+        return arguments[flagIndex + 1]
+    }()
+    #else
+    static let showsLauncherAtLaunch = false
+    static let fileSearchQuery: String? = nil
+    #endif
 }
 
 enum AppWindowID {
@@ -103,13 +123,17 @@ private struct LauncherWindowHost: View {
     @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
-        LauncherRootView(
-            viewModel: runtime.makeLauncherViewModel {
-                presentSettings()
-            }
-        )
+        let viewModel = runtime.makeLauncherViewModel {
+            presentSettings()
+        }
+        LauncherRootView(viewModel: viewModel)
         .onAppear {
             runtime.showsLauncher = true
+            if let query = CommandlyDebugLaunchOptions.fileSearchQuery,
+               viewModel.route == .root {
+                viewModel.push(commandID: BuiltInCommandID.searchFiles)
+                viewModel.fileSearchViewModel?.query = query
+            }
         }
         .onDisappear {
             // Window was dismissed (Esc, outside click, or programmatic close).

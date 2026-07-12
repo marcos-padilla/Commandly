@@ -27,6 +27,10 @@ final class LauncherViewModel {
     @ObservationIgnored
     private let clipboardHistoryStore: ClipboardHistoryStore
     @ObservationIgnored
+    private let fileSearchService: any FileSearching
+    @ObservationIgnored
+    private let urlOpener: any URLOpening
+    @ObservationIgnored
     private let applicationOpener: any ApplicationOpening
     @ObservationIgnored
     private let applicationQuery: any InstalledApplicationQuerying
@@ -34,6 +38,8 @@ final class LauncherViewModel {
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
     let fileRevealer: any FileRevealing
+    @ObservationIgnored
+    let fileActionService: any FileActionServicing
     @ObservationIgnored
     let bundleManager: any ApplicationBundleManaging
     @ObservationIgnored
@@ -71,6 +77,7 @@ final class LauncherViewModel {
     private var hoveredID: String?
     var route: LauncherRoute = .root
     var clipboardViewModel: ClipboardHistoryViewModel?
+    var fileSearchViewModel: FileSearchViewModel?
     var uninstallViewModel: ApplicationUninstallViewModel?
     /// When non-nil, the application actions panel is presented for this bundle ID.
     var applicationActionsTargetBundleID: String?
@@ -93,10 +100,13 @@ final class LauncherViewModel {
     init(
         catalog: CommandCatalog = .makeBuiltIn(),
         clipboardHistoryStore: ClipboardHistoryStore = ClipboardHistoryStore(),
+        fileSearchService: any FileSearching = InMemoryFileSearchService(),
+        urlOpener: any URLOpening = NoOpURLOpener(),
         applicationOpener: any ApplicationOpening = NoOpApplicationOpener(),
         applicationQuery: any InstalledApplicationQuerying = InMemoryInstalledApplicationQuery(),
         applicationPreferencesStore: any ApplicationPreferencesStoring = InMemoryApplicationPreferencesStore(),
         fileRevealer: any FileRevealing = InMemoryFileRevealer(),
+        fileActionService: any FileActionServicing = InMemoryFileActionService(),
         bundleManager: any ApplicationBundleManaging = InMemoryApplicationBundleManager(),
         finderInfoPresenter: any FinderInfoPresenting = InMemoryFinderInfoPresenter(),
         uninstallDiscoverer: any ApplicationUninstallDiscovering = InMemoryApplicationUninstallDiscoverer(),
@@ -110,10 +120,13 @@ final class LauncherViewModel {
     ) {
         self.catalog = catalog
         self.clipboardHistoryStore = clipboardHistoryStore
+        self.fileSearchService = fileSearchService
+        self.urlOpener = urlOpener
         self.applicationOpener = applicationOpener
         self.applicationQuery = applicationQuery
         self.applicationPreferencesStore = applicationPreferencesStore
         self.fileRevealer = fileRevealer
+        self.fileActionService = fileActionService
         self.bundleManager = bundleManager
         self.finderInfoPresenter = finderInfoPresenter
         self.uninstallDiscoverer = uninstallDiscoverer
@@ -130,6 +143,12 @@ final class LauncherViewModel {
     var runtime: CommandRuntime {
         CommandRuntime(
             clipboardHistoryStore: clipboardHistoryStore,
+            fileSearchService: fileSearchService,
+            urlOpener: urlOpener,
+            fileRevealer: fileRevealer,
+            fileActionService: fileActionService,
+            finderInfoPresenter: finderInfoPresenter,
+            pasteboard: pasteboard,
             dismissLauncher: { [weak self] in self?.dismiss() },
             openSettings: { [weak self] in
                 self?.dismiss()
@@ -233,7 +252,7 @@ final class LauncherViewModel {
             ]
         case .command:
             return clipboardViewModel?.footerActions
-                ?? catalog.command(for: BuiltInCommandID.clipboardHistory)?.manifest.defaultActions
+                ?? fileSearchViewModel?.footerActions
                 ?? []
         case .uninstallReview:
             return []
@@ -276,12 +295,15 @@ final class LauncherViewModel {
             }
             return actions
         }
-        return clipboardViewModel?.menuActions ?? []
+        return clipboardViewModel?.menuActions ?? fileSearchViewModel?.menuActions ?? []
     }
 
     var showsActionsMenu: Bool {
-        get { clipboardViewModel?.showsActionsMenu ?? false }
-        set { clipboardViewModel?.showsActionsMenu = newValue }
+        get { clipboardViewModel?.showsActionsMenu ?? fileSearchViewModel?.showsActionsMenu ?? false }
+        set {
+            clipboardViewModel?.showsActionsMenu = newValue
+            fileSearchViewModel?.showsActionsMenu = newValue
+        }
     }
 
     func prepareForPresentation() {
@@ -311,6 +333,8 @@ final class LauncherViewModel {
         inputDevice = .pointer
         route = .root
         clipboardViewModel = nil
+        fileSearchViewModel?.stop()
+        fileSearchViewModel = nil
         uninstallViewModel = nil
         activeCalculatorResult = nil
         dismissApplicationActionsPanel()
@@ -370,7 +394,11 @@ final class LauncherViewModel {
 
     func moveSelection(offset: Int) {
         if case .command = route {
-            clipboardViewModel?.moveSelection(offset: offset)
+            if let clipboardViewModel {
+                clipboardViewModel.moveSelection(offset: offset)
+            } else {
+                fileSearchViewModel?.moveSelection(offset: offset)
+            }
             return
         }
         let list = rootItems
@@ -391,7 +419,11 @@ final class LauncherViewModel {
 
     func confirmSelection() {
         if case .command = route {
-            clipboardViewModel?.perform(BuiltInCommandActionID.copy)
+            if let clipboardViewModel {
+                clipboardViewModel.perform(BuiltInCommandActionID.copy)
+            } else {
+                fileSearchViewModel?.perform(BuiltInCommandActionID.openFile)
+            }
             return
         }
         guard let item = selectedItem else { return }
@@ -444,7 +476,11 @@ final class LauncherViewModel {
 
     func performFooterAction(_ id: CommandActionID) {
         if case .command = route {
-            clipboardViewModel?.perform(id)
+            if let clipboardViewModel {
+                clipboardViewModel.perform(id)
+            } else {
+                fileSearchViewModel?.perform(id)
+            }
             return
         }
         switch id {
@@ -576,14 +612,31 @@ final class LauncherViewModel {
                 onGoBack: { [weak self] in self?.goBack() },
                 onDismiss: { [weak self] in self?.dismiss() }
             )
+        } else if commandID == BuiltInCommandID.searchFiles {
+            fileSearchViewModel = FileSearchViewModel(
+                searchService: fileSearchService,
+                urlOpener: urlOpener,
+                fileRevealer: fileRevealer,
+                fileActionService: fileActionService,
+                finderInfoPresenter: finderInfoPresenter,
+                pasteboard: pasteboard,
+                onGoBack: { [weak self] in self?.goBack() },
+                onDismiss: { [weak self] in self?.dismiss() },
+                onOpenSettings: { [weak self] in
+                    self?.dismiss()
+                    self?.onOpenSettings()
+                }
+            )
         }
         statusMessage = nil
         _ = command
     }
 
     func goBack() {
+        fileSearchViewModel?.stop()
         route = .root
         clipboardViewModel = nil
+        fileSearchViewModel = nil
         uninstallViewModel = nil
         statusMessage = nil
         requestSearchFocus()

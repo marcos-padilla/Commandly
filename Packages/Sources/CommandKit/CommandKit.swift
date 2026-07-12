@@ -231,6 +231,7 @@ public actor CommandRegistry {
 /// Well-known built-in command identifiers.
 public enum BuiltInCommandID {
     public static let clipboardHistory = CommandID(rawValue: "clipboard.history")
+    public static let searchFiles = CommandID(rawValue: "files.search")
     public static let openSettings = CommandID(rawValue: "settings.open")
 }
 
@@ -255,4 +256,19 @@ public enum BuiltInCommandActionID {
     public static let toggleDisableApplication = CommandActionID(rawValue: "app.toggle-disable")
     public static let uninstallApplication = CommandActionID(rawValue: "app.uninstall")
     public static let resetAppRanking = CommandActionID(rawValue: "app.reset-ranking")
+    public static let openFile = CommandActionID(rawValue: "file.open")
+    public static let revealFile = CommandActionID(rawValue: "file.reveal")
+    public static let copyFilePath = CommandActionID(rawValue: "file.copy-path")
+    public static let openFileWith = CommandActionID(rawValue: "file.open-with")
+    public static let showFileInfo = CommandActionID(rawValue: "file.show-info")
+    public static let openEnclosingFolder = CommandActionID(rawValue: "file.enclosing-folder")
+    public static let toggleFileDetails = CommandActionID(rawValue: "file.toggle-details")
+    public static let shareFile = CommandActionID(rawValue: "file.share")
+    public static let moveFile = CommandActionID(rawValue: "file.move")
+    public static let copyFileTo = CommandActionID(rawValue: "file.copy-to")
+    public static let duplicateFile = CommandActionID(rawValue: "file.duplicate")
+    public static let createFileShortcut = CommandActionID(rawValue: "file.create-shortcut")
+    public static let copyFile = CommandActionID(rawValue: "file.copy")
+    public static let copyFileName = CommandActionID(rawValue: "file.copy-name")
+    public static let trashFile = CommandActionID(rawValue: "file.trash")
 }

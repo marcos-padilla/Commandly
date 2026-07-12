@@ -155,16 +155,6 @@ enum LauncherPlaceholderCatalog {
             action: .placeholder(message: "Walkthrough will arrive in a later build.")
         ),
         LauncherItem(
-            id: "search-files",
-            section: .suggestions,
-            title: "Search Files",
-            subtitle: "Find documents on your Mac",
-            systemImage: "doc.text.magnifyingglass",
-            badge: .command,
-            keywords: ["files", "finder", "documents"],
-            action: .placeholder(message: "File search is not implemented yet.")
-        ),
-        LauncherItem(
             id: "my-schedule",
             section: .suggestions,
             title: "My Schedule",

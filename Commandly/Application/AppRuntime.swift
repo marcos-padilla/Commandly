@@ -26,6 +26,8 @@ final class AppRuntime {
     @ObservationIgnored
     let clipboardHistoryStore: ClipboardHistoryStore
     @ObservationIgnored
+    let fileSearchService: SpotlightFileSearchService
+    @ObservationIgnored
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
     private let autoQuitService: AutoQuitService
@@ -40,6 +42,9 @@ final class AppRuntime {
         self.commandCatalog = .makeBuiltIn()
         self.clipboardHistoryStore = ClipboardHistoryStore(
             enricher: VisionClipboardContentEnricher()
+        )
+        self.fileSearchService = SpotlightFileSearchService(
+            folderAccessStore: container.dependencies.folderAccessStore
         )
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
@@ -93,10 +98,13 @@ final class AppRuntime {
         let viewModel = LauncherViewModel(
             catalog: commandCatalog,
             clipboardHistoryStore: clipboardHistoryStore,
+            fileSearchService: fileSearchService,
+            urlOpener: WorkspaceURLOpener(),
             applicationOpener: WorkspaceApplicationOpener(),
             applicationQuery: WorkspaceInstalledApplicationQuery(),
             applicationPreferencesStore: applicationPreferencesStore,
             fileRevealer: WorkspaceFileRevealer(),
+            fileActionService: WorkspaceFileActionService(),
             bundleManager: WorkspaceApplicationBundleManager(),
             finderInfoPresenter: FinderAppleScriptInfoPresenter(),
             uninstallDiscoverer: WorkspaceApplicationUninstallDiscoverer(),
@@ -201,4 +209,5 @@ final class AppRuntime {
         }
         clipboardHistoryStore.startMonitoring()
     }
+
 }

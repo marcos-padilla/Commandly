@@ -23,6 +23,169 @@ struct WorkspaceFileRevealer: FileRevealing {
     }
 }
 
+/// Native file actions backed by AppKit and coordinated filesystem operations.
+@MainActor
+final class WorkspaceFileActionService: FileActionServicing {
+    private var applicationsByID: [String: URL] = [:]
+    private var sharingServicesByID: [String: NSSharingService] = [:]
+
+    func applications(toOpen url: URL) async -> [FileActionOption] {
+        let urls = NSWorkspace.shared.urlsForApplications(toOpen: url)
+        applicationsByID = Dictionary(uniqueKeysWithValues: urls.map { ($0.path, $0) })
+        return urls.map { applicationURL in
+            FileActionOption(
+                id: applicationURL.path,
+                title: FileManager.default.displayName(atPath: applicationURL.path),
+                subtitle: applicationURL.deletingLastPathComponent().path
+            )
+        }
+    }
+
+    func open(_ url: URL, withApplication optionID: String) async throws {
+        guard let applicationURL = applicationsByID[optionID] else {
+            throw CommandlyError.notFound("Application")
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            NSWorkspace.shared.open(
+                [url],
+                withApplicationAt: applicationURL,
+                configuration: configuration
+            ) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+
+    func sharingServices(for url: URL) async -> [FileActionOption] {
+        let services = NSSharingService.sharingServices(forItems: [url])
+        sharingServicesByID = Dictionary(
+            uniqueKeysWithValues: services.enumerated().map { index, service in
+                ("share.\(index).\(service.title)", service)
+            }
+        )
+        return sharingServicesByID.map { id, service in
+            FileActionOption(id: id, title: service.title)
+        }
+        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    func share(_ url: URL, withService optionID: String) async throws {
+        guard let service = sharingServicesByID[optionID], service.canPerform(withItems: [url]) else {
+            throw CommandlyError.notFound("Sharing service")
+        }
+        service.perform(withItems: [url])
+    }
+
+    func chooseDestination(title: String) async -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.prompt = "Choose"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        return await withCheckedContinuation { continuation in
+            panel.begin { response in
+                continuation.resume(returning: response == .OK ? panel.url : nil)
+            }
+        }
+    }
+
+    func duplicate(_ url: URL) async throws -> URL {
+        try await performFileOperation { manager in
+            let destination = Self.uniqueDestination(
+                in: url.deletingLastPathComponent(),
+                source: url,
+                suffix: " copy",
+                manager: manager
+            )
+            try manager.copyItem(at: url, to: destination)
+            return destination
+        }
+    }
+
+    func copy(_ url: URL, to directory: URL) async throws -> URL {
+        try await performFileOperation { manager in
+            let destination = Self.uniqueDestination(in: directory, source: url, manager: manager)
+            try manager.copyItem(at: url, to: destination)
+            return destination
+        }
+    }
+
+    func move(_ url: URL, to directory: URL) async throws -> URL {
+        try await performFileOperation { manager in
+            let destination = Self.uniqueDestination(in: directory, source: url, manager: manager)
+            try manager.moveItem(at: url, to: destination)
+            return destination
+        }
+    }
+
+    func createShortcut(for url: URL, in directory: URL) async throws -> URL {
+        try await performFileOperation { manager in
+            let baseName = "\(url.deletingPathExtension().lastPathComponent) Commandly Shortcut"
+            var destination = directory.appendingPathComponent(baseName).appendingPathExtension("webloc")
+            var index = 2
+            while manager.fileExists(atPath: destination.path) {
+                destination = directory
+                    .appendingPathComponent("\(baseName) \(index)")
+                    .appendingPathExtension("webloc")
+                index += 1
+            }
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: ["URL": url.absoluteString],
+                format: .xml,
+                options: 0
+            )
+            try data.write(to: destination, options: .atomic)
+            return destination
+        }
+    }
+
+    func moveToTrash(_ url: URL) async throws {
+        _ = try await performFileOperation { manager in
+            var destination: NSURL?
+            try manager.trashItem(at: url, resultingItemURL: &destination)
+            return destination as URL? ?? url
+        }
+    }
+
+    private func performFileOperation(
+        _ operation: @escaping @Sendable (FileManager) throws -> URL
+    ) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            try operation(FileManager())
+        }.value
+    }
+
+    private nonisolated static func uniqueDestination(
+        in directory: URL,
+        source: URL,
+        suffix: String = "",
+        manager: FileManager
+    ) -> URL {
+        let extensionName = source.pathExtension
+        let stem = source.deletingPathExtension().lastPathComponent + suffix
+        var destination = directory.appendingPathComponent(stem)
+        if extensionName.isEmpty == false {
+            destination.appendPathExtension(extensionName)
+        }
+        var index = 2
+        while manager.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent("\(stem) \(index)")
+            if extensionName.isEmpty == false {
+                destination.appendPathExtension(extensionName)
+            }
+            index += 1
+        }
+        return destination
+    }
+}
+
 /// Application-bundle helpers backed by `NSWorkspace` / file URLs.
 struct WorkspaceApplicationBundleManager: ApplicationBundleManaging {
     private let urlOpener: any URLOpening

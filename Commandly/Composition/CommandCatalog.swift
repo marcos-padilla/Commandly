@@ -1,11 +1,19 @@
 import Foundation
 import CommandKit
+import Infrastructure
+import SearchKit
 import SwiftUI
 
 /// Runtime helpers shared by command surfaces.
 @MainActor
 struct CommandRuntime {
     let clipboardHistoryStore: ClipboardHistoryStore
+    let fileSearchService: any FileSearching
+    let urlOpener: any URLOpening
+    let fileRevealer: any FileRevealing
+    let fileActionService: any FileActionServicing
+    let finderInfoPresenter: any FinderInfoPresenting
+    let pasteboard: any PasteboardAccessing
     var dismissLauncher: () -> Void
     var openSettings: () -> Void
     var goBack: () -> Void
@@ -53,7 +61,57 @@ final class CommandCatalog {
         let catalog = CommandCatalog()
         catalog.register(OpenSettingsCommand())
         catalog.register(ClipboardHistoryCommand())
+        catalog.register(FileSearchCommand())
         return catalog
+    }
+}
+
+@MainActor
+struct FileSearchCommand: LauncherCommandRegistering {
+    let manifest = CommandManifest(
+        id: BuiltInCommandID.searchFiles,
+        title: "Search Files",
+        subtitle: "Find files, folders, and indexed contents",
+        systemImage: "doc.text.magnifyingglass",
+        category: .productivity,
+        mode: .view,
+        keywords: ["files", "finder", "documents", "folders", "images"],
+        badgeTitle: "Command",
+        defaultActions: [
+            CommandActionDescriptor(
+                id: BuiltInCommandActionID.openFile,
+                title: "Open",
+                isPrimary: true,
+                keyHint: .return
+            ),
+            CommandActionDescriptor(
+                id: BuiltInCommandActionID.openActions,
+                title: "Actions",
+                keyHint: .commandK
+            )
+        ]
+    )
+
+    func activate(runtime: CommandRuntime) -> CommandActivation {
+        .pushView(manifest.id)
+    }
+
+    func makeSurface(runtime: CommandRuntime) -> AnyView {
+        AnyView(
+            FileSearchView(
+                viewModel: FileSearchViewModel(
+                    searchService: runtime.fileSearchService,
+                    urlOpener: runtime.urlOpener,
+                    fileRevealer: runtime.fileRevealer,
+                    fileActionService: runtime.fileActionService,
+                    finderInfoPresenter: runtime.finderInfoPresenter,
+                    pasteboard: runtime.pasteboard,
+                    onGoBack: runtime.goBack,
+                    onDismiss: runtime.dismissLauncher,
+                    onOpenSettings: runtime.openSettings
+                )
+            )
+        )
     }
 }
 

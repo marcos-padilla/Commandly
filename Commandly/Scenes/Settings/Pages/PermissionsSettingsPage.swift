@@ -36,7 +36,7 @@ struct PermissionsSettingsPage: View {
                         kind: .files,
                         icon: "folder",
                         title: "Files and Folders",
-                        subtitle: "Search folders you allow."
+                        subtitle: "Search and manage folders you allow."
                     )
 
                     SettingsDivider()
@@ -65,17 +65,17 @@ struct PermissionsSettingsPage: View {
             icon: icon,
             title: title,
             subtitle: subtitle,
-            actionTitle: actionTitle(for: state),
-            actionDisabled: state == .authorized,
+            actionTitle: actionTitle(for: state, kind: kind),
+            actionDisabled: state == .authorized && kind != .files,
             action: { viewModel.requestPermission(kind) }
         )
         .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: state)
     }
 
-    private func actionTitle(for state: PermissionState) -> String {
+    private func actionTitle(for state: PermissionState, kind: PermissionKind) -> String {
         switch state {
         case .authorized:
-            return "Granted"
+            return kind == .files ? "Manage Folders" : "Granted"
         case .denied, .restricted:
             return "Open Settings"
         case .notDetermined:

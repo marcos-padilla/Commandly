@@ -266,6 +266,370 @@ struct CommandlyTests {
         #expect(viewModel.footerActions.contains { $0.id == BuiltInCommandActionID.copy })
     }
 
+    @Test @MainActor func launcherOpensFileSearchCommand() async throws {
+        let item = FileSearchItem(
+            url: URL(fileURLWithPath: "/Users/test/Documents/Plan.pdf"),
+            name: "Plan.pdf",
+            parentPath: "/Users/test/Documents",
+            kind: .file,
+            contentTypeIdentifier: "com.adobe.pdf",
+            contentTypeDescription: "PDF document"
+        )
+        let service = InMemoryFileSearchService(items: [item])
+        let viewModel = LauncherViewModel(
+            catalog: .makeBuiltIn(),
+            fileSearchService: service
+        )
+        viewModel.selectedID = BuiltInCommandID.searchFiles.rawValue
+
+        viewModel.confirmSelection()
+
+        #expect(viewModel.route == .command(BuiltInCommandID.searchFiles))
+        let fileViewModel = try #require(viewModel.fileSearchViewModel)
+        await fileViewModel.flushSearchForTesting()
+        #expect(fileViewModel.results == [item])
+        #expect(viewModel.footerActions.first?.id == BuiltInCommandActionID.openFile)
+    }
+
+    @Test @MainActor func fileSearchForwardsQueryContentAndTypeFilter() async throws {
+        let service = InMemoryFileSearchService()
+        let viewModel = FileSearchViewModel(
+            searchService: service,
+            urlOpener: NoOpURLOpener(),
+            fileRevealer: InMemoryFileRevealer(),
+            pasteboard: InMemoryPasteboard()
+        )
+        viewModel.query = "quarterly revenue"
+        viewModel.category = .documents
+
+        await viewModel.flushSearchForTesting()
+
+        let requests = await service.requests
+        let request = try #require(requests.first { $0.includesFileContents })
+        #expect(request.query.text == "quarterly revenue")
+        #expect(request.query.limit == 100)
+        #expect(request.category == .documents)
+        #expect(request.includesFileNames == false)
+        #expect(request.includesFileContents)
+    }
+
+    @Test @MainActor func fileSearchKeepsFilenameHitsAheadOfContentEnrichment() async throws {
+        let filenameHit = FileSearchItem(
+            url: URL(fileURLWithPath: "/Users/test/Desktop/wpb_hoa_contacts.csv"),
+            name: "wpb_hoa_contacts.csv",
+            parentPath: "/Users/test/Desktop",
+            kind: .file,
+            contentTypeIdentifier: "public.comma-separated-values-text",
+            contentTypeDescription: "CSV document"
+        )
+        let contentHit = FileSearchItem(
+            url: URL(fileURLWithPath: "/Users/test/Documents/association-notes.txt"),
+            name: "association-notes.txt",
+            parentPath: "/Users/test/Documents",
+            kind: .file,
+            contentTypeIdentifier: "public.plain-text",
+            contentTypeDescription: "Plain text",
+            matchKind: .contents
+        )
+        let service = PhasedFileSearchService(
+            filenameResults: [filenameHit],
+            contentResults: [contentHit, filenameHit]
+        )
+        let viewModel = FileSearchViewModel(
+            searchService: service,
+            urlOpener: NoOpURLOpener(),
+            fileRevealer: InMemoryFileRevealer(),
+            pasteboard: InMemoryPasteboard()
+        )
+        viewModel.query = "wpb_hoa_contacts.csv"
+
+        await viewModel.flushSearchForTesting()
+
+        #expect(viewModel.results == [filenameHit, contentHit])
+        #expect(viewModel.loadState == .loaded)
+        let requests = await service.requests
+        #expect(requests.count == 2)
+        #expect(requests.contains { $0.includesFileNames && $0.includesFileContents == false })
+        #expect(requests.contains { $0.includesFileNames == false && $0.includesFileContents })
+    }
+
+    @Test @MainActor func fileSearchRetainsFilenameHitsWhenContentSearchFails() async {
+        let filenameHit = FileSearchItem(
+            url: URL(fileURLWithPath: "/Users/test/Desktop/wpb_hoa_contacts.csv"),
+            name: "wpb_hoa_contacts.csv",
+            parentPath: "/Users/test/Desktop",
+            kind: .file,
+            contentTypeDescription: "CSV document"
+        )
+        let service = PhasedFileSearchService(
+            filenameResults: [filenameHit],
+            contentResults: [],
+            contentError: .indexUnavailable
+        )
+        let viewModel = FileSearchViewModel(
+            searchService: service,
+            urlOpener: NoOpURLOpener(),
+            fileRevealer: InMemoryFileRevealer(),
+            pasteboard: InMemoryPasteboard()
+        )
+        viewModel.query = "wpb_hoa_contacts.csv"
+
+        await viewModel.flushSearchForTesting()
+
+        #expect(viewModel.results == [filenameHit])
+        #expect(viewModel.loadState == .loaded)
+        #expect(viewModel.statusMessage == "Some file-content results may be unavailable.")
+    }
+
+    @Test @MainActor func fileSearchSelectionCopiesPathAndHandlesMissingAccess() async {
+        let item = FileSearchItem(
+            url: URL(fileURLWithPath: "/Users/test/Pictures/Receipt.png"),
+            name: "Receipt.png",
+            parentPath: "/Users/test/Pictures",
+            kind: .file,
+            contentTypeIdentifier: "public.png",
+            contentTypeDescription: "PNG image"
+        )
+        let pasteboard = InMemoryPasteboard()
+        let viewModel = FileSearchViewModel(
+            searchService: InMemoryFileSearchService(items: [item]),
+            urlOpener: NoOpURLOpener(),
+            fileRevealer: InMemoryFileRevealer(),
+            pasteboard: pasteboard
+        )
+        await viewModel.flushSearchForTesting()
+
+        viewModel.perform(BuiltInCommandActionID.copyFilePath)
+        await waitUntil { pasteboard.currentValue == item.url.path }
+
+        #expect(pasteboard.currentValue == item.url.path)
+        #expect(viewModel.statusMessage == "Path copied.")
+
+        let missingAccess = FileSearchViewModel(
+            searchService: MissingAccessFileSearchService(),
+            urlOpener: NoOpURLOpener(),
+            fileRevealer: InMemoryFileRevealer(),
+            pasteboard: InMemoryPasteboard()
+        )
+        await missingAccess.flushSearchForTesting()
+        #expect(missingAccess.loadState == .needsFolderAccess)
+        #expect(missingAccess.footerActions.first?.id == BuiltInCommandActionID.settings)
+    }
+
+    @Test @MainActor func fileSearchActionsCardExecutesNativeAndNestedActions() async throws {
+        let item = FileSearchItem(
+            url: URL(fileURLWithPath: "/Users/test/Desktop/contacts.csv"),
+            name: "contacts.csv",
+            parentPath: "/Users/test/Desktop",
+            kind: .file,
+            contentTypeIdentifier: "public.comma-separated-values-text",
+            contentTypeDescription: "CSV document"
+        )
+        let actions = InMemoryFileActionService(
+            applicationOptions: [.init(id: "numbers", title: "Numbers")],
+            sharingOptions: [.init(id: "airdrop", title: "AirDrop")],
+            chosenDestination: URL(fileURLWithPath: "/Users/test/Documents")
+        )
+        let pasteboard = InMemoryPasteboard()
+        let info = InMemoryFinderInfoPresenter()
+        let viewModel = FileSearchViewModel(
+            searchService: InMemoryFileSearchService(items: [item]),
+            urlOpener: NoOpURLOpener(),
+            fileRevealer: InMemoryFileRevealer(),
+            fileActionService: actions,
+            finderInfoPresenter: info,
+            pasteboard: pasteboard
+        )
+        await viewModel.flushSearchForTesting()
+
+        viewModel.presentActions(for: item.id)
+        #expect(viewModel.showsActionPanel)
+        #expect(viewModel.filteredActionPanelItems.contains { $0.id == BuiltInCommandActionID.shareFile })
+        #expect(viewModel.filteredActionPanelItems.contains { $0.id == BuiltInCommandActionID.trashFile })
+
+        viewModel.performPanelAction(BuiltInCommandActionID.openFileWith)
+        await waitUntil { viewModel.filteredActionPanelItems.first?.title == "Numbers" }
+        let openOption = try #require(viewModel.filteredActionPanelItems.first?.id)
+        viewModel.performPanelAction(openOption)
+        await waitUntil { actions.opened.count == 1 }
+        #expect(actions.opened.first?.0 == item.url)
+        #expect(actions.opened.first?.1 == "numbers")
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.shareFile)
+        await waitUntil { viewModel.filteredActionPanelItems.first?.title == "AirDrop" }
+        let shareOption = try #require(viewModel.filteredActionPanelItems.first?.id)
+        viewModel.performPanelAction(shareOption)
+        await waitUntil { actions.shared.count == 1 }
+        #expect(actions.shared.first?.1 == "airdrop")
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.copyFile)
+        await waitUntil { pasteboard.currentFileURLs == [item.url] }
+        #expect(pasteboard.currentFileURLs == [item.url])
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.duplicateFile)
+        await waitUntil { actions.duplicated == [item.url] }
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.showFileInfo)
+        await waitUntil { info.infoPaths == [item.url.path] }
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.toggleFileDetails)
+        #expect(viewModel.showsDetails == false)
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.copyFileTo)
+        viewModel.performPanelAction(CommandActionID(rawValue: "file.destination.choose"))
+        await waitUntil { actions.copied.count == 1 }
+        #expect(actions.copied.first?.1 == URL(fileURLWithPath: "/Users/test/Documents"))
+
+        viewModel.presentActions(for: item.id)
+        viewModel.performPanelAction(BuiltInCommandActionID.trashFile)
+        await waitUntil { actions.trashed == [item.url] }
+        #expect(viewModel.results.isEmpty)
+    }
+
+    @Test @MainActor func spotlightFileSearchPredicatesDoNotFilterVisibleResultsToZero() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let recentRequest = FileSearchRequest(query: SearchQuery(text: "", limit: 100))
+        let recentDescription = String(
+            describing: SpotlightFileSearchService.predicate(for: recentRequest, now: now)
+        )
+        let recentCompound = SpotlightFileSearchService.predicate(
+            for: recentRequest,
+            now: now
+        ) as? NSCompoundPredicate
+        #expect(recentCompound?.compoundPredicateType == .or)
+        #expect(recentCompound?.subpredicates.count == 2)
+        #expect(recentDescription.contains(NSMetadataItemFSContentChangeDateKey))
+        #expect(recentDescription.contains(NSMetadataItemFSNameKey) == false)
+        #expect(recentDescription.contains("kMDItemFSInvisible") == false)
+
+        let typedRequest = FileSearchRequest(query: SearchQuery(text: "AppRuntime", limit: 100))
+        let typedDescription = String(
+            describing: SpotlightFileSearchService.predicate(for: typedRequest, now: now)
+        )
+        let typedCompound = SpotlightFileSearchService.predicate(
+            for: typedRequest,
+            now: now
+        ) as? NSCompoundPredicate
+        #expect(typedCompound?.compoundPredicateType == .or)
+        #expect(typedCompound?.subpredicates.count == 3)
+        #expect(typedDescription.contains(NSMetadataItemFSNameKey))
+        #expect(typedDescription.contains(NSMetadataItemTextContentKey))
+        #expect(typedDescription.contains("kMDItemFSInvisible") == false)
+
+        let namesOnlyRequest = FileSearchRequest(
+            query: SearchQuery(text: "wpb_hoa_contacts.csv", limit: 100),
+            includesFileContents: false
+        )
+        let namesOnlyCompound = SpotlightFileSearchService.predicate(
+            for: namesOnlyRequest,
+            now: now
+        ) as? NSCompoundPredicate
+        let namesOnlyDescription = String(
+            describing: SpotlightFileSearchService.predicate(for: namesOnlyRequest, now: now)
+        )
+        #expect(namesOnlyCompound?.subpredicates.count == 2)
+        #expect(namesOnlyDescription.contains(NSMetadataItemTextContentKey) == false)
+
+        let contentOnlyRequest = FileSearchRequest(
+            query: SearchQuery(text: "homeowner association", limit: 100),
+            includesFileNames: false,
+            includesFileContents: true
+        )
+        let contentOnlyDescription = String(
+            describing: SpotlightFileSearchService.predicate(for: contentOnlyRequest, now: now)
+        )
+        #expect(contentOnlyDescription.contains(NSMetadataItemFSNameKey) == false)
+        #expect(contentOnlyDescription.contains(NSMetadataItemTextContentKey))
+        #expect(contentOnlyDescription.contains("homeowner"))
+        #expect(contentOnlyDescription.contains("association"))
+
+        let imageRequest = FileSearchRequest(
+            query: SearchQuery(text: "Screenshot 2026", limit: 100),
+            category: .images,
+            includesFileContents: false
+        )
+        let imageDescription = String(
+            describing: SpotlightFileSearchService.predicate(for: imageRequest, now: now)
+        )
+        #expect(imageDescription.contains("public.image"))
+
+        let folderRequest = FileSearchRequest(
+            query: SearchQuery(text: "Commandly", limit: 100),
+            category: .folders,
+            includesFileContents: false
+        )
+        let folderDescription = String(
+            describing: SpotlightFileSearchService.predicate(for: folderRequest, now: now)
+        )
+        #expect(folderDescription.contains("public.folder"))
+
+        #expect(SpotlightFileSearchService.minimumResultCount(for: recentRequest) == 1)
+        #expect(SpotlightFileSearchService.minimumResultCount(for: typedRequest) == 1)
+    }
+
+    @Test @MainActor func spotlightFileSearchFiltersDotHiddenPathsAfterQuerying() {
+        #expect(
+            SpotlightFileSearchService.isHiddenPath(
+                URL(fileURLWithPath: "/Users/test/.config/settings.json")
+            )
+        )
+        #expect(
+            SpotlightFileSearchService.isHiddenPath(
+                URL(fileURLWithPath: "/Users/test/Projects/.git/config")
+            )
+        )
+        #expect(
+            SpotlightFileSearchService.isHiddenPath(
+                URL(fileURLWithPath: "/Users/test/Documents/Visible.txt")
+            ) == false
+        )
+    }
+
+    @Test @MainActor func spotlightUsesHomeMetadataScopeThenPostFiltersAuthorization() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        let desktop = home.appending(path: "Desktop", directoryHint: .isDirectory)
+        let homeScopes = SpotlightFileSearchService.metadataSearchScopes(for: [desktop])
+        #expect(homeScopes.count == 1)
+        #expect(homeScopes.first as? String == NSMetadataQueryUserHomeScope)
+
+        let external = URL(fileURLWithPath: "/Volumes/External/Search Root")
+        let externalScopes = SpotlightFileSearchService.metadataSearchScopes(for: [external])
+        #expect(externalScopes.count == 1)
+        #expect((externalScopes.first as? URL)?.standardizedFileURL == external.standardizedFileURL)
+    }
+
+    @Test @MainActor func csvPreviewParserHandlesQuotedCommasNewlinesAndEscapedQuotes() throws {
+        let csv = "Name,Note,Phone\r\n"
+            + "\"Garden, Lakes\",\"Line one\nLine two\",561-555-0100\r\n"
+            + "Example,\"He said \"\"Hello\"\"\",561-555-0101\n"
+
+        let preview = try CSVPreviewParser.parse(csv)
+
+        #expect(preview.headers == ["Name", "Note", "Phone"])
+        #expect(preview.rows == [
+            ["Garden, Lakes", "Line one\nLine two", "561-555-0100"],
+            ["Example", "He said \"Hello\"", "561-555-0101"]
+        ])
+        #expect(preview.isTruncated == false)
+    }
+
+    @Test @MainActor func csvPreviewParserBoundsLargeFiles() throws {
+        let preview = try CSVPreviewParser.parse(
+            "Name,Value\nFirst,1\nSecond,2\n",
+            maximumRows: 1
+        )
+
+        #expect(preview.headers == ["Name", "Value"])
+        #expect(preview.rows == [["First", "1"]])
+        #expect(preview.isTruncated)
+    }
+
     @Test @MainActor func launcherRootFooterExposesAppMenuAndActions() {
         let viewModel = LauncherViewModel()
         #expect(viewModel.route == .root)
@@ -360,17 +724,17 @@ struct CommandlyTests {
         viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
 
         viewModel.performApplicationAction(BuiltInCommandActionID.copyAppName)
-        await waitUntil { await pasteboard.currentValue == "CopyApp" }
+        await waitUntil { pasteboard.currentValue == "CopyApp" }
         #expect(pasteboard.currentValue == "CopyApp")
 
         viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
         viewModel.performApplicationAction(BuiltInCommandActionID.copyAppPath)
-        await waitUntil { await pasteboard.currentValue == "/Applications/CopyApp.app" }
+        await waitUntil { pasteboard.currentValue == "/Applications/CopyApp.app" }
         #expect(pasteboard.currentValue == "/Applications/CopyApp.app")
 
         viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
         viewModel.performApplicationAction(BuiltInCommandActionID.copyBundleIdentifier)
-        await waitUntil { await pasteboard.currentValue == "com.example.copy" }
+        await waitUntil { pasteboard.currentValue == "com.example.copy" }
         #expect(pasteboard.currentValue == "com.example.copy")
     }
 
@@ -1032,7 +1396,7 @@ struct CommandlyTests {
     @Test @MainActor func launcherPlaceholderActionSurfacesHonestStatus() async {
         let viewModel = LauncherViewModel()
         await viewModel.flushSearchForTesting()
-        viewModel.selectedID = "search-files"
+        viewModel.selectedID = "my-schedule"
         viewModel.confirmSelection()
         #expect(viewModel.statusMessage?.contains("not implemented") == true)
     }
@@ -1308,6 +1672,24 @@ struct CommandlyTests {
         #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared) == false)
     }
 
+    @Test @MainActor func folderAccessStoreRejectsLegacyBookmarksUntilTheyAreRegranted() {
+        let suiteName = "CommandlyTests.FolderAccess.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Could not create isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let bookmark = Data([0x01, 0x02, 0x03])
+        defaults.set([bookmark], forKey: "settings.folderAccessBookmarks")
+        let store = UserDefaultsFolderAccessStore(defaults: defaults)
+
+        #expect(store.bookmarkData.isEmpty)
+
+        store.saveBookmarks([bookmark])
+        #expect(store.bookmarkData == [bookmark])
+        #expect(defaults.integer(forKey: "settings.folderAccessBookmarkFormatVersion") == 1)
+    }
+
     @Test @MainActor func setupTogglesPersistPreferences() async {
         let settings = InMemoryAppSettingsStore()
         let loginItems = InMemoryLoginItemManager()
@@ -1477,5 +1859,38 @@ private final class RecordingPrivacySettingsOpener: PrivacySettingsOpening, @unc
 
     func open(_ pane: PrivacySettingsPane) async {
         openedPanes.append(pane)
+    }
+}
+
+private struct MissingAccessFileSearchService: FileSearching {
+    func search(_ request: FileSearchRequest) async throws -> [FileSearchItem] {
+        _ = request
+        throw FileSearchError.noAuthorizedScopes
+    }
+}
+
+private actor PhasedFileSearchService: FileSearching {
+    let filenameResults: [FileSearchItem]
+    let contentResults: [FileSearchItem]
+    let contentError: FileSearchError?
+    private(set) var requests: [FileSearchRequest] = []
+
+    init(
+        filenameResults: [FileSearchItem],
+        contentResults: [FileSearchItem],
+        contentError: FileSearchError? = nil
+    ) {
+        self.filenameResults = filenameResults
+        self.contentResults = contentResults
+        self.contentError = contentError
+    }
+
+    func search(_ request: FileSearchRequest) async throws -> [FileSearchItem] {
+        requests.append(request)
+        if request.includesFileContents {
+            if let contentError { throw contentError }
+            return contentResults
+        }
+        return filenameResults
     }
 }

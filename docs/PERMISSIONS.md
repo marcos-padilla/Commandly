@@ -8,7 +8,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 |------------|-----------------|---------------|----------|
 | Calendar | Surface upcoming meetings from the launcher | Onboarding Grant Access or later feature enablement | System Settings → Privacy & Security → Calendars |
 | Contacts | Find people quickly from the launcher | Onboarding Grant Access or later feature enablement | System Settings → Privacy & Security → Contacts |
-| Files and Folders | Search folders the user selects | Onboarding Grant Access shows a folder picker; security-scoped bookmarks are stored | Re-run picker or System Settings → Files and Folders |
+| Files and Folders | Search, preview, open, copy, move, duplicate, create shortcuts for, or trash files inside folders the user selects | Onboarding Grant Access or Settings Manage Folders shows a folder picker; versioned security-scoped bookmarks are stored. Mutating actions run only after the user explicitly selects them. | Re-run Settings → Permissions → Manage Folders or System Settings → Files and Folders |
 | Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
 | Clipboard History | Browse and re-copy recent pasteboard items from the launcher; on-device Vision/PDFKit indexes images and readable files for search | Activating the Clipboard History command (no TCC prompt for pasteboard monitoring or on-device analysis) | Clear history from the command Actions menu |
@@ -17,7 +17,8 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 ## Entitlements and usage strings
 
 - Sandbox remains enabled.
-- `com.apple.security.files.user-selected.read-only` for folder picks.
+- `com.apple.security.files.user-selected.read-write` for folder picks so explicit file actions can modify selected locations.
+- `com.apple.security.files.bookmarks.app-scope` for restoring selected-folder access after relaunch.
 - `com.apple.security.personal-information.calendars`
 - `com.apple.security.personal-information.addressbook`
 - `com.apple.security.automation.apple-events` plus a Finder temporary exception for Get Info

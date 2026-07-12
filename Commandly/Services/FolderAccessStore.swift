@@ -15,7 +15,9 @@ protocol FolderAccessStoring: AnyObject, Sendable {
 final class UserDefaultsFolderAccessStore: FolderAccessStoring, @unchecked Sendable {
     private enum Key {
         static let bookmarks = "settings.folderAccessBookmarks"
+        static let bookmarkFormatVersion = "settings.folderAccessBookmarkFormatVersion"
     }
+    private static let currentBookmarkFormatVersion = 1
 
     private let defaults: UserDefaults
 
@@ -24,11 +26,19 @@ final class UserDefaultsFolderAccessStore: FolderAccessStoring, @unchecked Senda
     }
 
     var bookmarkData: [Data] {
-        defaults.array(forKey: Key.bookmarks) as? [Data] ?? []
+        guard defaults.integer(forKey: Key.bookmarkFormatVersion)
+            == Self.currentBookmarkFormatVersion else {
+            return []
+        }
+        return defaults.array(forKey: Key.bookmarks) as? [Data] ?? []
     }
 
     func saveBookmarks(_ bookmarks: [Data]) {
         defaults.set(bookmarks, forKey: Key.bookmarks)
+        defaults.set(
+            Self.currentBookmarkFormatVersion,
+            forKey: Key.bookmarkFormatVersion
+        )
     }
 
     var hasUsableAccess: Bool {

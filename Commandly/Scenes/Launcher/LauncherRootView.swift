@@ -28,6 +28,13 @@ struct LauncherRootView: View {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                case .command(let id) where id == BuiltInCommandID.searchFiles:
+                    if let fileSearchViewModel = viewModel.fileSearchViewModel {
+                        FileSearchView(viewModel: fileSearchViewModel)
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 case .uninstallReview:
                     if let uninstallViewModel = viewModel.uninstallViewModel {
                         ApplicationUninstallView(viewModel: uninstallViewModel)
@@ -104,12 +111,13 @@ struct LauncherRootView: View {
                             viewModel.dismissApplicationActionsPanel()
                         }
 
-                    ApplicationActionsPanel(
+                    LauncherActionPanel(
                         title: viewModel.applicationActionsPanelTitle,
-                        actions: viewModel.filteredApplicationActions,
+                        actions: viewModel.filteredApplicationActions.map(\.panelItem),
                         query: $viewModel.applicationActionsQuery,
                         onSelect: { viewModel.performApplicationAction($0) },
-                        onDismiss: { viewModel.dismissApplicationActionsPanel() }
+                        onDismiss: { viewModel.dismissApplicationActionsPanel() },
+                        onBack: nil
                     )
                     .padding(.trailing, density.spacing(.md))
                     .padding(.bottom, 52)
@@ -126,8 +134,12 @@ struct LauncherRootView: View {
             return .handled
         }
         .onKeyPress(keys: [KeyEquivalent("k")], phases: .down) { press in
-            if press.modifiers.contains(.command), viewModel.route == .root {
-                viewModel.presentApplicationActionsForSelection()
+            if press.modifiers.contains(.command) {
+                if viewModel.route == .root {
+                    viewModel.presentApplicationActionsForSelection()
+                } else if case .command = viewModel.route {
+                    viewModel.performFooterAction(BuiltInCommandActionID.openActions)
+                }
                 return .handled
             }
             return .ignored
@@ -150,7 +162,9 @@ struct LauncherRootView: View {
     }
 
     private var activeStatusMessage: String? {
-        viewModel.clipboardViewModel?.statusMessage ?? viewModel.statusMessage
+        viewModel.clipboardViewModel?.statusMessage
+            ?? viewModel.fileSearchViewModel?.statusMessage
+            ?? viewModel.statusMessage
     }
 
     private var rootContent: some View {

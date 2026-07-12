@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SearchKit
 
@@ -41,5 +42,33 @@ struct SearchKitTests {
             keywords: ["preferences"]
         )
         #expect(score == SearchMatchScorer.keywordPrefix)
+    }
+
+    @Test func fileSearchCategoriesHaveStableTitles() {
+        #expect(FileSearchCategory.all.title == "All Files")
+        #expect(FileSearchCategory.sourceCode.title == "Source Code")
+        #expect(Set(FileSearchCategory.allCases.map(\.id)).count == FileSearchCategory.allCases.count)
+    }
+
+    @Test func inMemoryFileSearchRecordsAndLimitsRequests() async throws {
+        let items = (0..<3).map { index in
+            FileSearchItem(
+                url: URL(fileURLWithPath: "/tmp/file-\(index).txt"),
+                name: "file-\(index).txt",
+                parentPath: "/tmp",
+                kind: .file,
+                contentTypeDescription: "Text"
+            )
+        }
+        let service = InMemoryFileSearchService(items: items)
+        let request = FileSearchRequest(
+            query: SearchQuery(text: "file", limit: 2),
+            category: .documents
+        )
+
+        let results = try await service.search(request)
+
+        #expect(results.count == 2)
+        #expect(await service.requests == [request])
     }
 }

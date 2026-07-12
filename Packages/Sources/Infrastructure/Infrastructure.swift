@@ -64,6 +64,82 @@ public protocol FileRevealing: Sendable {
     func revealInFinder(urls: [URL]) async throws
 }
 
+/// A system-provided application, sharing service, or destination shown by file actions.
+public struct FileActionOption: Sendable, Equatable, Identifiable, Hashable {
+    public let id: String
+    public let title: String
+    public let subtitle: String?
+
+    public init(id: String, title: String, subtitle: String? = nil) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+    }
+}
+
+/// File operations and native system integrations used by File Search.
+@MainActor
+public protocol FileActionServicing: Sendable {
+    func applications(toOpen url: URL) async -> [FileActionOption]
+    func open(_ url: URL, withApplication optionID: String) async throws
+    func sharingServices(for url: URL) async -> [FileActionOption]
+    func share(_ url: URL, withService optionID: String) async throws
+    func chooseDestination(title: String) async -> URL?
+    func duplicate(_ url: URL) async throws -> URL
+    func copy(_ url: URL, to directory: URL) async throws -> URL
+    func move(_ url: URL, to directory: URL) async throws -> URL
+    func createShortcut(for url: URL, in directory: URL) async throws -> URL
+    func moveToTrash(_ url: URL) async throws
+}
+
+/// No-op file actions used by previews and tests that do not exercise actions.
+@MainActor
+public final class InMemoryFileActionService: FileActionServicing {
+    public var applicationOptions: [FileActionOption]
+    public var sharingOptions: [FileActionOption]
+    public var chosenDestination: URL?
+    public private(set) var opened: [(URL, String)] = []
+    public private(set) var shared: [(URL, String)] = []
+    public private(set) var duplicated: [URL] = []
+    public private(set) var copied: [(URL, URL)] = []
+    public private(set) var moved: [(URL, URL)] = []
+    public private(set) var shortcuts: [(URL, URL)] = []
+    public private(set) var trashed: [URL] = []
+
+    public init(
+        applicationOptions: [FileActionOption] = [],
+        sharingOptions: [FileActionOption] = [],
+        chosenDestination: URL? = nil
+    ) {
+        self.applicationOptions = applicationOptions
+        self.sharingOptions = sharingOptions
+        self.chosenDestination = chosenDestination
+    }
+
+    public func applications(toOpen url: URL) async -> [FileActionOption] { applicationOptions }
+    public func open(_ url: URL, withApplication optionID: String) async throws { opened.append((url, optionID)) }
+    public func sharingServices(for url: URL) async -> [FileActionOption] { sharingOptions }
+    public func share(_ url: URL, withService optionID: String) async throws { shared.append((url, optionID)) }
+    public func chooseDestination(title: String) async -> URL? { chosenDestination }
+    public func duplicate(_ url: URL) async throws -> URL {
+        duplicated.append(url)
+        return url.deletingPathExtension().appendingPathExtension("copy.\(url.pathExtension)")
+    }
+    public func copy(_ url: URL, to directory: URL) async throws -> URL {
+        copied.append((url, directory))
+        return directory.appendingPathComponent(url.lastPathComponent)
+    }
+    public func move(_ url: URL, to directory: URL) async throws -> URL {
+        moved.append((url, directory))
+        return directory.appendingPathComponent(url.lastPathComponent)
+    }
+    public func createShortcut(for url: URL, in directory: URL) async throws -> URL {
+        shortcuts.append((url, directory))
+        return directory.appendingPathComponent("\(url.deletingPathExtension().lastPathComponent) Commandly Shortcut.webloc")
+    }
+    public func moveToTrash(_ url: URL) async throws { trashed.append(url) }
+}
+
 /// Application-bundle file operations (package contents, trash).
 public protocol ApplicationBundleManaging: Sendable {
     /// Opens the `Contents` directory inside an `.app` bundle.
@@ -297,6 +373,16 @@ public protocol PasteboardAccessing: Sendable {
     func readString() async -> String?
     /// Writes a string to the pasteboard.
     func writeString(_ string: String) async
+    /// Writes file URLs so Finder and other apps can paste the files themselves.
+    func writeFileURLs(_ urls: [URL]) async
+}
+
+extension PasteboardAccessing {
+    public func writeFileURLs(_ urls: [URL]) async {
+        if let first = urls.first {
+            await writeString(first.path)
+        }
+    }
 }
 
 /// User notification posting boundary.

@@ -31,4 +31,15 @@ struct LauncherApplicationAction: Identifiable, Sendable, Equatable, Hashable {
             isEnabled: true
         )
     }
+
+    var panelItem: LauncherActionPanelItem {
+        LauncherActionPanelItem(
+            id: id,
+            title: title,
+            systemImage: systemImage,
+            keyHint: keyHint,
+            isDestructive: isDestructive,
+            section: String(section.rawValue)
+        )
+    }
 }

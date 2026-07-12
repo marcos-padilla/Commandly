@@ -695,8 +695,8 @@ private func footerChrome(
     .scaleEffect(isPressed ? 0.97 : (isHovered || didSucceed ? 1.03 : 1))
 }
 
-/// Captures secondary clicks so application rows can open the actions panel.
-private struct LauncherRightClickCatcher: NSViewRepresentable {
+/// Captures secondary clicks so launcher result rows can open their actions panel.
+struct LauncherRightClickCatcher: NSViewRepresentable {
     var onRightClick: () -> Void
 
     func makeNSView(context: Context) -> RightClickView {
