@@ -18,14 +18,14 @@ struct LauncherSearchField: View {
     var body: some View {
         HStack(spacing: density.spacing(.sm)) {
             Image(systemName: "magnifyingglass")
-                .commandlyFont(size: 15, weight: .medium)
-                .foregroundStyle(.secondary)
+                .commandlyFont(size: 14, weight: .medium)
+                .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
 
             ZStack(alignment: .leading) {
                 if autocompleteSuffix.isEmpty == false, query.isEmpty == false {
                     Text(query + autocompleteSuffix)
-                        .commandlyFont(size: 16, weight: .medium)
+                        .commandlyFont(size: 15, weight: .medium)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .allowsHitTesting(false)
@@ -34,7 +34,7 @@ struct LauncherSearchField: View {
 
                 TextField("Search apps and commands…", text: $query)
                     .textFieldStyle(.plain)
-                    .commandlyFont(size: 16, weight: .medium)
+                    .commandlyFont(size: 15, weight: .medium)
                     .focused($isFocused)
                     .onSubmit(onSubmit)
                     .onKeyPress(.upArrow) {
@@ -126,11 +126,11 @@ struct LauncherSectionHeader: View {
         Text(title.uppercased())
             .commandlyFont(size: 10, weight: .semibold)
             .foregroundStyle(.tertiary)
-            .tracking(0.6)
+            .tracking(0.8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, density.spacing(.md))
             .padding(.top, density.sectionHeaderTopPadding)
-            .padding(.bottom, density.spacing(.xxs))
+            .padding(.bottom, density.spacing(.xxxs))
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -151,7 +151,7 @@ struct LauncherResultRow: View {
                     size: density.iconSize
                 )
 
-                VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: density.spacing(.xs)) {
                     Text(item.title)
                         .commandlyFont(size: 13, weight: .medium)
                         .foregroundStyle(.primary)
@@ -159,23 +159,25 @@ struct LauncherResultRow: View {
 
                     if let subtitle = item.subtitle {
                         Text(subtitle)
-                            .commandlyFont(size: 11, weight: .regular)
-                            .foregroundStyle(.secondary)
+                            .commandlyFont(size: 12, weight: .regular)
+                            .foregroundStyle(.tertiary)
                             .lineLimit(1)
+                            .layoutPriority(-1)
                     }
                 }
-
-                Spacer(minLength: density.spacing(.xs))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(item.badge.title)
                     .commandlyFont(size: 11, weight: .medium)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
             }
             .padding(.horizontal, density.rowHorizontalPadding)
             .padding(.vertical, density.rowVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(isSelected ? BrandPalette.accent.opacity(0.22) : Color.clear)
+                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
         }
@@ -184,10 +186,26 @@ struct LauncherResultRow: View {
         .onHover { hovering in
             onHoverChange?(hovering)
         }
-        .accessibilityLabel(item.badge == .calculator
-            ? "Calculator result \(item.title), expression \(item.subtitle ?? "")"
-            : "\(item.title), \(item.badge.title)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabelText)
+        .accessibilityValue(accessibilityValueText)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var accessibilityLabelText: String {
+        if item.badge == .calculator {
+            return "Calculator result \(item.title)"
+        }
+        return item.title
+    }
+
+    private var accessibilityValueText: String {
+        var parts: [String] = []
+        if let subtitle = item.subtitle, subtitle.isEmpty == false {
+            parts.append(subtitle)
+        }
+        parts.append(item.badge.title)
+        return parts.joined(separator: ", ")
     }
 }
 

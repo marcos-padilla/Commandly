@@ -24,10 +24,10 @@ Feature UI should prefer `.commandlyFont(size:weight:design:)` for chrome and co
 
 User preference (`AppViewModePreference`) maps to `CommandlyLayoutDensity` via `commandlyViewMode(_:)`:
 
-- **Comfortable** → current spacing, row padding, and launcher height
+- **Comfortable** → default spacing, compact single-line launcher rows, and standard launcher height
 - **Compact** → tighter padding, smaller icons, shorter launcher panel
 
-Launcher and settings chrome read `\.commandlyLayoutDensity` for paddings and sizes.
+Launcher and settings chrome read `\.commandlyLayoutDensity` for paddings and sizes. Launcher result rows are single-line (title plus optional muted inline subtitle and trailing kind label) in both densities.
 
 ## Rules
 

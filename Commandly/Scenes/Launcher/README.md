@@ -10,6 +10,8 @@ The main field is the primary entry point for discovering and running work:
 - Launcher chrome stays **borderless** (no titled title-bar / empty chrome strip) and patches `canBecomeKey` for the launcher window identifier so reopen can type; `searchFocusEpoch` / `prepareForPresentation` / `requestSearchFocus` reclaim `@FocusState` after hide
 - Click outside / app deactivate dismisses the launcher (global + local mouse monitors, resign-key, resign-active)
 - Ranked results via SearchKit providers: **commands**, **applications**, and honest **placeholders**
+- Result rows are single-line: icon, title, optional muted inline subtitle, trailing kind label; selection uses a subtle full-width rounded overlay
+- While the results list is scrolling, pointer hover does not move selection (keyboard selection still works); hover may resume shortly after scrolling stops
 - Calculator-shaped queries are evaluated via **CalculatorKit** in parallel and pinned in a dedicated **Calculator** two-pane card above other results
 - `CompositeSearchService` merges scores (prefix > keyword > contains) and cancels in-flight work on each keystroke
 - Ghost autocomplete for the best result prefix or calculator completion; **Tab** and the right-side Tab control accept it, while **Return** confirms the selected row

@@ -54,9 +54,13 @@ final class LauncherViewModel {
     private(set) var statusMessage: String?
     private(set) var shouldScrollToSelection = false
     private(set) var inputDevice: LauncherInputDevice = .pointer
+    /// True while the results list is scrolling; pointer hover must not move selection.
+    private(set) var isResultsScrolling = false
     private var hoveredID: String?
     var route: LauncherRoute = .root
     var clipboardViewModel: ClipboardHistoryViewModel?
+    @ObservationIgnored
+    private var resultsScrollEndTask: Task<Void, Never>?
 
     var onDismiss: () -> Void
     var onOpenSettings: () -> Void
@@ -247,9 +251,13 @@ final class LauncherViewModel {
     func resetAfterDismiss() {
         searchTask?.cancel()
         searchTask = nil
+        resultsScrollEndTask?.cancel()
+        resultsScrollEndTask = nil
         query = ""
         statusMessage = nil
         shouldScrollToSelection = false
+        isResultsScrolling = false
+        hoveredID = nil
         inputDevice = .pointer
         route = .root
         clipboardViewModel = nil
@@ -266,6 +274,7 @@ final class LauncherViewModel {
 
     func setHovered(_ id: String?) {
         hoveredID = id
+        guard isResultsScrolling == false else { return }
         guard let id, inputDevice == .pointer else { return }
         select(id)
     }
@@ -276,7 +285,30 @@ final class LauncherViewModel {
         }
     }
 
+    /// Marks the results list as scrolling so pointer hover cannot steal selection.
+    ///
+    /// Call on each scroll-offset change. Clears the hovered row on begin, keeps
+    /// tracking subsequent hover IDs without applying them, then after a short
+    /// debounce reapplies hover selection if the pointer is still the active input.
+    /// The delay is only for hover resume — keyboard selection stays active throughout.
+    func beginResultsScrolling() {
+        if isResultsScrolling == false {
+            isResultsScrolling = true
+            hoveredID = nil
+        }
+        resultsScrollEndTask?.cancel()
+        resultsScrollEndTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(140))
+            guard let self, Task.isCancelled == false else { return }
+            self.isResultsScrolling = false
+            if self.inputDevice == .pointer, let hoveredID = self.hoveredID {
+                self.select(hoveredID)
+            }
+        }
+    }
+
     func beginPointerInput() {
+        guard isResultsScrolling == false else { return }
         guard inputDevice != .pointer else { return }
         inputDevice = .pointer
         if let hoveredID {
@@ -517,6 +549,16 @@ final class LauncherViewModel {
     func flushSearchForTesting() async {
         searchTask?.cancel()
         await performSearch(queryText: query, loadApplicationsIfNeeded: true)
+    }
+
+    /// Ends results-scroll hover suppression immediately (tests).
+    func flushResultsScrollingForTesting() {
+        resultsScrollEndTask?.cancel()
+        resultsScrollEndTask = nil
+        isResultsScrolling = false
+        if inputDevice == .pointer, let hoveredID {
+            select(hoveredID)
+        }
     }
 
     private func openApplication(bundleIdentifier: String) async {

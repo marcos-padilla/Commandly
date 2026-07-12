@@ -536,6 +536,43 @@ struct CommandlyTests {
         #expect(viewModel.selectedID == nil)
     }
 
+    @Test @MainActor func launcherSuppressesPointerHoverWhileResultsScrolling() async {
+        let viewModel = LauncherViewModel()
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.count >= 3)
+
+        let firstID = viewModel.rootItems[0].id
+        let secondID = viewModel.rootItems[1].id
+        let thirdID = viewModel.rootItems[2].id
+        viewModel.select(firstID)
+
+        viewModel.setHovered(secondID)
+        #expect(viewModel.selectedID == secondID)
+
+        viewModel.beginResultsScrolling()
+        #expect(viewModel.isResultsScrolling)
+        viewModel.setHovered(thirdID)
+        #expect(viewModel.selectedID == secondID)
+
+        viewModel.moveSelection(offset: -1)
+        #expect(viewModel.selectedID == firstID)
+        #expect(viewModel.isResultsScrolling)
+
+        viewModel.flushResultsScrollingForTesting()
+        #expect(viewModel.isResultsScrolling == false)
+        #expect(viewModel.selectedID == firstID)
+
+        viewModel.setHovered(thirdID)
+        viewModel.beginPointerInput()
+        #expect(viewModel.selectedID == thirdID)
+
+        viewModel.beginResultsScrolling()
+        viewModel.setHovered(secondID)
+        #expect(viewModel.selectedID == thirdID)
+        viewModel.flushResultsScrollingForTesting()
+        #expect(viewModel.selectedID == secondID)
+    }
+
     @Test @MainActor func launcherOpenSettingsActionInvokesCallback() async {
         var openedSettings = false
         var dismissed = false

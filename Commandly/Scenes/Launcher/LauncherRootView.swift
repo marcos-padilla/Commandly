@@ -115,11 +115,11 @@ struct LauncherRootView: View {
                 }
             )
 
-            Divider().opacity(0.35)
+            Divider().opacity(0.22)
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: density.spacing(.xxs)) {
+                    LazyVStack(alignment: .leading, spacing: density.spacing(.xxxs)) {
                         if viewModel.sections.isEmpty {
                             emptyState
                         } else {
@@ -173,10 +173,16 @@ struct LauncherRootView: View {
                             }
                         }
                     }
-                    .padding(.vertical, density.spacing(.xs))
-                    .padding(.bottom, density.spacing(.sm))
+                    .padding(.vertical, density.spacing(.xxs))
+                    .padding(.bottom, density.spacing(.xs))
                 }
                 .frame(maxHeight: .infinity)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y
+                } action: { oldOffset, newOffset in
+                    guard oldOffset != newOffset else { return }
+                    viewModel.beginResultsScrolling()
+                }
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
