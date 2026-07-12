@@ -69,11 +69,15 @@ final class AppRuntime {
     func makeLauncherViewModel(
         onOpenSettings: @escaping () -> Void
     ) -> LauncherViewModel {
+        let quit: () -> Void = {
+            NSApplication.shared.terminate(nil)
+        }
         if let cachedLauncherViewModel {
             cachedLauncherViewModel.onDismiss = { [weak self] in
                 self?.hideLauncher()
             }
             cachedLauncherViewModel.onOpenSettings = onOpenSettings
+            cachedLauncherViewModel.onQuit = quit
             return cachedLauncherViewModel
         }
         let viewModel = LauncherViewModel(
@@ -84,7 +88,8 @@ final class AppRuntime {
             onDismiss: { [weak self] in
                 self?.hideLauncher()
             },
-            onOpenSettings: onOpenSettings
+            onOpenSettings: onOpenSettings,
+            onQuit: quit
         )
         cachedLauncherViewModel = viewModel
         return viewModel

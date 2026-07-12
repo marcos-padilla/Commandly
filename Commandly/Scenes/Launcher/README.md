@@ -27,7 +27,7 @@ Built-in commands register through `CommandCatalog` / `LauncherCommandRegisterin
 - Action mode — runs immediately (example: Open Settings)
 - View mode — pushes a command surface with its own search/list/preview and footer actions (example: Clipboard History)
 
-Root search has no footer bar. Command surfaces use footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
+Root search shows a footer with an app-menu (Settings, Quit) and an empty **Actions** menu. Command surfaces keep their own footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
 
 ## Clipboard History
 

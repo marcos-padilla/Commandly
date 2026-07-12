@@ -266,6 +266,42 @@ struct CommandlyTests {
         #expect(viewModel.footerActions.contains { $0.id == BuiltInCommandActionID.copy })
     }
 
+    @Test @MainActor func launcherRootFooterExposesAppMenuAndActions() {
+        let viewModel = LauncherViewModel()
+        #expect(viewModel.route == .root)
+        #expect(viewModel.appMenuActions.map(\.id) == [
+            BuiltInCommandActionID.settings,
+            BuiltInCommandActionID.quit
+        ])
+        #expect(viewModel.footerActions.map(\.id) == [
+            BuiltInCommandActionID.openActions
+        ])
+        #expect(viewModel.rootActionsMenuItems.isEmpty)
+    }
+
+    @Test @MainActor func launcherRootFooterSettingsOpensSettingsAndDismisses() {
+        var didDismiss = false
+        var didOpenSettings = false
+        let viewModel = LauncherViewModel(
+            onDismiss: { didDismiss = true },
+            onOpenSettings: { didOpenSettings = true }
+        )
+
+        viewModel.performFooterAction(BuiltInCommandActionID.settings)
+
+        #expect(didDismiss)
+        #expect(didOpenSettings)
+    }
+
+    @Test @MainActor func launcherRootFooterQuitInvokesQuitCallback() {
+        var didQuit = false
+        let viewModel = LauncherViewModel(onQuit: { didQuit = true })
+
+        viewModel.performFooterAction(BuiltInCommandActionID.quit)
+
+        #expect(didQuit)
+    }
+
     @Test @MainActor func launcherResetAfterDismissClearsClipboardSurface() {
         let catalog = CommandCatalog.makeBuiltIn()
         let store = ClipboardHistoryStore()

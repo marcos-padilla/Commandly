@@ -209,6 +209,66 @@ struct LauncherResultRow: View {
     }
 }
 
+/// Root launcher footer: app menu on the left, primary + Actions on the right.
+struct LauncherRootFooterBar: View {
+    let appMenuActions: [CommandActionDescriptor]
+    let actions: [CommandActionDescriptor]
+    var menuActions: [CommandActionDescriptor] = []
+    var onAction: (CommandActionID) -> Void
+    @Environment(\.commandlyLayoutDensity) private var density
+
+    var body: some View {
+        HStack(spacing: density.spacing(.sm)) {
+            // AppKit menu opens upward and avoids SwiftUI Menu’s empty title-bar chrome.
+            LauncherUpwardMenuButton(
+                actions: appMenuActions,
+                onAction: onAction
+            ) {
+                LauncherAppMark(size: density.iconSize - 10)
+            }
+            .accessibilityLabel("Commandly menu")
+
+            Spacer(minLength: density.spacing(.sm))
+
+            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                if index > 0 {
+                    footerDivider
+                }
+
+                if action.id == BuiltInCommandActionID.openActions {
+                    LauncherUpwardMenuButton(
+                        actions: menuActions,
+                        emptyPlaceholderTitle: "No actions yet",
+                        isEnabled: action.isEnabled,
+                        onAction: onAction
+                    ) {
+                        footerLabel(action)
+                    }
+                    .accessibilityLabel(action.title)
+                } else {
+                    LauncherFooterActionButton(
+                        title: action.title,
+                        keys: action.keyHint?.symbols ?? [],
+                        isEnabled: action.isEnabled,
+                        action: { onAction(action.id) }
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, density.spacing(.md))
+        .padding(.vertical, density.spacing(.sm))
+        .background(Color.primary.opacity(0.04))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Launcher footer")
+    }
+}
+
+/// Command-surface footer: context title on the left, actions on the right.
 struct LauncherFooterBar: View {
     let contextTitle: String
     let contextSystemImage: String
@@ -243,18 +303,14 @@ struct LauncherFooterBar: View {
                 }
 
                 if action.id == BuiltInCommandActionID.openActions {
-                    Menu {
-                        ForEach(menuActions) { menuAction in
-                            Button(menuAction.title) {
-                                onAction(menuAction.id)
-                            }
-                            .disabled(menuAction.isEnabled == false)
-                        }
-                    } label: {
+                    LauncherUpwardMenuButton(
+                        actions: menuActions,
+                        isEnabled: action.isEnabled,
+                        onAction: onAction
+                    ) {
                         footerLabel(action)
                     }
-                    .menuStyle(.borderlessButton)
-                    .disabled(action.isEnabled == false)
+                    .accessibilityLabel(action.title)
                 } else if action.id == BuiltInCommandActionID.copy {
                     LauncherFooterCopyActionButton(
                         title: action.title,
@@ -281,36 +337,165 @@ struct LauncherFooterBar: View {
                 .frame(height: 1)
         }
     }
+}
 
-    private var footerDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.1))
-            .frame(width: 1, height: 14)
-    }
+private var footerDivider: some View {
+    Rectangle()
+        .fill(Color.primary.opacity(0.1))
+        .frame(width: 1, height: 14)
+}
 
-    private func footerLabel(_ action: CommandActionDescriptor) -> some View {
-        HStack(spacing: 6) {
-            Text(action.title)
-                .commandlyFont(size: 11, weight: .medium)
-                .foregroundStyle(.secondary)
-            if let keys = action.keyHint?.symbols {
-                HStack(spacing: 3) {
-                    ForEach(keys, id: \.self) { key in
-                        Text(key)
-                            .commandlyFont(size: 10, weight: .semibold, design: .rounded)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(Color.primary.opacity(0.08))
-                            )
-                    }
+private func footerLabel(_ action: CommandActionDescriptor) -> some View {
+    HStack(spacing: 6) {
+        Text(action.title)
+            .commandlyFont(size: 11, weight: .medium)
+            .foregroundStyle(.secondary)
+        if let keys = action.keyHint?.symbols {
+            HStack(spacing: 3) {
+                ForEach(keys, id: \.self) { key in
+                    Text(key)
+                        .commandlyFont(size: 10, weight: .semibold, design: .rounded)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.primary.opacity(0.08))
+                        )
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+}
+
+/// Compact Commandly mark for the root footer app menu.
+struct LauncherAppMark: View {
+    var size: CGFloat = 18
+
+    var body: some View {
+        Image(systemName: "command")
+            .commandlyFont(size: size * 0.55, weight: .semibold)
+            .foregroundStyle(BrandPalette.accentSoft)
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                    .fill(BrandPalette.accent.opacity(0.18))
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+/// Footer control that presents a native `NSMenu` above the anchor.
+///
+/// SwiftUI `Menu` with `.menuStyle(.borderlessButton)` often draws an empty
+/// title strip at the top of the panel; AppKit avoids that and lets us pin the
+/// menu above footer controls.
+private struct LauncherUpwardMenuButton<Label: View>: View {
+    let actions: [CommandActionDescriptor]
+    var emptyPlaceholderTitle: String?
+    var isEnabled: Bool = true
+    let onAction: (CommandActionID) -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var anchorView: NSView?
+    @State private var menuBridge: LauncherUpwardMenuBridge?
+
+    var body: some View {
+        Button {
+            presentMenu()
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
+        .disabled(isEnabled == false)
+        .opacity(isEnabled ? 1 : 0.45)
+        .background {
+            LauncherMenuAnchorViewReader(anchorView: $anchorView)
+        }
+    }
+
+    private func presentMenu() {
+        guard isEnabled, let anchorView else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let bridge = LauncherUpwardMenuBridge(onAction: onAction)
+        menuBridge = bridge
+
+        if actions.isEmpty, let emptyPlaceholderTitle {
+            let item = NSMenuItem(title: emptyPlaceholderTitle, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        } else {
+            for action in actions {
+                let item = NSMenuItem(
+                    title: action.title,
+                    action: #selector(LauncherUpwardMenuBridge.selectItem(_:)),
+                    keyEquivalent: keyEquivalent(for: action)
+                )
+                item.target = bridge
+                item.representedObject = action.id.rawValue
+                item.isEnabled = action.isEnabled
+                if action.id == BuiltInCommandActionID.settings || action.id == BuiltInCommandActionID.quit {
+                    item.keyEquivalentModifierMask = [.command]
+                }
+                menu.addItem(item)
+            }
+        }
+
+        // Non-flipped coords: y grows up. Place the menu’s top-left so its bottom
+        // sits just above the button.
+        let menuHeight = menu.size.height
+        let point = NSPoint(x: 0, y: anchorView.bounds.height + menuHeight)
+        menu.popUp(positioning: nil, at: point, in: anchorView)
+    }
+
+    private func keyEquivalent(for action: CommandActionDescriptor) -> String {
+        switch action.id {
+        case BuiltInCommandActionID.settings:
+            return ","
+        case BuiltInCommandActionID.quit:
+            return "q"
+        default:
+            return ""
+        }
+    }
+}
+
+/// Captures the hosting `NSView` so AppKit menus can be positioned from SwiftUI.
+private struct LauncherMenuAnchorViewReader: NSViewRepresentable {
+    @Binding var anchorView: NSView?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            anchorView = view
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            if anchorView !== nsView {
+                anchorView = nsView
+            }
+        }
+    }
+}
+
+/// Target for upward footer `NSMenuItem` actions.
+private final class LauncherUpwardMenuBridge: NSObject {
+    private let onAction: (CommandActionID) -> Void
+
+    init(onAction: @escaping (CommandActionID) -> Void) {
+        self.onAction = onAction
+    }
+
+    @objc func selectItem(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String else { return }
+        onAction(CommandActionID(rawValue: rawValue))
     }
 }
 

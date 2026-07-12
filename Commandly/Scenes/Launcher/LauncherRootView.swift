@@ -47,8 +47,15 @@ struct LauncherRootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            // Root search has no footer chrome; command surfaces (e.g. Clipboard) keep actions.
-            if case .command = viewModel.route {
+            switch viewModel.route {
+            case .root:
+                LauncherRootFooterBar(
+                    appMenuActions: viewModel.appMenuActions,
+                    actions: viewModel.footerActions,
+                    menuActions: viewModel.rootActionsMenuItems,
+                    onAction: { viewModel.performFooterAction($0) }
+                )
+            case .command:
                 LauncherFooterBar(
                     contextTitle: viewModel.contextTitle,
                     contextSystemImage: viewModel.contextSystemImage,

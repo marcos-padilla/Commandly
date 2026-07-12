@@ -241,4 +241,6 @@ public enum BuiltInCommandActionID {
     public static let clearHistory = CommandActionID(rawValue: "clear-history")
     public static let openActions = CommandActionID(rawValue: "open-actions")
     public static let goBack = CommandActionID(rawValue: "go-back")
+    public static let settings = CommandActionID(rawValue: "settings")
+    public static let quit = CommandActionID(rawValue: "quit")
 }

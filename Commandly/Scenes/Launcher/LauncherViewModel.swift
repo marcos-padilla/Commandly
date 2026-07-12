@@ -64,6 +64,7 @@ final class LauncherViewModel {
 
     var onDismiss: () -> Void
     var onOpenSettings: () -> Void
+    var onQuit: () -> Void
 
     @ObservationIgnored
     private var searchTask: Task<Void, Never>?
@@ -83,7 +84,8 @@ final class LauncherViewModel {
         calculatorSession: CalculatorSessionStore = CalculatorSessionStore(),
         placeholderItems: [LauncherItem] = LauncherPlaceholderCatalog.nonCommandItems,
         onDismiss: @escaping () -> Void = {},
-        onOpenSettings: @escaping () -> Void = {}
+        onOpenSettings: @escaping () -> Void = {},
+        onQuit: @escaping () -> Void = {}
     ) {
         self.catalog = catalog
         self.clipboardHistoryStore = clipboardHistoryStore
@@ -95,6 +97,7 @@ final class LauncherViewModel {
         self.placeholderItems = placeholderItems
         self.onDismiss = onDismiss
         self.onOpenSettings = onOpenSettings
+        self.onQuit = onQuit
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }
 
@@ -142,37 +145,37 @@ final class LauncherViewModel {
         }
     }
 
+    /// App-icon dropdown on the root footer (Settings, Quit).
+    var appMenuActions: [CommandActionDescriptor] {
+        [
+            CommandActionDescriptor(
+                id: BuiltInCommandActionID.settings,
+                title: "Settings…",
+                keyHint: CommandKeyHint(symbols: ["⌘", ","])
+            ),
+            CommandActionDescriptor(
+                id: BuiltInCommandActionID.quit,
+                title: "Quit Commandly",
+                keyHint: CommandKeyHint(symbols: ["⌘", "Q"])
+            )
+        ]
+    }
+
+    /// Root footer Actions menu items. Empty until root actions are defined.
+    var rootActionsMenuItems: [CommandActionDescriptor] {
+        []
+    }
+
     var footerActions: [CommandActionDescriptor] {
         switch route {
         case .root:
-            let title: String
-            switch selectedItem?.action {
-            case .openSettings: title = "Open Settings"
-            case .openCommand: title = "Open"
-            case .openApplication: title = "Open"
-            case .dismiss: title = "Close"
-            case .placeholder: title = "Preview"
-            case .copyText, .calculatorPrimary: title = "Copy"
-            case .none: title = "Select"
-            }
             return [
                 CommandActionDescriptor(
-                    id: CommandActionID(rawValue: "confirm"),
-                    title: title,
-                    isPrimary: true,
-                    keyHint: .return
-                ),
-                CommandActionDescriptor(
-                    id: CommandActionID(rawValue: "settings"),
-                    title: "Settings",
-                    keyHint: CommandKeyHint(symbols: ["⌘", ","])
-                ),
-                CommandActionDescriptor(
-                    id: CommandActionID(rawValue: "close"),
-                    title: "Close",
-                    keyHint: .escape
+                    id: BuiltInCommandActionID.openActions,
+                    title: "Actions",
+                    keyHint: .commandK
                 )
-            ] + calculatorFooterExtras
+            ]
         case .command:
             return clipboardViewModel?.footerActions
                 ?? catalog.command(for: BuiltInCommandID.clipboardHistory)?.manifest.defaultActions
@@ -217,16 +220,6 @@ final class LauncherViewModel {
             return actions
         }
         return clipboardViewModel?.menuActions ?? []
-    }
-
-    private var calculatorFooterExtras: [CommandActionDescriptor] {
-        guard activeCalculatorResult != nil else { return [] }
-        return [
-            CommandActionDescriptor(
-                id: CommandActionID(rawValue: "insertResult"),
-                title: "Insert"
-            )
-        ]
     }
 
     var showsActionsMenu: Bool {
@@ -395,61 +388,64 @@ final class LauncherViewModel {
             clipboardViewModel?.perform(id)
             return
         }
-        switch id.rawValue {
-        case "confirm":
-            confirmSelection()
-        case "settings":
+        switch id {
+        case BuiltInCommandActionID.settings:
             onDismiss()
             onOpenSettings()
-        case "close":
-            dismiss()
-        case "copyAnswer":
-            if let result = activeCalculatorResult {
-                copyCalculatorAnswer(resultID: result.id.rawValue)
-            }
-        case "copyUnformatted":
-            if let result = activeCalculatorResult {
-                Task { @MainActor [weak self] in
-                    await self?.pasteboard.writeString(result.formattedPrimaryValue.replacingOccurrences(of: ",", with: ""))
-                    self?.statusMessage = "Copied without formatting."
+        case BuiltInCommandActionID.quit:
+            onQuit()
+        case BuiltInCommandActionID.openActions:
+            break
+        default:
+            switch id.rawValue {
+            case "copyAnswer":
+                if let result = activeCalculatorResult {
+                    copyCalculatorAnswer(resultID: result.id.rawValue)
                 }
-            }
-        case "insertResult":
-            if let result = activeCalculatorResult {
-                query = result.formattedPrimaryValue
-                requestSearchFocus()
-            }
-        case "copyExpression":
-            if let result = activeCalculatorResult {
+            case "copyUnformatted":
+                if let result = activeCalculatorResult {
+                    Task { @MainActor [weak self] in
+                        await self?.pasteboard.writeString(result.formattedPrimaryValue.replacingOccurrences(of: ",", with: ""))
+                        self?.statusMessage = "Copied without formatting."
+                    }
+                }
+            case "insertResult":
+                if let result = activeCalculatorResult {
+                    query = result.formattedPrimaryValue
+                    requestSearchFocus()
+                }
+            case "copyExpression":
+                if let result = activeCalculatorResult {
+                    let combined = "\(result.displayExpression) = \(result.formattedPrimaryValue)"
+                    Task { @MainActor [weak self] in
+                        await self?.pasteboard.writeString(combined)
+                        self?.statusMessage = "Copied expression and answer."
+                    }
+                }
+            case "openCalculator":
+                guard let result = activeCalculatorResult else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await pasteboard.writeString(result.formattedPrimaryValue)
+                    await openCompanionApplication(
+                        bundleIdentifier: "com.apple.calculator",
+                        failureMessage: "Couldn’t open Calculator."
+                    )
+                }
+            case "addToNote":
+                guard let result = activeCalculatorResult else { return }
                 let combined = "\(result.displayExpression) = \(result.formattedPrimaryValue)"
                 Task { @MainActor [weak self] in
-                    await self?.pasteboard.writeString(combined)
-                    self?.statusMessage = "Copied expression and answer."
+                    guard let self else { return }
+                    await pasteboard.writeString(combined)
+                    await openCompanionApplication(
+                        bundleIdentifier: "com.apple.Notes",
+                        failureMessage: "Couldn’t open Notes."
+                    )
                 }
+            default:
+                break
             }
-        case "openCalculator":
-            guard let result = activeCalculatorResult else { return }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await pasteboard.writeString(result.formattedPrimaryValue)
-                await openCompanionApplication(
-                    bundleIdentifier: "com.apple.calculator",
-                    failureMessage: "Couldn’t open Calculator."
-                )
-            }
-        case "addToNote":
-            guard let result = activeCalculatorResult else { return }
-            let combined = "\(result.displayExpression) = \(result.formattedPrimaryValue)"
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await pasteboard.writeString(combined)
-                await openCompanionApplication(
-                    bundleIdentifier: "com.apple.Notes",
-                    failureMessage: "Couldn’t open Notes."
-                )
-            }
-        default:
-            break
         }
     }
 
