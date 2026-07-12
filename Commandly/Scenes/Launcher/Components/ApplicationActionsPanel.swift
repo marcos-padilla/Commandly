@@ -89,12 +89,12 @@ private struct ApplicationActionRow: View {
             HStack(spacing: density.spacing(.sm)) {
                 Image(systemName: action.systemImage)
                     .commandlyFont(size: 12, weight: .semibold)
-                    .foregroundStyle(action.isDestructive ? Color.orange : Color.primary.opacity(0.85))
+                    .foregroundStyle(action.isDestructive ? Color.red : Color.primary.opacity(0.85))
                     .frame(width: 18, alignment: .center)
 
                 Text(action.title)
                     .commandlyFont(size: 12, weight: .medium)
-                    .foregroundStyle(action.isDestructive ? Color.orange : Color.primary)
+                    .foregroundStyle(action.isDestructive ? Color.red : Color.primary)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
