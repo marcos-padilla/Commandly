@@ -20,13 +20,15 @@ public protocol SecureStoring: Sendable {
     func delete(_ key: SecureStoreKey) async throws
 }
 
-/// Categories of macOS permissions Commandly may eventually request.
+/// Categories of macOS permissions Commandly may request.
 public enum PermissionKind: String, Sendable, CaseIterable, Equatable {
     case accessibility
     case appleEvents
     case screenRecording
     case files
     case notifications
+    case calendar
+    case contacts
 }
 
 /// Current state of a permission.
@@ -47,6 +49,39 @@ public protocol PermissionChecking: Sendable {
 public protocol PermissionRequesting: Sendable {
     /// Requests a permission and returns the resulting state.
     func request(_ kind: PermissionKind) async -> PermissionState
+}
+
+/// Combined permission service for check + request flows.
+public protocol PermissionServicing: PermissionChecking, PermissionRequesting {}
+
+/// In-memory permission service for tests. Never prompts the system.
+///
+/// `@unchecked Sendable`: guarded by an internal lock for concurrent test use.
+public final class InMemoryPermissionService: PermissionServicing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var states: [PermissionKind: PermissionState]
+
+    /// Creates a service with predetermined states.
+    public init(states: [PermissionKind: PermissionState] = [:]) {
+        self.states = states
+    }
+
+    public func state(for kind: PermissionKind) async -> PermissionState {
+        lock.withLock { states[kind] ?? .notDetermined }
+    }
+
+    public func request(_ kind: PermissionKind) async -> PermissionState {
+        lock.withLock {
+            let next = states[kind] == .denied ? PermissionState.denied : .authorized
+            states[kind] = next
+            return next
+        }
+    }
+
+    /// Overwrites the stored state for a permission kind (tests only).
+    public func setState(_ state: PermissionState, for kind: PermissionKind) {
+        lock.withLock { states[kind] = state }
+    }
 }
 
 /// In-memory permission checker for tests. Never prompts the system.

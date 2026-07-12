@@ -4,6 +4,7 @@ import CommandKit
 import Persistence
 import SecurityKit
 import Observability
+import Infrastructure
 
 enum AppBootstrapper {
     @MainActor
@@ -23,13 +24,21 @@ enum AppBootstrapper {
             environment: environment
         )
 
+        let folderAccessStore = UserDefaultsFolderAccessStore()
+        let permissionService = SystemPermissionService(folderAccessStore: folderAccessStore)
+
         let dependencies = AppDependencies(
             metadata: metadata,
             dateProvider: SystemDateProvider(),
             uuidProvider: SystemUUIDProvider(),
             commandRegistry: CommandRegistry(),
             persistenceStore: InMemoryPersistenceStore(),
-            permissionChecker: InMemoryPermissionChecker(),
+            permissionService: permissionService,
+            privacySettingsOpener: WorkspacePrivacySettingsOpener(),
+            onboardingStatusStore: UserDefaultsOnboardingStatusStore(),
+            appSettingsStore: UserDefaultsAppSettingsStore(),
+            folderAccessStore: folderAccessStore,
+            loginItemManager: SMAppServiceLoginItemManager(),
             logger: Loggers.application
         )
 

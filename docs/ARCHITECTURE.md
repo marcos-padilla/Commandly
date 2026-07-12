@@ -56,6 +56,8 @@ Prefer initializer injection. Do not introduce a DI framework.
 - `AppState` is `@MainActor` and `@Observable`.
 - Navigation mutations go through `AppRouter`.
 - Views receive focused view models; they do not reach into global mutable state.
+- First-run onboarding lives under `Commandly/Scenes/Onboarding` and opens when `OnboardingStatusStoring` reports incomplete. Completion persists via a non-secret preference store and routes to `.root`.
+- Onboarding permissions use `PermissionServicing` (mocked in tests; `SystemPermissionService` in production) and never block finishing the flow.
 
 ## Concurrency rules
 

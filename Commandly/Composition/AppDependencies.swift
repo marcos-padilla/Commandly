@@ -4,6 +4,7 @@ import CommandKit
 import Persistence
 import SecurityKit
 import Observability
+import Infrastructure
 
 /// Assembled runtime dependencies for Commandly.
 struct AppDependencies: Sendable {
@@ -12,6 +13,11 @@ struct AppDependencies: Sendable {
     let uuidProvider: any UUIDProviding
     let commandRegistry: CommandRegistry
     let persistenceStore: any PersistenceStore
-    let permissionChecker: any PermissionChecking
+    let permissionService: any PermissionServicing
+    let privacySettingsOpener: any PrivacySettingsOpening
+    let onboardingStatusStore: any OnboardingStatusStoring
+    let appSettingsStore: any AppSettingsStoring
+    let folderAccessStore: any FolderAccessStoring
+    let loginItemManager: any LoginItemManaging
     let logger: AppLogger
 }

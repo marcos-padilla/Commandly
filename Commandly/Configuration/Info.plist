@@ -10,5 +10,11 @@
 	<string>27.0</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Commandly. All rights reserved.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Commandly uses your calendar to surface upcoming meetings and related actions from the launcher.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Commandly uses your calendar to surface upcoming meetings and related actions from the launcher.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Commandly uses your contacts so you can find people and start conversations quickly from the launcher.</string>
 </dict>
 </plist>

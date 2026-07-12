@@ -20,4 +20,18 @@ struct SecurityKitTests {
         #expect(value.debugDescription == "<redacted>")
         #expect(value.reveal() == "super-secret")
     }
+
+    @Test func inMemoryPermissionServiceGrantsOnRequest() async {
+        let service = InMemoryPermissionService()
+        #expect(await service.state(for: .calendar) == .notDetermined)
+        let result = await service.request(.calendar)
+        #expect(result == .authorized)
+        #expect(await service.state(for: .calendar) == .authorized)
+    }
+
+    @Test func inMemoryPermissionServiceKeepsDenied() async {
+        let service = InMemoryPermissionService(states: [.contacts: .denied])
+        let result = await service.request(.contacts)
+        #expect(result == .denied)
+    }
 }

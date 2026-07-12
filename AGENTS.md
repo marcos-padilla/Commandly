@@ -43,6 +43,8 @@ Every future agent must:
 | Dependency assembly | `Commandly/Composition` |
 | Navigation / routing | `Commandly/Navigation` |
 | SwiftUI scenes and feature UI | `Commandly/Scenes` |
+| First-run onboarding UI | `Commandly/Scenes/Onboarding` |
+| App preference helpers (e.g. onboarding completion) | `Commandly/Services` |
 | Assets / strings | `Commandly/Resources` |
 | Info.plist / entitlements | `Commandly/Configuration` |
 | Domain-neutral primitives | `Packages/Sources/AppCore` |
@@ -50,6 +52,7 @@ Every future agent must:
 | Search contracts | `Packages/Sources/SearchKit` |
 | UI tokens | `Packages/Sources/DesignSystem` |
 | macOS / system integration protocols | `Packages/Sources/Infrastructure` |
+| Login item registration (`SMAppService`) | `Packages/Sources/Infrastructure` |
 | Persistence contracts | `Packages/Sources/Persistence` |
 | Secure storage / permissions contracts | `Packages/Sources/SecurityKit` |
 | Experimental extension models | `Packages/Sources/ExtensionKit` |

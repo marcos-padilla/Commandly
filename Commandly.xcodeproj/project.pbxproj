@@ -49,7 +49,6 @@
 		A40000000000000000000001 /* Exceptions for "Commandly" folder in "Commandly" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Configuration/Commandly.entitlements,
 				Configuration/Info.plist,
 			);
 			target = 8D4E8B8D30033BC100357A11 /* Commandly */;
@@ -149,8 +148,6 @@
 				8D4E8B8C30033BC100357A11 /* Resources */,
 			);
 			buildRules = (
-			);
-			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
 				8D4E8B9030033BC100357A11 /* Commandly */,
