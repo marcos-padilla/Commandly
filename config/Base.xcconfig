@@ -1,0 +1,12 @@
+// Shared non-secret settings for Commandly.
+// App-specific keys (bundle id, entitlements, Info.plist) live on the app target.
+
+MACOSX_DEPLOYMENT_TARGET = 27.0
+SDKROOT = macosx
+
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+
+CODE_SIGN_STYLE = Automatic
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES

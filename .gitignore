@@ -1,0 +1,45 @@
+# Xcode / macOS
+.derivedData/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcresult
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+Packages/.build/
+.build/
+.swiftpm/
+Package.resolved
+
+# Local configuration (may contain Team ID)
+config/Local.xcconfig
+
+# Tooling / OS
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+
+# Secrets / credentials
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+Secrets/
+credentials.json
+AuthKey_*.p8
+
+# Coverage / reports
+coverage/
+*.lcov
+TestResults/

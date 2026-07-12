@@ -1,0 +1,8 @@
+// Copy this file to Local.xcconfig for machine-specific overrides.
+// Local.xcconfig is gitignored and must never contain secrets.
+//
+// Example (optional):
+// DEVELOPMENT_TEAM = YOURTEAMID
+//
+// Prefer Xcode automatic signing UI for day-to-day development.
+// Leaving DEVELOPMENT_TEAM unset is valid.

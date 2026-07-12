@@ -1,19 +1,20 @@
-//
-//  CommandlyTests.swift
-//  CommandlyTests
-//
-//  Created by Marcos Padilla Dorta on 7/11/26.
-//
-
 import Testing
 @testable import Commandly
+import AppCore
 
 struct CommandlyTests {
-
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-        // Swift Testing Documentation
-        // https://developer.apple.com/documentation/testing
+    @Test @MainActor func dependencyContainerBootstraps() {
+        let container = AppContainer.bootstrap()
+        #expect(container.dependencies.metadata.name == "Commandly")
+        #expect(container.appState.route == .root)
+        let viewModel = container.makeRootViewModel()
+        #expect(viewModel.status == "Foundation ready")
+        #expect(viewModel.message == "Feature development has not started yet.")
     }
 
+    @Test @MainActor func routerUpdatesAppState() {
+        let container = AppContainer.bootstrap()
+        container.router.navigate(to: .settings)
+        #expect(container.appState.route == .settings)
+    }
 }
