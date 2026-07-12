@@ -27,7 +27,7 @@ final class AppContainer {
         RootViewModel(metadata: dependencies.metadata)
     }
 
-    func makeOnboardingViewModel() -> OnboardingViewModel {
+    func makeOnboardingViewModel(onFinished: @escaping () -> Void = {}) -> OnboardingViewModel {
         if let cachedOnboardingViewModel {
             return cachedOnboardingViewModel
         }
@@ -39,10 +39,29 @@ final class AppContainer {
             privacySettingsOpener: dependencies.privacySettingsOpener,
             onFinished: { [weak self] in
                 self?.router.navigate(to: .root)
+                onFinished()
             }
         )
         cachedOnboardingViewModel = viewModel
         return viewModel
+    }
+
+    /// Drops the cached onboarding view model so the next presentation starts at welcome.
+    func clearOnboardingViewModelCache() {
+        cachedOnboardingViewModel = nil
+    }
+
+    func makeSettingsViewModel(
+        onMenuBarIconChange: @escaping (Bool) -> Void = { _ in }
+    ) -> SettingsViewModel {
+        SettingsViewModel(
+            settingsStore: dependencies.appSettingsStore,
+            loginItemManager: dependencies.loginItemManager,
+            permissionService: dependencies.permissionService,
+            privacySettingsOpener: dependencies.privacySettingsOpener,
+            metadata: dependencies.metadata,
+            onMenuBarIconChange: onMenuBarIconChange
+        )
     }
 
     static func bootstrap() -> AppContainer {

@@ -1,47 +1,69 @@
 import SwiftUI
 import Observability
 import DesignSystem
+import AppKit
 
 @main
 struct CommandlyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var container = AppContainer.bootstrap()
+    @State private var runtime = AppRuntime()
 
     var body: some Scene {
-        WindowGroup {
-            AppSceneRoot(container: container)
+        @Bindable var runtime = runtime
+
+        MenuBarExtra("Commandly", systemImage: "command", isInserted: $runtime.showMenuBarIcon) {
+            StatusBarMenu(runtime: runtime)
+        }
+        .menuBarExtraStyle(.menu)
+
+        Window("Commandly Setup", id: AppWindowID.onboarding) {
+            OnboardingWindowHost(runtime: runtime)
         }
         .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
         .defaultSize(
             width: LayoutConstants.onboardingIdealWidth,
             height: LayoutConstants.onboardingIdealHeight
         )
+        .defaultLaunchBehavior(runtime.showsOnboarding ? .presented : .suppressed)
 
         Settings {
-            SettingsRootView()
+            SettingsRootView(viewModel: runtime.makeSettingsViewModel())
         }
+        .defaultSize(
+            width: LayoutConstants.settingsMinWidth,
+            height: LayoutConstants.settingsMinHeight
+        )
     }
 }
 
-/// Observes `AppState` so onboarding completion can swap the root surface.
-private struct AppSceneRoot: View {
-    let container: AppContainer
-    @Bindable private var appState: AppState
+enum AppWindowID {
+    static let onboarding = "onboarding"
+}
 
-    init(container: AppContainer) {
-        self.container = container
-        self.appState = container.appState
-    }
+/// Hosts onboarding and dismisses the setup window when onboarding completes.
+private struct OnboardingWindowHost: View {
+    @Bindable var runtime: AppRuntime
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         Group {
-            switch appState.route {
-            case .onboarding:
-                OnboardingRootView(viewModel: container.makeOnboardingViewModel())
-            case .root, .settings:
-                RootView(viewModel: container.makeRootViewModel())
+            if runtime.showsOnboarding {
+                OnboardingRootView(viewModel: runtime.makeOnboardingViewModel())
+                    .environment(runtime.container.appState)
+                    .onAppear {
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+            } else {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityHidden(true)
             }
         }
-        .environment(appState)
+        .onChange(of: runtime.showsOnboarding) { _, isShowing in
+            if isShowing == false {
+                dismissWindow(id: AppWindowID.onboarding)
+            }
+        }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 @testable import Commandly
 import AppCore
@@ -117,6 +118,90 @@ struct CommandlyTests {
         #expect(container.appState.route == .root)
     }
 
+    @Test @MainActor func appRuntimeHidesOnboardingAfterFinishCallback() {
+        let store = InMemoryOnboardingStatusStore()
+        let container = makeTestContainer(
+            hasCompletedOnboarding: false,
+            onboardingStatusStore: store
+        )
+        let runtime = AppRuntime(container: container)
+        #expect(runtime.showsOnboarding)
+
+        let viewModel = runtime.makeOnboardingViewModel()
+        viewModel.finish()
+
+        #expect(runtime.showsOnboarding == false)
+        #expect(container.appState.route == .root)
+    }
+
+    @Test @MainActor func settingsViewModelPersistsGeneralPreferences() {
+        let settings = InMemoryAppSettingsStore()
+        let viewModel = SettingsViewModel(
+            settingsStore: settings,
+            loginItemManager: InMemoryLoginItemManager(),
+            permissionService: InMemoryPermissionService(),
+            privacySettingsOpener: InMemoryPrivacySettingsOpener(),
+            metadata: ApplicationMetadata(
+                name: "Commandly",
+                version: "1.0",
+                build: "1",
+                bundleIdentifier: "com.businessmate360.Commandly",
+                environment: .testing
+            )
+        )
+
+        viewModel.setPrefersCommandlyEmojiPicker(true)
+        viewModel.setAppearance(.dark)
+        viewModel.setTextSize(.larger)
+        viewModel.setShowMenuBarIcon(false)
+
+        let loaded = settings.load()
+        #expect(loaded.prefersCommandlyEmojiPicker)
+        #expect(loaded.appearance == .dark)
+        #expect(loaded.textSize == .larger)
+        #expect(loaded.showMenuBarIcon == false)
+    }
+
+    @Test @MainActor func appRuntimeRestartOnboardingResetsProgress() async {
+        let store = InMemoryOnboardingStatusStore(hasCompletedOnboarding: true)
+        let settings = InMemoryAppSettingsStore(
+            settings: AppSettings(
+                opensAtLogin: true,
+                prefersCommandlyEmojiPicker: true,
+                hasConfirmedOptionSpaceHotkey: true,
+                showMenuBarIcon: true,
+                appearance: .dark,
+                textSize: .larger
+            )
+        )
+        let folderAccess = InMemoryFolderAccessStore(bookmarkData: [Data([0x01])], forceUsable: true)
+        let container = makeTestContainer(
+            hasCompletedOnboarding: true,
+            onboardingStatusStore: store,
+            appSettingsStore: settings,
+            folderAccessStore: folderAccess
+        )
+        let runtime = AppRuntime(container: container)
+        #expect(runtime.showsOnboarding == false)
+
+        _ = runtime.makeOnboardingViewModel()
+        runtime.restartOnboarding()
+
+        #expect(store.hasCompletedOnboarding == false)
+        #expect(settings.load() == .default)
+        #expect(folderAccess.bookmarkData.isEmpty)
+        #expect(runtime.showsOnboarding)
+        #expect(container.appState.route == .onboarding)
+
+        let restarted = runtime.makeOnboardingViewModel()
+        #expect(restarted.step == .welcome)
+    }
+
+    @Test @MainActor func appDelegateKeepsRunningAfterWindowsClose() {
+        let delegate = AppDelegate()
+        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared) == false)
+    }
+
     @Test @MainActor func setupTogglesPersistPreferences() async {
         let settings = InMemoryAppSettingsStore()
         let loginItems = InMemoryLoginItemManager()
@@ -222,7 +307,9 @@ struct CommandlyTests {
     @MainActor
     private func makeTestContainer(
         hasCompletedOnboarding: Bool,
-        onboardingStatusStore: InMemoryOnboardingStatusStore? = nil
+        onboardingStatusStore: InMemoryOnboardingStatusStore? = nil,
+        appSettingsStore: InMemoryAppSettingsStore? = nil,
+        folderAccessStore: InMemoryFolderAccessStore? = nil
     ) -> AppContainer {
         let store = onboardingStatusStore
             ?? InMemoryOnboardingStatusStore(hasCompletedOnboarding: hasCompletedOnboarding)
@@ -236,7 +323,6 @@ struct CommandlyTests {
         let fixedUUID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")
             ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")
             ?? UUID()
-        let folderAccessStore = InMemoryFolderAccessStore()
         let dependencies = AppDependencies(
             metadata: metadata,
             dateProvider: FixedDateProvider(date: Date(timeIntervalSince1970: 1_700_000_000)),
@@ -246,8 +332,8 @@ struct CommandlyTests {
             permissionService: InMemoryPermissionService(),
             privacySettingsOpener: InMemoryPrivacySettingsOpener(),
             onboardingStatusStore: store,
-            appSettingsStore: InMemoryAppSettingsStore(),
-            folderAccessStore: folderAccessStore,
+            appSettingsStore: appSettingsStore ?? InMemoryAppSettingsStore(),
+            folderAccessStore: folderAccessStore ?? InMemoryFolderAccessStore(),
             loginItemManager: InMemoryLoginItemManager(),
             logger: Loggers.application
         )

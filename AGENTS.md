@@ -43,6 +43,8 @@ Every future agent must:
 | Dependency assembly | `Commandly/Composition` |
 | Navigation / routing | `Commandly/Navigation` |
 | SwiftUI scenes and feature UI | `Commandly/Scenes` |
+| Menu bar status item menu | `Commandly/Scenes/StatusBar` |
+| Settings window (sidebar + pages) | `Commandly/Scenes/Settings` |
 | First-run onboarding UI | `Commandly/Scenes/Onboarding` |
 | App preference helpers (e.g. onboarding completion) | `Commandly/Services` |
 | Assets / strings | `Commandly/Resources` |

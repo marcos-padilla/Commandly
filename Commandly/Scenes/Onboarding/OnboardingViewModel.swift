@@ -259,13 +259,11 @@ final class OnboardingViewModel {
     }
 
     private func persistSettings() {
-        settingsStore.save(
-            AppSettings(
-                opensAtLogin: opensAtLogin,
-                prefersCommandlyEmojiPicker: prefersCommandlyEmojiPicker,
-                hasConfirmedOptionSpaceHotkey: hasConfirmedOptionSpaceHotkey
-            )
-        )
+        var settings = settingsStore.load()
+        settings.opensAtLogin = opensAtLogin
+        settings.prefersCommandlyEmojiPicker = prefersCommandlyEmojiPicker
+        settings.hasConfirmedOptionSpaceHotkey = hasConfirmedOptionSpaceHotkey
+        settingsStore.save(settings)
     }
 
     private func refreshLoginItemStatus() async {
