@@ -6,7 +6,6 @@ import CommandKit
 struct ClipboardHistoryView: View {
     @Bindable var viewModel: ClipboardHistoryViewModel
     @State private var lastPointerLocation: CGPoint?
-    @State private var isBackHovered = false
     @State private var isSearchHovered = false
     @FocusState private var isSearchFocused: Bool
     @Environment(\.commandlyLayoutDensity) private var density
@@ -25,24 +24,9 @@ struct ClipboardHistoryView: View {
 
     private var header: some View {
         HStack(spacing: density.spacing(.sm)) {
-            Button {
+            CommandlyBackButton {
                 viewModel.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .commandlyFont(size: 13, weight: .semibold)
-                    .foregroundStyle(isBackHovered ? Color.primary : Color.secondary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.primary.opacity(isBackHovered ? 0.12 : 0.06))
-                    )
             }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                isBackHovered = hovering
-            }
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isBackHovered)
-            .accessibilityLabel("Back")
 
             HStack(spacing: density.spacing(.xs)) {
                 Image(systemName: "magnifyingglass")
@@ -89,32 +73,23 @@ struct ClipboardHistoryView: View {
             .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isSearchFocused)
             .accessibilityElement(children: .contain)
 
-            Menu {
-                ForEach(ClipboardHistoryFilter.allCases) { option in
-                    Button(option.title) {
-                        viewModel.filter = option
+            CommandlyOptionMenu(
+                items: ClipboardHistoryFilter.allCases.map {
+                    CommandlyOptionItem(id: $0.rawValue, title: $0.title)
+                },
+                selectionID: viewModel.filter.rawValue,
+                accessibilityLabelText: "Filter by type",
+                onSelect: { item in
+                    if let filter = ClipboardHistoryFilter(rawValue: item.id) {
+                        viewModel.filter = filter
                     }
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(viewModel.filter.title)
-                        .commandlyFont(size: 12, weight: .medium)
-                    Image(systemName: "chevron.down")
-                        .commandlyFont(size: 9, weight: .semibold)
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
-                )
-            }
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel("Filter by type")
+            )
+            .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
         .padding(.vertical, density.spacing(.sm))
+        .zIndex(20)
     }
 
     private var searchFillOpacity: Double {

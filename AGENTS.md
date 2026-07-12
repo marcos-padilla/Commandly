@@ -46,6 +46,7 @@ Every future agent must:
 | Menu bar status item menu | `Commandly/Scenes/StatusBar` |
 | Settings window (sidebar + pages) | `Commandly/Scenes/Settings` |
 | First-run onboarding UI | `Commandly/Scenes/Onboarding` |
+| Shared launcher chrome (back, option menu) | `Commandly/Scenes/Shared` |
 | App preference helpers (e.g. onboarding completion) | `Commandly/Services` |
 | Assets / strings | `Commandly/Resources` |
 | Info.plist / entitlements | `Commandly/Configuration` |

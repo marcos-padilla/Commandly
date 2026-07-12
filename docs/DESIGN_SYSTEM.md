@@ -29,6 +29,13 @@ User preference (`AppViewModePreference`) maps to `CommandlyLayoutDensity` via `
 
 Launcher and settings chrome read `\.commandlyLayoutDensity` for paddings and sizes. Launcher result rows are single-line (title plus optional muted inline subtitle and trailing kind label) in both densities.
 
+## Shared launcher chrome
+
+Reusable interactive chrome lives in the app target under `Commandly/Scenes/Shared/` (not in the DesignSystem package, which stays tokens-only):
+
+- `CommandlyBackButton` — top-leading back control with hover/press motion
+- `CommandlyOptionMenu` — searchable sort/filter menu; screens supply `CommandlyOptionItem` values and selection handling
+
 ## Rules
 
 - Do not build the final launcher UI here.

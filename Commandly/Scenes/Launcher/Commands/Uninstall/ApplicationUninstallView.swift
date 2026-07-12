@@ -40,20 +40,9 @@ struct ApplicationUninstallView: View {
 
     private var header: some View {
         HStack(spacing: density.spacing(.sm)) {
-            Button {
+            CommandlyBackButton {
                 viewModel.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .commandlyFont(size: 13, weight: .semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.primary.opacity(0.06))
-                    )
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
 
             HStack(spacing: density.spacing(.xs)) {
                 Image(systemName: "magnifyingglass")
@@ -70,32 +59,23 @@ struct ApplicationUninstallView: View {
                     .fill(Color.primary.opacity(0.05))
             )
 
-            Menu {
-                ForEach(ApplicationUninstallSort.allCases) { option in
-                    Button(option.title) {
-                        viewModel.sort = option
+            CommandlyOptionMenu(
+                items: ApplicationUninstallSort.allCases.map {
+                    CommandlyOptionItem(id: $0.rawValue, title: $0.title)
+                },
+                selectionID: viewModel.sort.rawValue,
+                accessibilityLabelText: "Sort related files",
+                onSelect: { item in
+                    if let sort = ApplicationUninstallSort(rawValue: item.id) {
+                        viewModel.sort = sort
                     }
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(viewModel.sort.title)
-                        .commandlyFont(size: 12, weight: .medium)
-                    Image(systemName: "chevron.down")
-                        .commandlyFont(size: 10, weight: .semibold)
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
-                )
-            }
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel(viewModel.sort.title)
+            )
+            .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
         .padding(.vertical, density.spacing(.sm))
+        .zIndex(20)
     }
 
     private var summary: some View {
