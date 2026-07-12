@@ -531,6 +531,33 @@ struct CommandlyTests {
         #expect(applicationItems.count == 20)
     }
 
+    @Test @MainActor func launcherCalculatorPinsAboveCommandsAndCopies() async {
+        let pasteboard = InMemoryPasteboard()
+        var dismissed = false
+        let viewModel = LauncherViewModel(
+            pasteboard: pasteboard,
+            onDismiss: { dismissed = true }
+        )
+        viewModel.query = "2 + 2"
+        await viewModel.flushSearchForTesting()
+
+        #expect(viewModel.sections.first?.kind == .calculator)
+        #expect(viewModel.rootItems.first?.badge == .calculator)
+        #expect(viewModel.rootItems.first?.title.contains("4") == true)
+        #expect(viewModel.activeCalculatorResult != nil)
+
+        await viewModel.confirmSelectionAndWaitForTesting()
+        #expect(pasteboard.currentValue?.contains("4") == true)
+        #expect(dismissed)
+    }
+
+    @Test @MainActor func launcherCalculatorDoesNotTriggerForAppNames() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "Photoshop 2026"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.contains { $0.section == .calculator } == false)
+    }
+
     @Test @MainActor func launcherOpensApplicationViaOpener() async {
         final class Recorder: ApplicationOpening, @unchecked Sendable {
             private(set) var opened: String?

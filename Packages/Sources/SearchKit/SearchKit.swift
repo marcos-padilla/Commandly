@@ -83,6 +83,7 @@ public enum BuiltInSearchProviderID: Sendable {
     public static let commands = SearchProviderID(rawValue: "commands")
     public static let applications = SearchProviderID(rawValue: "applications")
     public static let placeholders = SearchProviderID(rawValue: "placeholders")
+    public static let calculator = SearchProviderID(rawValue: "calculator")
 }
 
 /// Scores title / subtitle / keyword haystacks for ranked launcher search.

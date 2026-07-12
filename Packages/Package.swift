@@ -15,7 +15,8 @@ let package = Package(
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "SecurityKit", targets: ["SecurityKit"]),
         .library(name: "ExtensionKit", targets: ["ExtensionKit"]),
-        .library(name: "Observability", targets: ["Observability"])
+        .library(name: "Observability", targets: ["Observability"]),
+        .library(name: "CalculatorKit", targets: ["CalculatorKit"])
     ],
     targets: [
         .target(
@@ -54,6 +55,10 @@ let package = Package(
             name: "Observability",
             dependencies: ["AppCore"]
         ),
+        .target(
+            name: "CalculatorKit",
+            dependencies: ["AppCore"]
+        ),
         .testTarget(
             name: "AppCoreTests",
             dependencies: ["AppCore"]
@@ -81,6 +86,10 @@ let package = Package(
         .testTarget(
             name: "ObservabilityTests",
             dependencies: ["Observability"]
+        ),
+        .testTarget(
+            name: "CalculatorKitTests",
+            dependencies: ["CalculatorKit"]
         )
     ]
 )

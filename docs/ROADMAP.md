@@ -12,12 +12,13 @@ Status legend: ✅ done · 🔜 next · ⏳ later
 8. ✅ **Application launching** — enumerate installed apps + open via Infrastructure adapters
 9. ⏳ **Quick links and snippets** — user-defined shortcuts
 10. ✅ **Search providers (commands + apps)** — SearchKit-backed ranked, cancellable search + autocomplete; file search still later
-11. ⏳ **Clipboard history persistence** — optional durable store, privacy-reviewed
-12. ⏳ **Window management** — requires Accessibility, contextual prompting
-13. ⏳ **BusinessMate360 integration** — product-specific commands
-14. ⏳ **Extension prototype** — after ADR, likely declarative or signed native first
-15. ⏳ **Distribution and updates** — signing, notarization, updater decision
-16. ⏳ **File search provider** — cancellable files provider behind SearchKit
-17. ⏳ **Natural-language / AI answers** — only after a deliberate product/privacy design
+11. ✅ **Calculator in search** — CalculatorKit engine pinned above results (arithmetic, scientific, %, units, currency, dates, time zones)
+12. ⏳ **Clipboard history persistence** — optional durable store, privacy-reviewed
+13. ⏳ **Window management** — requires Accessibility, contextual prompting
+14. ⏳ **BusinessMate360 integration** — product-specific commands
+15. ⏳ **Extension prototype** — after ADR, likely declarative or signed native first
+16. ⏳ **Distribution and updates** — signing, notarization, updater decision
+17. ⏳ **File search provider** — cancellable files provider behind SearchKit
+18. ⏳ **Natural-language / AI answers** — only after a deliberate product/privacy design
 
 Do not implement later phases under the guise of foundation work.

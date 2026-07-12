@@ -3,6 +3,7 @@ import CommandKit
 
 /// Visual grouping inside the launcher list.
 enum LauncherSectionKind: String, CaseIterable, Identifiable, Sendable {
+    case calculator
     case gettingStarted
     case suggestions
     case commands
@@ -12,6 +13,7 @@ enum LauncherSectionKind: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
+        case .calculator: return "Calculator"
         case .gettingStarted: return "Getting Started"
         case .suggestions: return "Suggestions"
         case .commands: return "Commands"
@@ -27,6 +29,7 @@ enum LauncherItemBadge: String, Sendable, Equatable {
     case command
     case settings
     case placeholder
+    case calculator
 
     var title: String {
         switch self {
@@ -35,6 +38,7 @@ enum LauncherItemBadge: String, Sendable, Equatable {
         case .command: return "Command"
         case .settings: return "Settings"
         case .placeholder: return "Soon"
+        case .calculator: return "Calculator"
         }
     }
 }
@@ -46,6 +50,8 @@ enum LauncherItemAction: Sendable, Equatable {
     case openCommand(CommandID)
     case openApplication(bundleIdentifier: String)
     case placeholder(message: String)
+    case copyText(String)
+    case calculatorPrimary(resultID: String)
 }
 
 /// Visual icon for a launcher row.

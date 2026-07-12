@@ -156,7 +156,9 @@ struct LauncherResultRow: View {
         .onHover { hovering in
             onHoverChange?(hovering)
         }
-        .accessibilityLabel("\(item.title), \(item.badge.title)")
+        .accessibilityLabel(item.badge == .calculator
+            ? "Calculator result \(item.title), expression \(item.subtitle ?? "")"
+            : "\(item.title), \(item.badge.title)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

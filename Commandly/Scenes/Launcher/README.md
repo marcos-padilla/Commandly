@@ -8,6 +8,7 @@ The main field is the primary entry point for discovering and running work:
 
 - Focus stays on the search field (not the parent window chrome) so typing always updates the query
 - Ranked results via SearchKit providers: **commands**, **applications**, and honest **placeholders**
+- Calculator-shaped queries are evaluated via **CalculatorKit** in parallel and pinned in a dedicated **Calculator** two-pane card above other results
 - `CompositeSearchService` merges scores (prefix > keyword > contains) and cancels in-flight work on each keystroke
 - Ghost autocomplete for the best prefix match; **Tab** accepts, **Return** confirms the selected row
 - Installed apps are enumerated from standard Applications folders and opened through `ApplicationOpening` (full catalog; Applications section appears below Commands)

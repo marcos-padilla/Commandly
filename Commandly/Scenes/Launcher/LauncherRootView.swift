@@ -118,7 +118,27 @@ struct LauncherRootView: View {
                         if viewModel.sections.isEmpty {
                             emptyState
                         } else {
-                            ForEach(viewModel.sections, id: \.kind) { section in
+                            if let calculatorResult = viewModel.activeCalculatorResult,
+                               let calculatorItem = viewModel.rootItems.first(where: { $0.section == .calculator }) {
+                                LauncherSectionHeader(title: LauncherSectionKind.calculator.title)
+                                CalculatorResultCard(
+                                    result: calculatorResult,
+                                    isSelected: calculatorItem.id == viewModel.selectedItem?.id,
+                                    onSelect: { viewModel.select(calculatorItem.id) },
+                                    onConfirm: { viewModel.confirmSelection() }
+                                )
+                                .id(calculatorItem.id)
+                                .onHover { hovering in
+                                    if hovering {
+                                        viewModel.setHovered(calculatorItem.id)
+                                    } else {
+                                        viewModel.clearHovered(calculatorItem.id)
+                                    }
+                                }
+                                .padding(.bottom, density.spacing(.xxs))
+                            }
+
+                            ForEach(viewModel.sections.filter { $0.kind != .calculator }, id: \.kind) { section in
                                 LauncherSectionHeader(title: section.kind.title)
 
                                 ForEach(section.items) { item in

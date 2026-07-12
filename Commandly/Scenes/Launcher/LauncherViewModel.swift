@@ -3,6 +3,7 @@ import Observation
 import CommandKit
 import SearchKit
 import Infrastructure
+import CalculatorKit
 import SwiftUI
 
 /// Navigation stack inside the launcher window.
@@ -27,12 +28,19 @@ final class LauncherViewModel {
     private let applicationOpener: any ApplicationOpening
     @ObservationIgnored
     private let applicationQuery: any InstalledApplicationQuerying
+    @ObservationIgnored
+    private let pasteboard: any PasteboardAccessing
+    @ObservationIgnored
+    private let calculator: any CalculatorEvaluating
+    @ObservationIgnored
+    private let calculatorSession: CalculatorSessionStore
 
     private(set) var placeholderItems: [LauncherItem]
     private(set) var rootItems: [LauncherItem] = []
     private(set) var autocompleteSuffix: String = ""
     /// Bumped on each presentation so the search field can reclaim focus.
     private(set) var searchFocusEpoch: Int = 0
+    private(set) var activeCalculatorResult: CalculatorResult?
 
     var query: String = "" {
         didSet {
@@ -63,6 +71,9 @@ final class LauncherViewModel {
         clipboardHistoryStore: ClipboardHistoryStore = ClipboardHistoryStore(),
         applicationOpener: any ApplicationOpening = NoOpApplicationOpener(),
         applicationQuery: any InstalledApplicationQuerying = InMemoryInstalledApplicationQuery(),
+        pasteboard: any PasteboardAccessing = SystemPasteboard(),
+        calculator: any CalculatorEvaluating = CalculatorService(),
+        calculatorSession: CalculatorSessionStore = CalculatorSessionStore(),
         placeholderItems: [LauncherItem] = LauncherPlaceholderCatalog.nonCommandItems,
         onDismiss: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {}
@@ -71,6 +82,9 @@ final class LauncherViewModel {
         self.clipboardHistoryStore = clipboardHistoryStore
         self.applicationOpener = applicationOpener
         self.applicationQuery = applicationQuery
+        self.pasteboard = pasteboard
+        self.calculator = calculator
+        self.calculatorSession = calculatorSession
         self.placeholderItems = placeholderItems
         self.onDismiss = onDismiss
         self.onOpenSettings = onOpenSettings
@@ -131,6 +145,7 @@ final class LauncherViewModel {
             case .openApplication: title = "Open"
             case .dismiss: title = "Close"
             case .placeholder: title = "Preview"
+            case .copyText, .calculatorPrimary: title = "Copy"
             case .none: title = "Select"
             }
             return [
@@ -150,7 +165,7 @@ final class LauncherViewModel {
                     title: "Close",
                     keyHint: .escape
                 )
-            ]
+            ] + calculatorFooterExtras
         case .command:
             return clipboardViewModel?.footerActions
                 ?? catalog.command(for: BuiltInCommandID.clipboardHistory)?.manifest.defaultActions
@@ -159,7 +174,33 @@ final class LauncherViewModel {
     }
 
     var menuActions: [CommandActionDescriptor] {
-        clipboardViewModel?.menuActions ?? []
+        if activeCalculatorResult != nil, case .root = route {
+            return [
+                CommandActionDescriptor(
+                    id: CommandActionID(rawValue: "copyUnformatted"),
+                    title: "Copy Without Formatting"
+                ),
+                CommandActionDescriptor(
+                    id: CommandActionID(rawValue: "insertResult"),
+                    title: "Insert Result into Search"
+                ),
+                CommandActionDescriptor(
+                    id: CommandActionID(rawValue: "copyExpression"),
+                    title: "Copy Expression and Result"
+                )
+            ]
+        }
+        return clipboardViewModel?.menuActions ?? []
+    }
+
+    private var calculatorFooterExtras: [CommandActionDescriptor] {
+        guard activeCalculatorResult != nil else { return [] }
+        return [
+            CommandActionDescriptor(
+                id: CommandActionID(rawValue: "insertResult"),
+                title: "Insert"
+            )
+        ]
     }
 
     var showsActionsMenu: Bool {
@@ -184,6 +225,7 @@ final class LauncherViewModel {
         inputDevice = .pointer
         route = .root
         clipboardViewModel = nil
+        activeCalculatorResult = nil
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }
 
@@ -256,6 +298,36 @@ final class LauncherViewModel {
             Task { @MainActor [weak self] in
                 await self?.openApplication(bundleIdentifier: bundleIdentifier)
             }
+        case .copyText(let value):
+            Task { @MainActor [weak self] in
+                await self?.pasteboard.writeString(value)
+                self?.statusMessage = nil
+                self?.dismiss()
+            }
+        case .calculatorPrimary(let resultID):
+            performCalculatorPrimary(resultID: resultID)
+        }
+    }
+
+    /// Test helper: awaits primary confirm side effects (copy / open).
+    func confirmSelectionAndWaitForTesting() async {
+        if case .command = route {
+            clipboardViewModel?.perform(BuiltInCommandActionID.copy)
+            return
+        }
+        guard let item = selectedItem else { return }
+        switch item.action {
+        case .copyText(let value):
+            await pasteboard.writeString(value)
+            statusMessage = nil
+            dismiss()
+        case .calculatorPrimary(let resultID):
+            guard let result = activeCalculatorResult, result.id.rawValue == resultID else { return }
+            calculatorSession.recordSuccess(result)
+            await pasteboard.writeString(result.formattedPrimaryValue)
+            dismiss()
+        default:
+            confirmSelection()
         }
     }
 
@@ -272,8 +344,44 @@ final class LauncherViewModel {
             onOpenSettings()
         case "close":
             dismiss()
+        case "copyUnformatted":
+            if let result = activeCalculatorResult {
+                Task { @MainActor [weak self] in
+                    await self?.pasteboard.writeString(result.formattedPrimaryValue.replacingOccurrences(of: ",", with: ""))
+                    self?.dismiss()
+                }
+            }
+        case "insertResult":
+            if let result = activeCalculatorResult {
+                query = result.formattedPrimaryValue
+            }
+        case "copyExpression":
+            if let result = activeCalculatorResult {
+                let combined = "\(result.displayExpression) = \(result.formattedPrimaryValue)"
+                Task { @MainActor [weak self] in
+                    await self?.pasteboard.writeString(combined)
+                    self?.dismiss()
+                }
+            }
         default:
             break
+        }
+    }
+
+    private func performCalculatorPrimary(resultID: String) {
+        guard let result = activeCalculatorResult, result.id.rawValue == resultID else {
+            if case .copyText(let value) = selectedItem?.action {
+                Task { @MainActor [weak self] in
+                    await self?.pasteboard.writeString(value)
+                    self?.dismiss()
+                }
+            }
+            return
+        }
+        calculatorSession.recordSuccess(result)
+        Task { @MainActor [weak self] in
+            await self?.pasteboard.writeString(result.formattedPrimaryValue)
+            self?.dismiss()
         }
     }
 
@@ -370,16 +478,76 @@ final class LauncherViewModel {
 
         let service = makeSearchService()
         let searchQuery = SearchQuery(text: queryText, limit: nil)
+        let calcContext = calculatorSession.makeContext()
         do {
-            let result = try await service.search(searchQuery)
+            async let calcOutcome = calculator.evaluate(queryText, context: calcContext)
+            async let searchResult = service.search(searchQuery)
+
+            let outcome = await calcOutcome
+            let result = try await searchResult
             guard Task.isCancelled == false else { return }
-            let mapped = result.items.compactMap { mapSearchItem($0) }
+
+            var mapped = result.items.compactMap { mapSearchItem($0) }
+            let previousSelected = selectedID
+            if let calcItem = mapCalculatorOutcome(outcome, queryText: queryText) {
+                mapped.insert(calcItem, at: 0)
+            } else {
+                activeCalculatorResult = nil
+            }
             applySearchResult(items: mapped, queryText: queryText)
+            // Prefer keeping selection when the calculator card appears/disappears.
+            if let previousSelected, mapped.contains(where: { $0.id == previousSelected }) {
+                selectedID = previousSelected
+            } else if mapped.first?.section == .calculator {
+                selectedID = mapped.first?.id
+            }
         } catch is CancellationError {
             return
         } catch {
             guard Task.isCancelled == false else { return }
             applySearchResult(items: fallbackItems(matching: queryText), queryText: queryText)
+        }
+    }
+
+    private func mapCalculatorOutcome(
+        _ outcome: CalculatorEvaluationOutcome,
+        queryText: String
+    ) -> LauncherItem? {
+        switch outcome {
+        case .notCalculator, .incomplete:
+            activeCalculatorResult = nil
+            return nil
+        case .failure(let error):
+            activeCalculatorResult = nil
+            // Only show failure rows when the query clearly looks calculator-shaped.
+            guard queryText.contains(where: { "+-*/^%".contains($0) })
+                || queryText.lowercased().contains("sqrt")
+                || queryText.lowercased().contains("sin")
+            else {
+                return nil
+            }
+            return LauncherItem(
+                id: "calculator-error",
+                section: .calculator,
+                title: error.message,
+                subtitle: queryText,
+                systemImage: "function",
+                badge: .calculator,
+                keywords: [],
+                action: .placeholder(message: error.message)
+            )
+        case .success(let result):
+            activeCalculatorResult = result
+            return LauncherItem(
+                id: "calculator:\(result.id.rawValue)",
+                section: .calculator,
+                title: result.formattedPrimaryValue,
+                subtitle: result.displayExpression.isEmpty ? result.originalInput : result.displayExpression,
+                systemImage: "function",
+                badge: .calculator,
+                keywords: [],
+                action: .calculatorPrimary(resultID: result.id.rawValue)
+            )
         }
     }
 

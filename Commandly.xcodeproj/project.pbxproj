@@ -16,6 +16,7 @@
 		A10000000000000000000007 /* SecurityKit in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000007 /* SecurityKit */; };
 		A10000000000000000000008 /* ExtensionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000008 /* ExtensionKit */; };
 		A10000000000000000000009 /* Observability in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000009 /* Observability */; };
+		A1000000000000000000000A /* CalculatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = A2000000000000000000000A /* CalculatorKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,6 +90,7 @@
 				A10000000000000000000007 /* SecurityKit in Frameworks */,
 				A10000000000000000000008 /* ExtensionKit in Frameworks */,
 				A10000000000000000000009 /* Observability in Frameworks */,
+				A1000000000000000000000A /* CalculatorKit in Frameworks */,
 			);
 		};
 		8D4E8B9830033BC200357A11 /* Frameworks */ = {
@@ -163,6 +165,7 @@
 				A20000000000000000000007 /* SecurityKit */,
 				A20000000000000000000008 /* ExtensionKit */,
 				A20000000000000000000009 /* Observability */,
+				A2000000000000000000000A /* CalculatorKit */,
 			);
 			productName = Commandly;
 			productReference = 8D4E8B8E30033BC100357A11 /* Commandly.app */;
@@ -628,6 +631,10 @@
 		A20000000000000000000009 /* Observability */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Observability;
+		};
+		A2000000000000000000000A /* CalculatorKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CalculatorKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
