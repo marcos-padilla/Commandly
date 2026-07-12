@@ -21,7 +21,7 @@ struct WorkspacePrivacySettingsOpener: PrivacySettingsOpening, Sendable {
 
         guard let url = URL(string: urlString) else { return }
         await MainActor.run {
-            NSWorkspace.shared.open(url)
+            _ = NSWorkspace.shared.open(url)
         }
     }
 }

@@ -14,12 +14,28 @@ struct CommandlyApp: App {
         MenuBarExtra("Commandly", systemImage: "command", isInserted: $runtime.showMenuBarIcon) {
             StatusBarMenu(runtime: runtime)
                 .commandlyContentSize(runtime.textSize)
+                .commandlyViewMode(runtime.viewMode)
+                .background(LauncherPresentationBridge(runtime: runtime))
         }
         .menuBarExtraStyle(.menu)
+
+        Window("Commandly", id: AppWindowID.launcher) {
+            LauncherWindowHost(runtime: runtime)
+                .commandlyContentSize(runtime.textSize)
+                .commandlyViewMode(runtime.viewMode)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(
+            width: LayoutConstants.launcherIdealWidth,
+            height: LayoutConstants.launcherIdealHeight
+        )
+        .defaultLaunchBehavior(.suppressed)
 
         Window("Commandly Setup", id: AppWindowID.onboarding) {
             OnboardingWindowHost(runtime: runtime)
                 .commandlyContentSize(runtime.textSize)
+                .commandlyViewMode(runtime.viewMode)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -32,6 +48,8 @@ struct CommandlyApp: App {
         Settings {
             SettingsRootView(viewModel: runtime.makeSettingsViewModel())
                 .commandlyContentSize(runtime.textSize)
+                .commandlyViewMode(runtime.viewMode)
+                .background(LauncherPresentationBridge(runtime: runtime))
         }
         .defaultSize(
             width: LayoutConstants.settingsMinWidth,
@@ -42,6 +60,71 @@ struct CommandlyApp: App {
 
 enum AppWindowID {
     static let onboarding = "onboarding"
+    static let launcher = "launcher"
+}
+
+/// Opens / dismisses the launcher window when `AppRuntime.showsLauncher` changes.
+private struct LauncherPresentationBridge: View {
+    @Bindable var runtime: AppRuntime
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear {
+                runtime.openLauncherWindow = {
+                    openWindow(id: AppWindowID.launcher)
+                }
+                runtime.dismissLauncherWindow = {
+                    dismissWindow(id: AppWindowID.launcher)
+                }
+            }
+            .onChange(of: runtime.showsLauncher) { _, isShowing in
+                if isShowing {
+                    openWindow(id: AppWindowID.launcher)
+                    NSApp.activate(ignoringOtherApps: true)
+                    // Defer raise until SwiftUI has materialised / reused the window.
+                    DispatchQueue.main.async {
+                        BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.launcher)
+                    }
+                } else {
+                    dismissWindow(id: AppWindowID.launcher)
+                }
+            }
+    }
+}
+
+/// Hosts the launcher panel and keeps runtime visibility in sync when the window closes.
+private struct LauncherWindowHost: View {
+    @Bindable var runtime: AppRuntime
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        LauncherRootView(
+            viewModel: runtime.makeLauncherViewModel {
+                presentSettings()
+            }
+        )
+        .onAppear {
+            runtime.showsLauncher = true
+        }
+        .onDisappear {
+            // Window was dismissed (Esc, outside click, or programmatic close).
+            if runtime.showsLauncher {
+                runtime.showsLauncher = false
+            }
+        }
+    }
+
+    private func presentSettings() {
+        runtime.hideLauncher()
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+        BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.settings)
+    }
 }
 
 /// Hosts onboarding and dismisses the setup window when onboarding completes.

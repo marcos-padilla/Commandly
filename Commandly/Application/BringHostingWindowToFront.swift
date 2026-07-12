@@ -3,6 +3,7 @@ import SwiftUI
 
 enum CommandlyWindowIdentifier {
     static let settings = NSUserInterfaceItemIdentifier("commandly.settings")
+    static let launcher = NSUserInterfaceItemIdentifier("commandly.launcher")
 }
 
 /// Activates the app and brings the hosting `NSWindow` to the front when it first attaches.

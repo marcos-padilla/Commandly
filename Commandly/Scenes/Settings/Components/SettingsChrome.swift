@@ -58,10 +58,11 @@ struct SettingsToggleRow: View {
     @Binding var isOn: Bool
     var isDisabled: Bool = false
 
+    @Environment(\.commandlyLayoutDensity) private var density
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: Spacing.sm.rawValue) {
+        HStack(alignment: .center, spacing: density.spacing(.sm)) {
             settingsGlyph(icon, emphasized: isHovered || isOn)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -73,7 +74,7 @@ struct SettingsToggleRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: Spacing.xs.rawValue)
+            Spacer(minLength: density.spacing(.xs))
 
             Toggle("", isOn: $isOn)
                 .labelsHidden()
@@ -82,7 +83,7 @@ struct SettingsToggleRow: View {
                 .disabled(isDisabled)
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 6)
+        .padding(.vertical, max(4, density.rowVerticalPadding - 2))
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.045 : 0))
@@ -104,11 +105,12 @@ struct SettingsActionRow: View {
     var actionDisabled: Bool = false
     let action: () -> Void
 
+    @Environment(\.commandlyLayoutDensity) private var density
     @State private var isHovered = false
     @State private var isActionHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: Spacing.sm.rawValue) {
+        HStack(alignment: .center, spacing: density.spacing(.sm)) {
             settingsGlyph(icon, emphasized: isHovered)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -120,7 +122,7 @@ struct SettingsActionRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: Spacing.xs.rawValue)
+            Spacer(minLength: density.spacing(.xs))
 
             Button(actionTitle, action: action)
                 .buttonStyle(.borderless)
@@ -136,7 +138,7 @@ struct SettingsActionRow: View {
                 }
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 6)
+        .padding(.vertical, max(4, density.rowVerticalPadding - 2))
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.045 : 0))

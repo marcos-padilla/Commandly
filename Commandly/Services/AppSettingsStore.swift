@@ -32,6 +32,21 @@ enum AppTextSizePreference: String, CaseIterable, Sendable, Equatable, Identifia
     }
 }
 
+/// Preferred layout density for launcher and settings surfaces.
+enum AppViewModePreference: String, CaseIterable, Sendable, Equatable, Identifiable {
+    case comfortable
+    case compact
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .comfortable: return "Comfortable"
+        case .compact: return "Compact"
+        }
+    }
+}
+
 /// Non-secret user preferences for Commandly.
 struct AppSettings: Equatable, Sendable {
     var opensAtLogin: Bool
@@ -41,6 +56,7 @@ struct AppSettings: Equatable, Sendable {
     var showMenuBarIcon: Bool
     var appearance: AppAppearancePreference
     var textSize: AppTextSizePreference
+    var viewMode: AppViewModePreference
 
     static let `default` = AppSettings(
         opensAtLogin: false,
@@ -48,7 +64,8 @@ struct AppSettings: Equatable, Sendable {
         hasConfirmedOptionSpaceHotkey: false,
         showMenuBarIcon: true,
         appearance: .system,
-        textSize: .standard
+        textSize: .standard,
+        viewMode: .comfortable
     )
 }
 
@@ -70,6 +87,7 @@ final class UserDefaultsAppSettingsStore: AppSettingsStoring, @unchecked Sendabl
         static let showMenuBarIcon = "settings.showMenuBarIcon"
         static let appearance = "settings.appearance"
         static let textSize = "settings.textSize"
+        static let viewMode = "settings.viewMode"
     }
 
     private let defaults: UserDefaults
@@ -81,6 +99,7 @@ final class UserDefaultsAppSettingsStore: AppSettingsStoring, @unchecked Sendabl
     func load() -> AppSettings {
         let appearanceRaw = defaults.string(forKey: Key.appearance) ?? AppAppearancePreference.system.rawValue
         let textSizeRaw = defaults.string(forKey: Key.textSize) ?? AppTextSizePreference.standard.rawValue
+        let viewModeRaw = defaults.string(forKey: Key.viewMode) ?? AppViewModePreference.comfortable.rawValue
         let hasMenuBarKey = defaults.object(forKey: Key.showMenuBarIcon) != nil
 
         return AppSettings(
@@ -89,7 +108,8 @@ final class UserDefaultsAppSettingsStore: AppSettingsStoring, @unchecked Sendabl
             hasConfirmedOptionSpaceHotkey: defaults.bool(forKey: Key.hasConfirmedOptionSpaceHotkey),
             showMenuBarIcon: hasMenuBarKey ? defaults.bool(forKey: Key.showMenuBarIcon) : true,
             appearance: AppAppearancePreference(rawValue: appearanceRaw) ?? .system,
-            textSize: AppTextSizePreference(rawValue: textSizeRaw) ?? .standard
+            textSize: AppTextSizePreference(rawValue: textSizeRaw) ?? .standard,
+            viewMode: AppViewModePreference(rawValue: viewModeRaw) ?? .comfortable
         )
     }
 
@@ -100,6 +120,7 @@ final class UserDefaultsAppSettingsStore: AppSettingsStoring, @unchecked Sendabl
         defaults.set(settings.showMenuBarIcon, forKey: Key.showMenuBarIcon)
         defaults.set(settings.appearance.rawValue, forKey: Key.appearance)
         defaults.set(settings.textSize.rawValue, forKey: Key.textSize)
+        defaults.set(settings.viewMode.rawValue, forKey: Key.viewMode)
     }
 }
 

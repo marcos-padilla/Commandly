@@ -56,12 +56,14 @@ final class SettingsViewModel {
     var showMenuBarIcon: Bool
     var appearance: AppAppearancePreference
     var textSize: AppTextSizePreference
+    var viewMode: AppViewModePreference
     var hasConfirmedOptionSpaceHotkey: Bool
     private(set) var permissionStates: [PermissionKind: PermissionState] = [:]
     private(set) var isUpdatingLoginItem = false
     private(set) var statusMessage: String?
     var onMenuBarIconChange: ((Bool) -> Void)?
     var onTextSizeChange: ((AppTextSizePreference) -> Void)?
+    var onViewModeChange: ((AppViewModePreference) -> Void)?
 
     init(
         settingsStore: any AppSettingsStoring,
@@ -70,7 +72,8 @@ final class SettingsViewModel {
         privacySettingsOpener: any PrivacySettingsOpening,
         metadata: ApplicationMetadata,
         onMenuBarIconChange: ((Bool) -> Void)? = nil,
-        onTextSizeChange: ((AppTextSizePreference) -> Void)? = nil
+        onTextSizeChange: ((AppTextSizePreference) -> Void)? = nil,
+        onViewModeChange: ((AppViewModePreference) -> Void)? = nil
     ) {
         self.settingsStore = settingsStore
         self.loginItemManager = loginItemManager
@@ -79,6 +82,7 @@ final class SettingsViewModel {
         self.metadata = metadata
         self.onMenuBarIconChange = onMenuBarIconChange
         self.onTextSizeChange = onTextSizeChange
+        self.onViewModeChange = onViewModeChange
 
         let settings = settingsStore.load()
         self.opensAtLogin = settings.opensAtLogin
@@ -86,6 +90,7 @@ final class SettingsViewModel {
         self.showMenuBarIcon = settings.showMenuBarIcon
         self.appearance = settings.appearance
         self.textSize = settings.textSize
+        self.viewMode = settings.viewMode
         self.hasConfirmedOptionSpaceHotkey = settings.hasConfirmedOptionSpaceHotkey
         Self.applyAppearance(settings.appearance)
     }
@@ -145,6 +150,12 @@ final class SettingsViewModel {
         onTextSizeChange?(value)
     }
 
+    func setViewMode(_ value: AppViewModePreference) {
+        viewMode = value
+        persist()
+        onViewModeChange?(value)
+    }
+
     func refreshPermissions() async {
         var states: [PermissionKind: PermissionState] = [:]
         for kind in [PermissionKind.calendar, .contacts, .files, .accessibility] {
@@ -188,7 +199,8 @@ final class SettingsViewModel {
                 hasConfirmedOptionSpaceHotkey: hasConfirmedOptionSpaceHotkey,
                 showMenuBarIcon: showMenuBarIcon,
                 appearance: appearance,
-                textSize: textSize
+                textSize: textSize,
+                viewMode: viewMode
             )
         )
     }

@@ -154,12 +154,14 @@ struct CommandlyTests {
         viewModel.setPrefersCommandlyEmojiPicker(true)
         viewModel.setAppearance(.dark)
         viewModel.setTextSize(.larger)
+        viewModel.setViewMode(.compact)
         viewModel.setShowMenuBarIcon(false)
 
         let loaded = settings.load()
         #expect(loaded.prefersCommandlyEmojiPicker)
         #expect(loaded.appearance == .dark)
         #expect(loaded.textSize == .larger)
+        #expect(loaded.viewMode == .compact)
         #expect(loaded.showMenuBarIcon == false)
     }
 
@@ -201,7 +203,8 @@ struct CommandlyTests {
                 hasConfirmedOptionSpaceHotkey: false,
                 showMenuBarIcon: true,
                 appearance: .system,
-                textSize: .larger
+                textSize: .larger,
+                viewMode: .comfortable
             )
         )
         let container = makeTestContainer(
@@ -216,6 +219,91 @@ struct CommandlyTests {
         #expect(runtime.textSize == .standard)
     }
 
+    @Test func viewModeDensityMatchesDesignTokens() {
+        #expect(AppViewModePreference.comfortable.layoutDensity == .comfortable)
+        #expect(AppViewModePreference.compact.layoutDensity == .compact)
+        #expect(
+            AppViewModePreference.compact.layoutDensity.launcherHeight
+                < AppViewModePreference.comfortable.layoutDensity.launcherHeight
+        )
+    }
+
+    @Test @MainActor func settingsViewModeChangeNotifiesRuntimeCallback() {
+        let settings = InMemoryAppSettingsStore()
+        var received: AppViewModePreference?
+        let viewModel = SettingsViewModel(
+            settingsStore: settings,
+            loginItemManager: InMemoryLoginItemManager(),
+            permissionService: InMemoryPermissionService(),
+            privacySettingsOpener: InMemoryPrivacySettingsOpener(),
+            metadata: ApplicationMetadata(
+                name: "Commandly",
+                version: "1.0",
+                build: "1",
+                bundleIdentifier: "com.businessmate360.Commandly",
+                environment: .testing
+            ),
+            onViewModeChange: { received = $0 }
+        )
+
+        viewModel.setViewMode(.compact)
+
+        #expect(received == .compact)
+        #expect(settings.load().viewMode == .compact)
+    }
+
+    @Test @MainActor func launcherViewModelFiltersAndSelectsPlaceholders() {
+        let viewModel = LauncherViewModel()
+        #expect(viewModel.filteredItems.isEmpty == false)
+        #expect(viewModel.selectedItem != nil)
+
+        viewModel.query = "settings"
+        #expect(viewModel.filteredItems.contains { $0.id == "open-settings" })
+        #expect(viewModel.filteredItems.allSatisfy { $0.matches(query: "settings") })
+
+        viewModel.moveSelection(offset: 1)
+        #expect(viewModel.selectedItem != nil)
+
+        viewModel.query = "zzznomatch"
+        #expect(viewModel.filteredItems.isEmpty)
+        #expect(viewModel.selectedID == nil)
+    }
+
+    @Test @MainActor func launcherOpenSettingsActionInvokesCallback() {
+        var openedSettings = false
+        var dismissed = false
+        let viewModel = LauncherViewModel(
+            onDismiss: { dismissed = true },
+            onOpenSettings: { openedSettings = true }
+        )
+        viewModel.query = "Open Settings"
+        viewModel.selectedID = "open-settings"
+        viewModel.confirmSelection()
+        #expect(dismissed)
+        #expect(openedSettings)
+    }
+
+    @Test @MainActor func launcherPlaceholderActionSurfacesHonestStatus() {
+        let viewModel = LauncherViewModel()
+        viewModel.selectedID = "search-files"
+        viewModel.confirmSelection()
+        #expect(viewModel.statusMessage?.contains("not implemented") == true)
+    }
+
+    @Test @MainActor func appRuntimeToggleLauncherRespectsOnboardingGate() {
+        let container = makeTestContainer(hasCompletedOnboarding: false)
+        let runtime = AppRuntime(container: container)
+        #expect(runtime.showsOnboarding)
+        runtime.showLauncher()
+        #expect(runtime.showsLauncher == false)
+
+        runtime.showsOnboarding = false
+        runtime.showLauncher()
+        #expect(runtime.showsLauncher)
+        runtime.toggleLauncher()
+        #expect(runtime.showsLauncher == false)
+    }
+
     @Test @MainActor func appRuntimeRestartOnboardingResetsProgress() async {
         let store = InMemoryOnboardingStatusStore(hasCompletedOnboarding: true)
         let settings = InMemoryAppSettingsStore(
@@ -225,7 +313,8 @@ struct CommandlyTests {
                 hasConfirmedOptionSpaceHotkey: true,
                 showMenuBarIcon: true,
                 appearance: .dark,
-                textSize: .larger
+                textSize: .larger,
+                viewMode: .compact
             )
         )
         let folderAccess = InMemoryFolderAccessStore(bookmarkData: [Data([0x01])], forceUsable: true)
@@ -246,6 +335,7 @@ struct CommandlyTests {
         #expect(folderAccess.bookmarkData.isEmpty)
         #expect(runtime.showsOnboarding)
         #expect(runtime.textSize == .standard)
+        #expect(runtime.viewMode == .comfortable)
         #expect(container.appState.route == .onboarding)
 
         let restarted = runtime.makeOnboardingViewModel()

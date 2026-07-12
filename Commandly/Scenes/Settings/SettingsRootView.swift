@@ -38,6 +38,7 @@ struct SettingsRootView: View {
         .compactWindowChrome(hidesZoomButton: true)
         .bringHostingWindowToFront(identifier: CommandlyWindowIdentifier.settings)
         .commandlyContentSize(viewModel.textSize)
+        .commandlyViewMode(viewModel.viewMode)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: viewModel.selectedPane)
         .onAppear {
             viewModel.onAppear()

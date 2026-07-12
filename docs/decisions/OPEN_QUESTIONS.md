@@ -16,7 +16,7 @@
 
 **Question:** Carbon/HotKey APIs vs other event taps; Accessibility implications.
 
-**Current state:** Not implemented.
+**Current state:** MVP launcher uses Carbon `RegisterEventHotKey` for ⌥Space (`OptionSpaceHotkeyMonitor`) so the shortcut works without an Accessibility prompt. Revisit if we need conflict resolution, user-remappable shortcuts, or broader key combinations.
 
 ## Extension model
 

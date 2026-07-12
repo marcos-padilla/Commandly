@@ -20,6 +20,15 @@ User preference (`AppTextSizePreference` in settings) maps to a scale factor via
 
 Feature UI should prefer `.commandlyFont(size:weight:design:)` for chrome and copy so the preference takes effect. Keep fixed `.font(.system(size:))` only for intentionally non-scaling details (for example decorative keyboard key caps).
 
+## View mode
+
+User preference (`AppViewModePreference`) maps to `CommandlyLayoutDensity` via `commandlyViewMode(_:)`:
+
+- **Comfortable** → current spacing, row padding, and launcher height
+- **Compact** → tighter padding, smaller icons, shorter launcher panel
+
+Launcher and settings chrome read `\.commandlyLayoutDensity` for paddings and sizes.
+
 ## Rules
 
 - Do not build the final launcher UI here.

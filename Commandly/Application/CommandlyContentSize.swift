@@ -23,6 +23,18 @@ extension AppTextSizePreference {
     }
 }
 
+extension AppViewModePreference {
+    /// Layout metrics for the selected view mode.
+    nonisolated var layoutDensity: CommandlyLayoutDensity {
+        switch self {
+        case .comfortable:
+            return .comfortable
+        case .compact:
+            return .compact
+        }
+    }
+}
+
 extension View {
     /// Applies persisted text-size preference to scaled fonts and Dynamic Type.
     func commandlyContentSize(_ preference: AppTextSizePreference) -> some View {
@@ -30,5 +42,10 @@ extension View {
             .commandlyTextScale(preference.scaleFactor)
             .dynamicTypeSize(preference.dynamicTypeSize)
             .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: preference)
+    }
+
+    /// Applies persisted view-mode density to launcher and settings layout.
+    func commandlyViewMode(_ preference: AppViewModePreference) -> some View {
+        commandlyLayoutDensity(preference.layoutDensity)
     }
 }

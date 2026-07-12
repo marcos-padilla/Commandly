@@ -3,10 +3,11 @@ import DesignSystem
 
 struct GeneralSettingsPage: View {
     @Bindable var viewModel: SettingsViewModel
+    @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
+            VStack(alignment: .leading, spacing: density.pageStackSpacing) {
                 SettingsPageHeader(
                     title: viewModel.selectedPane.title,
                     subtitle: viewModel.selectedPane.subtitle
@@ -42,6 +43,31 @@ struct GeneralSettingsPage: View {
                 }
 
                 SettingsCard {
+                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+                        HStack(spacing: Spacing.sm.rawValue) {
+                            settingsGlyph("rectangle.split.3x1")
+                            Text("View Mode")
+                                .commandlyFont(size: 12.5, weight: .medium)
+                            Spacer()
+                        }
+
+                        HStack(spacing: 6) {
+                            ForEach(AppViewModePreference.allCases) { mode in
+                                SettingsChoiceChip(
+                                    label: mode.title,
+                                    fontSize: 11,
+                                    selected: viewModel.viewMode == mode,
+                                    accessory: { viewModeGlyph(mode) }
+                                ) {
+                                    viewModel.setViewMode(mode)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 6)
+
+                    SettingsDivider()
+
                     VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                         HStack(spacing: Spacing.sm.rawValue) {
                             settingsGlyph("textformat.size")
@@ -118,6 +144,15 @@ struct GeneralSettingsPage: View {
 }
 
 @ViewBuilder
+private func viewModeGlyph(_ mode: AppViewModePreference) -> some View {
+    Image(systemName: mode == .comfortable ? "rectangle.portrait" : "rectangle.arrowtriangle.2.inward")
+        .commandlyFont(size: 10, weight: .semibold)
+        .foregroundStyle(.secondary)
+        .frame(width: 12, height: 12)
+        .accessibilityHidden(true)
+}
+
+@ViewBuilder
 private func appearanceGlyph(_ mode: AppAppearancePreference) -> some View {
     switch mode {
     case .light:
@@ -145,10 +180,11 @@ private func appearanceGlyph(_ mode: AppAppearancePreference) -> some View {
 
 private struct HotkeySettingsRow: View {
     let hotkeyDisplay: String
+    @Environment(\.commandlyLayoutDensity) private var density
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: Spacing.sm.rawValue) {
+        HStack(alignment: .center, spacing: density.spacing(.sm)) {
             settingsGlyph("keyboard", emphasized: isHovered)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -159,7 +195,7 @@ private struct HotkeySettingsRow: View {
                     .foregroundStyle(.tertiary)
             }
 
-            Spacer(minLength: Spacing.xs.rawValue)
+            Spacer(minLength: density.spacing(.xs))
 
             Text(hotkeyDisplay)
                 .commandlyFont(size: 11, weight: .medium, design: .rounded)
@@ -173,7 +209,7 @@ private struct HotkeySettingsRow: View {
                 .scaleEffect(isHovered ? 1.03 : 1)
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 6)
+        .padding(.vertical, max(4, density.rowVerticalPadding - 2))
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.primary.opacity(isHovered ? 0.045 : 0))

@@ -47,6 +47,10 @@ public enum LayoutConstants {
     public static let launcherMinWidth: CGFloat = 640
     /// Default minimum launcher height.
     public static let launcherMinHeight: CGFloat = 420
+    /// Ideal launcher panel width.
+    public static let launcherIdealWidth: CGFloat = 720
+    /// Ideal launcher panel height.
+    public static let launcherIdealHeight: CGFloat = 480
     /// Default settings window width.
     public static let settingsMinWidth: CGFloat = 720
     /// Default settings window height.

@@ -18,6 +18,11 @@ struct StatusBarMenu: View {
 
             Divider()
 
+            Button("Open Commandly") {
+                runtime.showLauncher()
+            }
+            .keyboardShortcut("o", modifiers: [.command, .option])
+
             Button("Settings…") {
                 presentSettings()
             }
