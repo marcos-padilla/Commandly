@@ -7,15 +7,17 @@ Status legend: ✅ done · 🔜 next · ⏳ later
 3. ✅ **Menu bar agent shell** — status item with Settings, Open Commandly, and Quit
 4. ✅ **Settings window** — quiet sidebar + General / Permissions / About
 5. ✅ **Launcher window (frontend)** — floating palette UI, ⌥Space toggle, placeholder commands
-6. 🔜 **Keyboard navigation polish** — ranking list movement, actions menu, shortcuts
-7. ⏳ **Command registry** — real built-in commands on CommandKit
-8. ⏳ **Application launching** — Infrastructure adapters for opening apps
+6. ✅ **Command registration + Clipboard History** — scalable command manifests/actions; first real view command
+7. 🔜 **Keyboard navigation polish** — actions menu consistency, deeper list UX
+8. ✅ **Application launching** — enumerate installed apps + open via Infrastructure adapters
 9. ⏳ **Quick links and snippets** — user-defined shortcuts
-10. ⏳ **Search providers** — apps, files, commands (cancellable)
-11. ⏳ **Clipboard history** — opt-in, privacy-reviewed
+10. ✅ **Search providers (commands + apps)** — SearchKit-backed ranked, cancellable search + autocomplete; file search still later
+11. ⏳ **Clipboard history persistence** — optional durable store, privacy-reviewed
 12. ⏳ **Window management** — requires Accessibility, contextual prompting
 13. ⏳ **BusinessMate360 integration** — product-specific commands
 14. ⏳ **Extension prototype** — after ADR, likely declarative or signed native first
 15. ⏳ **Distribution and updates** — signing, notarization, updater decision
+16. ⏳ **File search provider** — cancellable files provider behind SearchKit
+17. ⏳ **Natural-language / AI answers** — only after a deliberate product/privacy design
 
 Do not implement later phases under the guise of foundation work.

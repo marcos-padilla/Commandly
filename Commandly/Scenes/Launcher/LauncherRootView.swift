@@ -1,9 +1,11 @@
 import SwiftUI
 import DesignSystem
 import AppKit
+import CommandKit
 
 struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
+    @State private var lastPointerLocation: CGPoint?
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.commandlyLayoutDensity) private var density
 
@@ -12,49 +14,29 @@ struct LauncherRootView: View {
     }
 
     var body: some View {
+        @Bindable var viewModel = viewModel
         VStack(spacing: 0) {
-            LauncherSearchField(
-                query: $viewModel.query,
-                onSubmit: { viewModel.confirmSelection() }
-            )
-
-            Divider().opacity(0.35)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: density.spacing(.xxs)) {
-                        if viewModel.sections.isEmpty {
-                            emptyState
-                        } else {
-                            ForEach(viewModel.sections, id: \.kind) { section in
-                                LauncherSectionHeader(title: section.kind.title)
-
-                                ForEach(section.items) { item in
-                                    LauncherResultRow(
-                                        item: item,
-                                        isSelected: item.id == viewModel.selectedItem?.id
-                                    ) {
-                                        viewModel.select(item.id)
-                                        viewModel.confirmSelection()
-                                    }
-                                    .id(item.id)
-                                }
-                            }
-                        }
+            Group {
+                switch viewModel.route {
+                case .root:
+                    rootContent
+                case .command(let id) where id == BuiltInCommandID.clipboardHistory:
+                    if let clipboardViewModel = viewModel.clipboardViewModel {
+                        ClipboardHistoryView(viewModel: clipboardViewModel)
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .padding(.vertical, density.spacing(.xs))
-                    .padding(.bottom, density.spacing(.sm))
-                }
-                .frame(maxHeight: .infinity)
-                .onChange(of: viewModel.selectedID) { _, newValue in
-                    guard let newValue, viewModel.shouldScrollToSelection else { return }
-                    withAnimation(.easeOut(duration: MotionDuration.fast.rawValue)) {
-                        proxy.scrollTo(newValue, anchor: .center)
-                    }
+                case .command:
+                    Text("This command has no surface yet.")
+                        .commandlyFont(size: 13)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if let statusMessage = viewModel.statusMessage {
+            if let statusMessage = activeStatusMessage {
                 Text(statusMessage)
                     .commandlyFont(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
@@ -65,12 +47,15 @@ struct LauncherRootView: View {
             }
 
             LauncherFooterBar(
-                primaryActionTitle: viewModel.primaryActionTitle,
-                onPrimaryAction: { viewModel.confirmSelection() },
-                onOpenSettings: {
-                    viewModel.onOpenSettings()
-                },
-                onClose: { closeLauncher() }
+                contextTitle: viewModel.contextTitle,
+                contextSystemImage: viewModel.contextSystemImage,
+                actions: viewModel.footerActions,
+                menuActions: viewModel.menuActions,
+                showsActionsMenu: Binding(
+                    get: { viewModel.showsActionsMenu },
+                    set: { viewModel.showsActionsMenu = $0 }
+                ),
+                onAction: { viewModel.performFooterAction($0) }
             )
         }
         .frame(
@@ -89,29 +74,96 @@ struct LauncherRootView: View {
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
         .ignoresSafeArea()
         .launcherWindowChrome(onRequestClose: { closeLauncher() })
-        .focusable()
         .onKeyPress(.escape) {
-            closeLauncher()
-            return .handled
-        }
-        .onKeyPress(.upArrow) {
-            viewModel.moveSelection(offset: -1)
-            return .handled
-        }
-        .onKeyPress(.downArrow) {
-            viewModel.moveSelection(offset: 1)
-            return .handled
-        }
-        .onKeyPress(.return) {
-            viewModel.confirmSelection()
+            if viewModel.handleEscape() == false {
+                closeLauncher()
+            }
             return .handled
         }
         .onAppear {
             viewModel.prepareForPresentation()
         }
-        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: viewModel.statusMessage)
+        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: viewModel.route)
+        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: activeStatusMessage)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Commandly launcher")
+    }
+
+    private var activeStatusMessage: String? {
+        viewModel.clipboardViewModel?.statusMessage ?? viewModel.statusMessage
+    }
+
+    private var rootContent: some View {
+        @Bindable var viewModel = viewModel
+        return VStack(spacing: 0) {
+            LauncherSearchField(
+                query: $viewModel.query,
+                autocompleteSuffix: viewModel.autocompleteSuffix,
+                focusEpoch: viewModel.searchFocusEpoch,
+                onSubmit: { viewModel.confirmSelection() },
+                onMoveSelection: { viewModel.moveSelection(offset: $0) },
+                onAcceptAutocomplete: { viewModel.acceptAutocomplete() },
+                onCancel: {
+                    if viewModel.handleEscape() == false {
+                        closeLauncher()
+                    }
+                }
+            )
+
+            Divider().opacity(0.35)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: density.spacing(.xxs)) {
+                        if viewModel.sections.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(viewModel.sections, id: \.kind) { section in
+                                LauncherSectionHeader(title: section.kind.title)
+
+                                ForEach(section.items) { item in
+                                    LauncherResultRow(
+                                        item: item,
+                                        isSelected: item.id == viewModel.selectedItem?.id,
+                                        onHoverChange: { hovering in
+                                            if hovering {
+                                                viewModel.setHovered(item.id)
+                                            } else {
+                                                viewModel.clearHovered(item.id)
+                                            }
+                                        }
+                                    ) {
+                                        viewModel.select(item.id)
+                                        viewModel.confirmSelection()
+                                    }
+                                    .id(item.id)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, density.spacing(.xs))
+                    .padding(.bottom, density.spacing(.sm))
+                }
+                .frame(maxHeight: .infinity)
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        if lastPointerLocation != location {
+                            lastPointerLocation = location
+                            viewModel.beginPointerInput()
+                        }
+                    case .ended:
+                        lastPointerLocation = nil
+                    }
+                }
+                .onChange(of: viewModel.selectedID) { _, newValue in
+                    guard let newValue, viewModel.shouldScrollToSelection else { return }
+                    withAnimation(.easeOut(duration: MotionDuration.fast.rawValue)) {
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
+                }
+            }
+        }
     }
 
     private var emptyState: some View {

@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Infrastructure
 import AppKit
+import CommandKit
 
 /// Observable app runtime for scene-level UI that must react to onboarding completion.
 @Observable
@@ -19,6 +20,11 @@ final class AppRuntime {
     private var cachedSettingsViewModel: SettingsViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
     private let hotkeyMonitor = OptionSpaceHotkeyMonitor()
+    let commandCatalog: CommandCatalog
+    /// Pasteboard monitoring must not invalidate scene/`@Bindable` runtime UI.
+    /// Views that need history observe the store through command view models.
+    @ObservationIgnored
+    let clipboardHistoryStore: ClipboardHistoryStore
 
     init(container: AppContainer = .bootstrap()) {
         self.container = container
@@ -27,7 +33,10 @@ final class AppRuntime {
         self.showMenuBarIcon = settings.showMenuBarIcon
         self.textSize = settings.textSize
         self.viewMode = settings.viewMode
+        self.commandCatalog = .makeBuiltIn()
+        self.clipboardHistoryStore = ClipboardHistoryStore()
         startHotkeyMonitor()
+        registerBuiltInCommands()
     }
 
     func makeOnboardingViewModel() -> OnboardingViewModel {
@@ -66,6 +75,10 @@ final class AppRuntime {
             return cachedLauncherViewModel
         }
         let viewModel = LauncherViewModel(
+            catalog: commandCatalog,
+            clipboardHistoryStore: clipboardHistoryStore,
+            applicationOpener: WorkspaceApplicationOpener(),
+            applicationQuery: WorkspaceInstalledApplicationQuery(),
             onDismiss: { [weak self] in
                 self?.hideLauncher()
             },
@@ -105,6 +118,9 @@ final class AppRuntime {
     }
 
     func hideLauncher() {
+        // Drop command-surface observation (e.g. clipboard entries) so background
+        // pasteboard polls cannot refresh a dismissed launcher view hierarchy.
+        cachedLauncherViewModel?.resetAfterDismiss()
         guard showsLauncher else {
             dismissLauncherWindow?()
             return
@@ -140,5 +156,16 @@ final class AppRuntime {
                 self?.toggleLauncher()
             }
         }
+    }
+
+    private func registerBuiltInCommands() {
+        let registry = container.dependencies.commandRegistry
+        let manifests = commandCatalog.allManifests()
+        Task {
+            for manifest in manifests {
+                try? await registry.register(manifest)
+            }
+        }
+        clipboardHistoryStore.startMonitoring()
     }
 }

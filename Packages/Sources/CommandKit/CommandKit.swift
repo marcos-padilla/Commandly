@@ -10,6 +10,15 @@ public struct CommandID: Hashable, Sendable, Codable, RawRepresentable {
     }
 }
 
+/// Unique identifier for a command action (footer / ⌘K menu).
+public struct CommandActionID: Hashable, Sendable, Codable, RawRepresentable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
 /// High-level grouping for commands.
 public enum CommandCategory: String, Sendable, Codable, CaseIterable, Equatable {
     case application
@@ -19,16 +28,56 @@ public enum CommandCategory: String, Sendable, Codable, CaseIterable, Equatable 
     case experimental
 }
 
+/// How a command is presented when selected from the launcher.
+public enum CommandMode: String, Sendable, Codable, Equatable {
+    /// Runs immediately without pushing a nested surface.
+    case action
+    /// Pushes a command-owned surface (search, list, preview, actions).
+    case view
+}
+
+/// Display-only keyboard hint for footer chrome.
+public struct CommandKeyHint: Sendable, Equatable, Hashable {
+    public let symbols: [String]
+
+    public init(symbols: [String]) {
+        self.symbols = symbols
+    }
+
+    public static let `return` = CommandKeyHint(symbols: ["↩"])
+    public static let escape = CommandKeyHint(symbols: ["Esc"])
+    public static let commandK = CommandKeyHint(symbols: ["⌘", "K"])
+}
+
+/// An action exposed by a command surface (primary footer button or Actions menu).
+public struct CommandActionDescriptor: Sendable, Equatable, Identifiable, Hashable {
+    public let id: CommandActionID
+    public let title: String
+    public let isPrimary: Bool
+    public let keyHint: CommandKeyHint?
+    public let isEnabled: Bool
+
+    public init(
+        id: CommandActionID,
+        title: String,
+        isPrimary: Bool = false,
+        keyHint: CommandKeyHint? = nil,
+        isEnabled: Bool = true
+    ) {
+        self.id = id
+        self.title = title
+        self.isPrimary = isPrimary
+        self.keyHint = keyHint
+        self.isEnabled = isEnabled
+    }
+}
+
 /// Describes an argument a command may accept.
 public struct CommandArgument: Sendable, Equatable, Codable {
-    /// Argument name.
     public let name: String
-    /// Human-readable description.
     public let description: String
-    /// Whether the argument is required.
     public let isRequired: Bool
 
-    /// Creates a command argument descriptor.
     public init(name: String, description: String, isRequired: Bool) {
         self.name = name
         self.description = description
@@ -45,7 +94,6 @@ public struct CommandDescriptor: Sendable, Equatable, Identifiable {
     public let keywords: [String]
     public let arguments: [CommandArgument]
 
-    /// Creates a command descriptor.
     public init(
         id: CommandID,
         title: String,
@@ -63,6 +111,52 @@ public struct CommandDescriptor: Sendable, Equatable, Identifiable {
     }
 }
 
+/// Full registration payload for a launcher command (metadata + presentation mode).
+public struct CommandManifest: Sendable, Equatable, Identifiable {
+    public let id: CommandID
+    public let title: String
+    public let subtitle: String?
+    public let systemImage: String
+    public let category: CommandCategory
+    public let mode: CommandMode
+    public let keywords: [String]
+    public let badgeTitle: String
+    /// Default footer actions when the command surface first appears.
+    public let defaultActions: [CommandActionDescriptor]
+
+    public var descriptor: CommandDescriptor {
+        CommandDescriptor(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            category: category,
+            keywords: keywords
+        )
+    }
+
+    public init(
+        id: CommandID,
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        category: CommandCategory,
+        mode: CommandMode,
+        keywords: [String] = [],
+        badgeTitle: String = "Command",
+        defaultActions: [CommandActionDescriptor] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.category = category
+        self.mode = mode
+        self.keywords = keywords
+        self.badgeTitle = badgeTitle
+        self.defaultActions = defaultActions
+    }
+}
+
 /// Outcome of a command execution attempt.
 public enum CommandResult: Sendable, Equatable {
     case success(message: String?)
@@ -72,7 +166,6 @@ public enum CommandResult: Sendable, Equatable {
 
 /// Contract for executing a command. No concrete executors are provided yet.
 public protocol CommandExecuting: Sendable {
-    /// Executes the command identified by `id` with the provided argument values.
     func execute(id: CommandID, arguments: [String: String]) async throws -> CommandResult
 }
 
@@ -82,34 +175,70 @@ public enum CommandRegistryError: Error, Sendable, Equatable {
     case commandNotFound(CommandID)
 }
 
-/// In-memory registry of command descriptors.
+/// In-memory registry of command manifests and legacy descriptors.
 public actor CommandRegistry {
-    private var descriptors: [CommandID: CommandDescriptor] = [:]
+    private var manifests: [CommandID: CommandManifest] = [:]
 
-    /// Creates an empty registry.
     public init() {}
 
-    /// Registers a command descriptor.
-    /// - Throws: ``CommandRegistryError/duplicateCommand(_:)`` when the ID already exists.
-    public func register(_ descriptor: CommandDescriptor) throws {
-        if descriptors[descriptor.id] != nil {
-            throw CommandRegistryError.duplicateCommand(descriptor.id)
+    /// Registers a full command manifest.
+    public func register(_ manifest: CommandManifest) throws {
+        if manifests[manifest.id] != nil {
+            throw CommandRegistryError.duplicateCommand(manifest.id)
         }
-        descriptors[descriptor.id] = descriptor
+        manifests[manifest.id] = manifest
     }
 
-    /// Returns a registered descriptor, if present.
+    /// Registers a legacy descriptor as an action-mode manifest without chrome defaults.
+    public func register(_ descriptor: CommandDescriptor) throws {
+        let manifest = CommandManifest(
+            id: descriptor.id,
+            title: descriptor.title,
+            subtitle: descriptor.subtitle,
+            systemImage: "command",
+            category: descriptor.category,
+            mode: .action,
+            keywords: descriptor.keywords,
+            badgeTitle: "Command",
+            defaultActions: []
+        )
+        try register(manifest)
+    }
+
+    public func manifest(for id: CommandID) -> CommandManifest? {
+        manifests[id]
+    }
+
     public func descriptor(for id: CommandID) -> CommandDescriptor? {
-        descriptors[id]
+        manifests[id]?.descriptor
     }
 
-    /// Returns all registered descriptors sorted by title.
+    public func allManifests() -> [CommandManifest] {
+        manifests.values.sorted {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
+    }
+
     public func allDescriptors() -> [CommandDescriptor] {
-        descriptors.values.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        allManifests().map(\.descriptor)
     }
 
-    /// Number of registered commands.
     public var count: Int {
-        descriptors.count
+        manifests.count
     }
+}
+
+/// Well-known built-in command identifiers.
+public enum BuiltInCommandID {
+    public static let clipboardHistory = CommandID(rawValue: "clipboard.history")
+    public static let openSettings = CommandID(rawValue: "settings.open")
+}
+
+/// Well-known action identifiers shared across surfaces.
+public enum BuiltInCommandActionID {
+    public static let copy = CommandActionID(rawValue: "copy")
+    public static let delete = CommandActionID(rawValue: "delete")
+    public static let clearHistory = CommandActionID(rawValue: "clear-history")
+    public static let openActions = CommandActionID(rawValue: "open-actions")
+    public static let goBack = CommandActionID(rawValue: "go-back")
 }

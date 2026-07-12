@@ -26,4 +26,20 @@ struct SearchKitTests {
         #expect(result.items.count == 1)
         #expect(result.isComplete)
     }
+
+    @Test func searchMatchScorerRanksPrefixAboveContains() {
+        #expect(SearchMatchScorer.score(query: "set", title: "Settings") == SearchMatchScorer.titlePrefix)
+        #expect(SearchMatchScorer.score(query: "ting", title: "Settings") == SearchMatchScorer.titleContains)
+        #expect(SearchMatchScorer.score(query: "zzz", title: "Settings") == nil)
+        #expect(SearchMatchScorer.score(query: "", title: "Settings") == SearchMatchScorer.emptyQueryBaseline)
+    }
+
+    @Test func searchMatchScorerUsesKeywords() {
+        let score = SearchMatchScorer.score(
+            query: "pref",
+            title: "Open Settings",
+            keywords: ["preferences"]
+        )
+        #expect(score == SearchMatchScorer.keywordPrefix)
+    }
 }

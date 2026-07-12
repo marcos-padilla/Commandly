@@ -11,6 +11,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 | Files and Folders | Search folders the user selects | Onboarding Grant Access shows a folder picker; security-scoped bookmarks are stored | Re-run picker or System Settings → Files and Folders |
 | Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
+| Clipboard History | Browse and re-copy recent pasteboard items from the launcher | Activating the Clipboard History command (no TCC prompt) | Clear history from the command Actions menu |
 
 ## Entitlements and usage strings
 

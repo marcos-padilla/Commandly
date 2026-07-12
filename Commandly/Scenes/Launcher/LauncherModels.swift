@@ -1,10 +1,12 @@
 import Foundation
+import CommandKit
 
 /// Visual grouping inside the launcher list.
 enum LauncherSectionKind: String, CaseIterable, Identifiable, Sendable {
     case gettingStarted
     case suggestions
     case commands
+    case applications
 
     var id: String { rawValue }
 
@@ -13,6 +15,7 @@ enum LauncherSectionKind: String, CaseIterable, Identifiable, Sendable {
         case .gettingStarted: return "Getting Started"
         case .suggestions: return "Suggestions"
         case .commands: return "Commands"
+        case .applications: return "Applications"
         }
     }
 }
@@ -36,25 +39,89 @@ enum LauncherItemBadge: String, Sendable, Equatable {
     }
 }
 
-/// What happens when a launcher row is confirmed (frontend placeholders for now).
+/// What happens when a launcher row is confirmed.
 enum LauncherItemAction: Sendable, Equatable {
     case openSettings
     case dismiss
+    case openCommand(CommandID)
+    case openApplication(bundleIdentifier: String)
     case placeholder(message: String)
 }
 
-/// A single row in the launcher. Placeholder-backed until real commands ship.
+/// Visual icon for a launcher row.
+enum LauncherItemIcon: Sendable, Equatable {
+    case system(String)
+    /// Absolute `.app` bundle path for `NSWorkspace` icon lookup.
+    case application(path: String)
+}
+
+/// A single row in the launcher.
 struct LauncherItem: Identifiable, Sendable, Equatable {
     let id: String
     let section: LauncherSectionKind
     let title: String
     let subtitle: String?
-    let systemImage: String
+    let icon: LauncherItemIcon
     let badge: LauncherItemBadge
     let keywords: [String]
     let action: LauncherItemAction
 
+    /// Convenience for rows that still use SF Symbols.
+    var systemImage: String {
+        if case .system(let name) = icon { return name }
+        return "app.fill"
+    }
+
+    init(
+        id: String,
+        section: LauncherSectionKind,
+        title: String,
+        subtitle: String?,
+        systemImage: String,
+        badge: LauncherItemBadge,
+        keywords: [String],
+        action: LauncherItemAction
+    ) {
+        self.init(
+            id: id,
+            section: section,
+            title: title,
+            subtitle: subtitle,
+            icon: .system(systemImage),
+            badge: badge,
+            keywords: keywords,
+            action: action
+        )
+    }
+
+    init(
+        id: String,
+        section: LauncherSectionKind,
+        title: String,
+        subtitle: String?,
+        icon: LauncherItemIcon,
+        badge: LauncherItemBadge,
+        keywords: [String],
+        action: LauncherItemAction
+    ) {
+        self.id = id
+        self.section = section
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.badge = badge
+        self.keywords = keywords
+        self.action = action
+    }
+
     func matches(query: String) -> Bool {
+        SearchMatchBridge.matches(query: query, title: title, subtitle: subtitle, keywords: keywords)
+    }
+}
+
+/// Thin bridge so models can share scoring rules with SearchKit without importing it everywhere tests expect.
+enum SearchMatchBridge {
+    static func matches(query: String, title: String, subtitle: String?, keywords: [String]) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return true }
         let haystacks = ([title, subtitle].compactMap { $0 } + keywords)
@@ -65,8 +132,8 @@ struct LauncherItem: Identifiable, Sendable, Equatable {
 }
 
 enum LauncherPlaceholderCatalog {
-    /// Static frontend catalog. Not wired to real execution.
-    static let items: [LauncherItem] = [
+    /// Placeholder rows that are not yet backed by registered commands.
+    static let nonCommandItems: [LauncherItem] = [
         LauncherItem(
             id: "welcome",
             section: .gettingStarted,
@@ -76,16 +143,6 @@ enum LauncherPlaceholderCatalog {
             badge: .walkthrough,
             keywords: ["tour", "onboarding", "help", "start"],
             action: .placeholder(message: "Walkthrough will arrive in a later build.")
-        ),
-        LauncherItem(
-            id: "open-settings",
-            section: .suggestions,
-            title: "Open Settings",
-            subtitle: "Preferences, permissions, and about",
-            systemImage: "gearshape",
-            badge: .settings,
-            keywords: ["preferences", "general"],
-            action: .openSettings
         ),
         LauncherItem(
             id: "search-files",
@@ -98,16 +155,6 @@ enum LauncherPlaceholderCatalog {
             action: .placeholder(message: "File search is not implemented yet.")
         ),
         LauncherItem(
-            id: "clipboard-history",
-            section: .suggestions,
-            title: "Clipboard History",
-            subtitle: "Browse recent copies",
-            systemImage: "clipboard",
-            badge: .command,
-            keywords: ["paste", "history"],
-            action: .placeholder(message: "Clipboard history is not implemented yet.")
-        ),
-        LauncherItem(
             id: "my-schedule",
             section: .suggestions,
             title: "My Schedule",
@@ -116,16 +163,6 @@ enum LauncherPlaceholderCatalog {
             badge: .command,
             keywords: ["calendar", "meetings"],
             action: .placeholder(message: "Calendar commands are not implemented yet.")
-        ),
-        LauncherItem(
-            id: "color-meter",
-            section: .suggestions,
-            title: "Digital Color Meter",
-            subtitle: nil,
-            systemImage: "eyedropper",
-            badge: .application,
-            keywords: ["color", "picker"],
-            action: .placeholder(message: "App launching is not implemented yet.")
         ),
         LauncherItem(
             id: "snip-link",
@@ -158,4 +195,22 @@ enum LauncherPlaceholderCatalog {
             action: .placeholder(message: "Use Quit Commandly from the menu bar for now.")
         )
     ]
+
+    static var searchRecords: [PlaceholderSearchRecord] {
+        nonCommandItems.map { item in
+            PlaceholderSearchRecord(
+                id: item.id,
+                title: item.title,
+                subtitle: item.subtitle,
+                keywords: item.keywords,
+                systemImage: item.systemImage,
+                badge: item.badge,
+                section: item.section,
+                message: {
+                    if case .placeholder(let message) = item.action { return message }
+                    return "Not implemented yet."
+                }()
+            )
+        }
+    }
 }

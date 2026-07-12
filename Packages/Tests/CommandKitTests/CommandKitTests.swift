@@ -36,4 +36,27 @@ struct CommandKitTests {
         let titles = await registry.allDescriptors().map(\.title)
         #expect(titles == ["Alpha", "Bravo"])
     }
+
+    @Test func manifestRegistrationPreservesModeAndActions() async throws {
+        let registry = CommandRegistry()
+        let manifest = CommandManifest(
+            id: BuiltInCommandID.clipboardHistory,
+            title: "Clipboard History",
+            systemImage: "clipboard",
+            category: .productivity,
+            mode: .view,
+            defaultActions: [
+                CommandActionDescriptor(
+                    id: BuiltInCommandActionID.copy,
+                    title: "Copy",
+                    isPrimary: true,
+                    keyHint: .return
+                )
+            ]
+        )
+        try await registry.register(manifest)
+        let loaded = await registry.manifest(for: BuiltInCommandID.clipboardHistory)
+        #expect(loaded?.mode == .view)
+        #expect(loaded?.defaultActions.first?.id == BuiltInCommandActionID.copy)
+    }
 }

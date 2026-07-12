@@ -77,3 +77,61 @@ public protocol SearchProviding: Sendable {
     /// Performs a search for the given query.
     func search(_ query: SearchQuery) async throws -> SearchResult
 }
+
+/// Built-in provider identifiers used by Commandly composition.
+public enum BuiltInSearchProviderID: Sendable {
+    public static let commands = SearchProviderID(rawValue: "commands")
+    public static let applications = SearchProviderID(rawValue: "applications")
+    public static let placeholders = SearchProviderID(rawValue: "placeholders")
+}
+
+/// Scores title / subtitle / keyword haystacks for ranked launcher search.
+///
+/// Higher is better. Returns `nil` when `query` is non-empty and nothing matches.
+public enum SearchMatchScorer: Sendable {
+    /// Exact title match.
+    public static let exactTitle: Double = 1.0
+    /// Title has the query as a prefix.
+    public static let titlePrefix: Double = 0.9
+    /// A keyword has the query as a prefix.
+    public static let keywordPrefix: Double = 0.75
+    /// Title contains the query.
+    public static let titleContains: Double = 0.55
+    /// Subtitle contains the query.
+    public static let subtitleContains: Double = 0.4
+    /// A keyword contains the query.
+    public static let keywordContains: Double = 0.3
+    /// Baseline score when the query is empty (listing mode).
+    public static let emptyQueryBaseline: Double = 0.1
+
+    /// Returns a relevance score, or `nil` if the record should be excluded.
+    public static func score(
+        query: String,
+        title: String,
+        subtitle: String? = nil,
+        keywords: [String] = []
+    ) -> Double? {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard needle.isEmpty == false else {
+            return emptyQueryBaseline
+        }
+
+        let titleLower = title.lowercased()
+        if titleLower == needle { return exactTitle }
+        if titleLower.hasPrefix(needle) { return titlePrefix }
+
+        let keywordLowers = keywords.map { $0.lowercased() }
+        if keywordLowers.contains(where: { $0.hasPrefix(needle) }) {
+            return keywordPrefix
+        }
+        if titleLower.contains(needle) { return titleContains }
+
+        if let subtitle, subtitle.lowercased().contains(needle) {
+            return subtitleContains
+        }
+        if keywordLowers.contains(where: { $0.contains(needle) }) {
+            return keywordContains
+        }
+        return nil
+    }
+}

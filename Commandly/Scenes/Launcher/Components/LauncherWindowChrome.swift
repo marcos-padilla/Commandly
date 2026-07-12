@@ -53,8 +53,11 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
             self.window = window
             applyChrome(to: window)
             installMonitorsIfNeeded()
-            // Always raise when the launcher content attaches — fixes reopen after dismiss.
-            BringHostingWindowToFront.raise(window)
+            // Do not raise or activate here. `updateNSView` calls `attach` on ordinary
+            // SwiftUI refreshes — including `@Observable` clipboard history updates —
+            // and raising would steal focus on every system-wide copy. Explicit open
+            // paths (`AppRuntime.showLauncher` / `LauncherPresentationBridge`) own
+            // activation and ordering front.
         }
 
         @MainActor

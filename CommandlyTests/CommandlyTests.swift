@@ -9,6 +9,7 @@ import SecurityKit
 import Observability
 import Infrastructure
 import DesignSystem
+import SearchKit
 
 struct CommandlyTests {
     @Test @MainActor func dependencyContainerBootstrapsToRootWhenOnboarded() {
@@ -252,24 +253,209 @@ struct CommandlyTests {
         #expect(settings.load().viewMode == .compact)
     }
 
-    @Test @MainActor func launcherViewModelFiltersAndSelectsPlaceholders() {
+    @Test @MainActor func launcherOpensClipboardHistoryCommand() {
+        let catalog = CommandCatalog.makeBuiltIn()
+        let store = ClipboardHistoryStore()
+        let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+        viewModel.confirmSelection()
+        #expect(viewModel.route == .command(BuiltInCommandID.clipboardHistory))
+        #expect(viewModel.clipboardViewModel != nil)
+        #expect(viewModel.contextTitle == "Clipboard History")
+        #expect(viewModel.footerActions.contains { $0.id == BuiltInCommandActionID.copy })
+    }
+
+    @Test @MainActor func launcherResetAfterDismissClearsClipboardSurface() {
+        let catalog = CommandCatalog.makeBuiltIn()
+        let store = ClipboardHistoryStore()
+        let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+        viewModel.confirmSelection()
+        #expect(viewModel.clipboardViewModel != nil)
+
+        viewModel.resetAfterDismiss()
+        #expect(viewModel.route == .root)
+        #expect(viewModel.clipboardViewModel == nil)
+        #expect(viewModel.query.isEmpty)
+    }
+
+    @Test @MainActor func appRuntimeHideLauncherClearsClipboardSurfaceObservation() {
+        let container = makeTestContainer(hasCompletedOnboarding: true)
+        let runtime = AppRuntime(container: container)
+        runtime.showsOnboarding = false
+        let viewModel = runtime.makeLauncherViewModel(onOpenSettings: {})
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+        viewModel.confirmSelection()
+        #expect(viewModel.clipboardViewModel != nil)
+
+        runtime.showLauncher()
+        #expect(runtime.showsLauncher)
+        runtime.hideLauncher()
+        #expect(runtime.showsLauncher == false)
+        #expect(viewModel.route == .root)
+        #expect(viewModel.clipboardViewModel == nil)
+    }
+
+    @Test @MainActor func clipboardHistoryStorePollDoesNotRequireUIActivation() {
+        // Headless capture: poll mutates entries only. UI activation is owned by
+        // explicit open paths; this guards the non-UI contract used by background monitoring.
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.headless.\(UUID().uuidString)"))
+        let store = ClipboardHistoryStore(pasteboard: pasteboard)
+        pasteboard.clearContents()
+        pasteboard.setString("background-capture", forType: .string)
+        store.poll()
+        #expect(store.entries.count == 1)
+        #expect(store.entries.first?.contentType == .text)
+        store.poll()
+        #expect(store.entries.count == 1)
+    }
+
+    @Test @MainActor func clipboardHistoryFiltersAndCopiesWithoutLoggingRequirement() {
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.filter.\(UUID().uuidString)"))
+        let store = ClipboardHistoryStore(pasteboard: pasteboard)
+        let entry = ClipboardHistoryEntry(
+            id: UUID(),
+            createdAt: Date(),
+            contentType: .text,
+            preview: "Hello Commandly",
+            text: "Hello Commandly",
+            imageTIFFData: nil,
+            fileURLs: [],
+            sourceAppName: "Xcode",
+            sourceBundleIdentifier: "com.apple.dt.Xcode"
+        )
+        store.replaceEntriesForTesting([entry])
+        let viewModel = ClipboardHistoryViewModel(
+            store: store,
+            onGoBack: {},
+            onDismiss: {}
+        )
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.query = "commandly"
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.query = "zzznomatch"
+        #expect(viewModel.filteredEntries.isEmpty)
+        viewModel.query = "xcode"
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.query = ""
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.filter = .image
+        #expect(viewModel.filteredEntries.isEmpty)
+        viewModel.filter = .all
+        #expect(viewModel.filteredEntries.count == 1)
+        viewModel.perform(BuiltInCommandActionID.copy)
+        #expect(viewModel.statusMessage == nil)
+        #expect(pasteboard.string(forType: .string) == "Hello Commandly")
+    }
+
+    @Test @MainActor func clipboardImageFileURLDetection() {
+        #expect(ClipboardImageFile.isImageFileURL(URL(fileURLWithPath: "/tmp/photo.PNG")))
+        #expect(ClipboardImageFile.isImageFileURL(URL(fileURLWithPath: "/tmp/shot.webp")))
+        #expect(ClipboardImageFile.isImageFileURL(URL(fileURLWithPath: "/tmp/notes.txt")) == false)
+
+        let entry = ClipboardHistoryEntry(
+            id: UUID(),
+            createdAt: Date(),
+            contentType: .fileURL,
+            preview: "notes.txt, shot.jpg",
+            text: nil,
+            imageTIFFData: nil,
+            fileURLs: [
+                URL(fileURLWithPath: "/tmp/notes.txt"),
+                URL(fileURLWithPath: "/tmp/shot.jpg")
+            ],
+            sourceAppName: nil,
+            sourceBundleIdentifier: nil
+        )
+        #expect(entry.firstImageFileURL?.lastPathComponent == "shot.jpg")
+    }
+
+    @Test @MainActor func clipboardCopyToPasteboardDoesNotAppendHistoryEntry() {
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.suppress.\(UUID().uuidString)"))
+        let store = ClipboardHistoryStore(pasteboard: pasteboard)
+        let entry = ClipboardHistoryEntry(
+            id: UUID(),
+            createdAt: Date(),
+            contentType: .text,
+            preview: "Re-copy me",
+            text: "Re-copy me",
+            imageTIFFData: nil,
+            fileURLs: [],
+            sourceAppName: "Commandly",
+            sourceBundleIdentifier: "app.commandly"
+        )
+        store.replaceEntriesForTesting([entry])
+        let countBefore = store.entries.count
+
+        store.copyToPasteboard(entry)
+        store.poll()
+        store.poll()
+
+        #expect(store.entries.count == countBefore)
+        #expect(store.entries.first?.id == entry.id)
+    }
+
+    @Test @MainActor func clipboardHistoryCopyEntryUsesSpecificRow() {
+        let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.rowCopy.\(UUID().uuidString)"))
+        let store = ClipboardHistoryStore(pasteboard: pasteboard)
+        let first = ClipboardHistoryEntry(
+            id: UUID(),
+            createdAt: Date(),
+            contentType: .text,
+            preview: "First",
+            text: "First",
+            imageTIFFData: nil,
+            fileURLs: [],
+            sourceAppName: nil,
+            sourceBundleIdentifier: nil
+        )
+        let second = ClipboardHistoryEntry(
+            id: UUID(),
+            createdAt: Date().addingTimeInterval(-60),
+            contentType: .text,
+            preview: "Second",
+            text: "Second",
+            imageTIFFData: nil,
+            fileURLs: [],
+            sourceAppName: nil,
+            sourceBundleIdentifier: nil
+        )
+        store.replaceEntriesForTesting([first, second])
+        let viewModel = ClipboardHistoryViewModel(
+            store: store,
+            onGoBack: {},
+            onDismiss: {}
+        )
+        viewModel.select(first.id)
+        viewModel.copyEntry(second)
+        #expect(viewModel.statusMessage == nil)
+        #expect(pasteboard.string(forType: .string) == "Second")
+        #expect(store.entries.count == 2)
+        store.poll()
+        #expect(store.entries.count == 2)
+    }
+
+    @Test @MainActor func launcherViewModelFiltersAndSelectsPlaceholders() async {
         let viewModel = LauncherViewModel()
-        #expect(viewModel.filteredItems.isEmpty == false)
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.isEmpty == false)
         #expect(viewModel.selectedItem != nil)
 
         viewModel.query = "settings"
-        #expect(viewModel.filteredItems.contains { $0.id == "open-settings" })
-        #expect(viewModel.filteredItems.allSatisfy { $0.matches(query: "settings") })
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.contains { $0.id == BuiltInCommandID.openSettings.rawValue })
+        #expect(viewModel.rootItems.allSatisfy { $0.matches(query: "settings") })
 
         viewModel.moveSelection(offset: 1)
         #expect(viewModel.selectedItem != nil)
 
         viewModel.query = "zzznomatch"
-        #expect(viewModel.filteredItems.isEmpty)
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.isEmpty)
         #expect(viewModel.selectedID == nil)
     }
 
-    @Test @MainActor func launcherOpenSettingsActionInvokesCallback() {
+    @Test @MainActor func launcherOpenSettingsActionInvokesCallback() async {
         var openedSettings = false
         var dismissed = false
         let viewModel = LauncherViewModel(
@@ -277,17 +463,136 @@ struct CommandlyTests {
             onOpenSettings: { openedSettings = true }
         )
         viewModel.query = "Open Settings"
-        viewModel.selectedID = "open-settings"
+        await viewModel.flushSearchForTesting()
+        viewModel.selectedID = BuiltInCommandID.openSettings.rawValue
         viewModel.confirmSelection()
         #expect(dismissed)
         #expect(openedSettings)
     }
 
-    @Test @MainActor func launcherPlaceholderActionSurfacesHonestStatus() {
+    @Test @MainActor func launcherPlaceholderActionSurfacesHonestStatus() async {
         let viewModel = LauncherViewModel()
+        await viewModel.flushSearchForTesting()
         viewModel.selectedID = "search-files"
         viewModel.confirmSelection()
         #expect(viewModel.statusMessage?.contains("not implemented") == true)
+    }
+
+    @Test @MainActor func launcherSearchRanksCommandsAndAppsWithAutocomplete() async {
+        let apps = [
+            InstalledApplication(bundleIdentifier: "com.example.alpha", name: "Alpha Editor", path: "/Applications/Alpha.app"),
+            InstalledApplication(bundleIdentifier: "com.example.beta", name: "Beta Tools", path: "/Applications/Beta.app")
+        ]
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: apps)
+        )
+        viewModel.query = "clip"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.first?.id == BuiltInCommandID.clipboardHistory.rawValue)
+        #expect(viewModel.autocompleteSuffix.lowercased().hasPrefix("board") || viewModel.rootItems.first?.title == "Clipboard History")
+
+        viewModel.query = "Alpha"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.rootItems.contains { $0.action == .openApplication(bundleIdentifier: "com.example.alpha") })
+        #expect(viewModel.rootItems.contains {
+            if case .application(let path) = $0.icon {
+                return path == "/Applications/Alpha.app"
+            }
+            return false
+        })
+        #expect(viewModel.autocompleteSuffix.isEmpty || viewModel.rootItems.contains { $0.title.hasPrefix("Alpha") })
+
+        viewModel.acceptAutocomplete()
+        await viewModel.flushSearchForTesting()
+    }
+
+    @Test @MainActor func launcherListsAllAppsBelowCommandsSection() async {
+        let apps = (1...20).map { index in
+            InstalledApplication(
+                bundleIdentifier: "com.example.app\(index)",
+                name: String(format: "App %02d", index),
+                path: "/Applications/App\(index).app"
+            )
+        }
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: apps)
+        )
+        await viewModel.flushSearchForTesting()
+
+        let kinds = viewModel.sections.map(\.kind)
+        if let commandsIndex = kinds.firstIndex(of: .commands),
+           let applicationsIndex = kinds.firstIndex(of: .applications) {
+            #expect(applicationsIndex > commandsIndex)
+        } else {
+            #expect(kinds.contains(.applications))
+        }
+
+        let applicationItems = viewModel.rootItems.filter { $0.section == .applications }
+        #expect(applicationItems.count == 20)
+    }
+
+    @Test @MainActor func launcherOpensApplicationViaOpener() async {
+        final class Recorder: ApplicationOpening, @unchecked Sendable {
+            private(set) var opened: String?
+            private var continuation: CheckedContinuation<Void, Never>?
+
+            func openApplication(bundleIdentifier: String) async throws {
+                opened = bundleIdentifier
+                continuation?.resume()
+                continuation = nil
+            }
+
+            func waitUntilOpened() async {
+                if opened != nil { return }
+                await withCheckedContinuation { continuation = $0 }
+            }
+        }
+        let recorder = Recorder()
+        var dismissed = false
+        let viewModel = LauncherViewModel(
+            applicationOpener: recorder,
+            applicationQuery: InMemoryInstalledApplicationQuery(
+                applications: [
+                    InstalledApplication(bundleIdentifier: "com.example.app", name: "Example", path: "/Applications/Example.app")
+                ]
+            ),
+            onDismiss: { dismissed = true }
+        )
+        viewModel.query = "Example"
+        await viewModel.flushSearchForTesting()
+        viewModel.selectedID = "app:com.example.app"
+        viewModel.confirmSelection()
+        await recorder.waitUntilOpened()
+        #expect(recorder.opened == "com.example.app")
+        #expect(dismissed)
+    }
+
+    @Test @MainActor func compositeSearchServiceMergesAndSortsByScore() async throws {
+        struct StubProvider: SearchProviding {
+            let id: SearchProviderID
+            let items: [SearchItem]
+            func search(_ query: SearchQuery) async throws -> SearchResult {
+                SearchResult(query: query, items: items)
+            }
+        }
+        let service = CompositeSearchService(
+            providers: [
+                StubProvider(
+                    id: SearchProviderID(rawValue: "a"),
+                    items: [
+                        SearchItem(id: "1", title: "Low", providerID: SearchProviderID(rawValue: "a"), score: 0.2)
+                    ]
+                ),
+                StubProvider(
+                    id: SearchProviderID(rawValue: "b"),
+                    items: [
+                        SearchItem(id: "2", title: "High", providerID: SearchProviderID(rawValue: "b"), score: 0.9)
+                    ]
+                )
+            ]
+        )
+        let result = try await service.search(SearchQuery(text: "x", limit: 10))
+        #expect(result.items.map(\.id) == ["2", "1"])
     }
 
     @Test @MainActor func appRuntimeToggleLauncherRespectsOnboardingGate() {

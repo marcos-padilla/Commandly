@@ -6,6 +6,52 @@ public protocol ApplicationOpening: Sendable {
     func openApplication(bundleIdentifier: String) async throws
 }
 
+/// A discovered installed application.
+public struct InstalledApplication: Sendable, Equatable, Identifiable, Hashable {
+    public var id: String { bundleIdentifier }
+    public let bundleIdentifier: String
+    public let name: String
+    public let path: String
+
+    /// Creates an installed application record.
+    public init(bundleIdentifier: String, name: String, path: String) {
+        self.bundleIdentifier = bundleIdentifier
+        self.name = name
+        self.path = path
+    }
+}
+
+/// Enumerates applications available to launch from the launcher.
+///
+/// Implementations must not block the main actor and must not log user file contents.
+public protocol InstalledApplicationQuerying: Sendable {
+    /// Returns installed applications (may be cached).
+    func installedApplications() async -> [InstalledApplication]
+}
+
+/// In-memory application catalog for tests and previews.
+public struct InMemoryInstalledApplicationQuery: InstalledApplicationQuerying {
+    private let applications: [InstalledApplication]
+
+    /// Creates a query backed by a fixed list.
+    public init(applications: [InstalledApplication] = []) {
+        self.applications = applications
+    }
+
+    public func installedApplications() async -> [InstalledApplication] {
+        applications
+    }
+}
+
+/// No-op application opener for tests.
+public struct NoOpApplicationOpener: ApplicationOpening {
+    public init() {}
+
+    public func openApplication(bundleIdentifier: String) async throws {
+        _ = bundleIdentifier
+    }
+}
+
 /// Opens URLs after validation by higher layers.
 public protocol URLOpening: Sendable {
     /// Opens a URL.
