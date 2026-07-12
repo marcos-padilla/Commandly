@@ -19,9 +19,7 @@ enum CalculatorDateTime {
 
     static func looksLikePlaceOrZone(_ input: String) -> Bool {
         let lowered = input.lowercased()
-        if zoneAliasMap.keys.contains(where: { lowered.contains($0) }) {
-            return true
-        }
+        if CalculatorTimeZoneRegistry.shared.containsKnownZone(in: lowered) { return true }
         // IANA-looking token
         if lowered.range(of: #"[a-z]+/[a-z_]+"#, options: .regularExpression) != nil {
             return true
@@ -227,50 +225,8 @@ enum CalculatorDateTime {
 
     // MARK: - Helpers
 
-    private static let ambiguousAbbreviations: Set<String> = [
-        "cst", "ist", "bst", "pst", "est", "mst", "ast", "cdt", "edt", "mdt", "pdt",
-    ]
-
-    private static let zoneAliasMap: [String: String] = [
-        "new york": "America/New_York",
-        "nyc": "America/New_York",
-        "tokyo": "Asia/Tokyo",
-        "london": "Europe/London",
-        "miami": "America/New_York",
-        "madrid": "Europe/Madrid",
-        "sydney": "Australia/Sydney",
-        "paris": "Europe/Paris",
-        "berlin": "Europe/Berlin",
-        "chicago": "America/Chicago",
-        "los angeles": "America/Los_Angeles",
-        "la": "America/Los_Angeles",
-        "san francisco": "America/Los_Angeles",
-        "utc": "UTC",
-        "gmt": "GMT",
-        "singapore": "Asia/Singapore",
-        "hong kong": "Asia/Hong_Kong",
-        "dubai": "Asia/Dubai",
-        "toronto": "America/Toronto",
-        "vancouver": "America/Vancouver",
-    ]
-
     static func resolveTimeZone(_ raw: String) throws -> TimeZone {
-        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ambiguousAbbreviations.contains(name) {
-            throw CalculatorError.ambiguousTimeZone(raw)
-        }
-        if let identifier = zoneAliasMap[name], let zone = TimeZone(identifier: identifier) {
-            return zone
-        }
-        // Try as IANA directly (preserve original casing for path).
-        if let zone = TimeZone(identifier: raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            return zone
-        }
-        // Title-case city words
-        if let identifier = zoneAliasMap[name], let zone = TimeZone(identifier: identifier) {
-            return zone
-        }
-        throw CalculatorError.ambiguousTimeZone(raw)
+        try CalculatorTimeZoneRegistry.shared.resolve(raw)
     }
 
     private static func combine(timeText: String, on day: Date, in zone: TimeZone, calendar: Calendar) throws -> Date {

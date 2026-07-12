@@ -86,6 +86,8 @@ enum CalculatorFormatter {
             return formatCurrency(currency, locale: context.locale)
         case .timeZoneInstant(let instant):
             return formatTimeZoneInstant(instant, locale: context.locale, calendar: context.calendar)
+        case .text(let text):
+            return text
         }
     }
 }

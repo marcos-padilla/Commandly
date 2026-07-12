@@ -10,6 +10,7 @@ import Observability
 import Infrastructure
 import DesignSystem
 import SearchKit
+import CalculatorKit
 
 struct CommandlyTests {
     @Test @MainActor func dependencyContainerBootstrapsToRootWhenOnboarded() {
@@ -611,7 +612,7 @@ struct CommandlyTests {
         #expect(applicationItems.count == 20)
     }
 
-    @Test @MainActor func launcherCalculatorPinsAboveCommandsAndCopies() async {
+    @Test @MainActor func launcherCalculatorPinsAboveCommandsAndCopiesWithoutDismiss() async {
         let pasteboard = InMemoryPasteboard()
         var dismissed = false
         let viewModel = LauncherViewModel(
@@ -628,7 +629,74 @@ struct CommandlyTests {
 
         await viewModel.confirmSelectionAndWaitForTesting()
         #expect(pasteboard.currentValue?.contains("4") == true)
-        #expect(dismissed)
+        #expect(dismissed == false)
+        #expect(viewModel.statusMessage == "Copied answer.")
+    }
+
+    @Test @MainActor func launcherCalculatorPreviewsIncompleteInputAndAcceptsTabCompletion() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "sqrt(5"
+        await viewModel.flushSearchForTesting()
+
+        #expect(viewModel.sections.first?.kind == .calculator)
+        #expect(viewModel.rootItems.first?.title.isEmpty == false)
+        #expect(viewModel.autocompleteSuffix == ")")
+        #expect(viewModel.autocompleteCompletion == "sqrt(5)")
+        #expect(viewModel.autocompleteActionLabel == "Tab to complete")
+
+        viewModel.acceptAutocomplete()
+        #expect(viewModel.query == "sqrt(5)")
+    }
+
+    @Test @MainActor func launcherCalculatorReplacesConversionSuggestionAsQueryChanges() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "5 mph"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.activeCalculatorResult?.formattedPrimaryValue.contains("km/h") == true)
+        #expect(viewModel.autocompleteCompletion == "5 mph in km/h")
+        #expect(viewModel.autocompleteActionLabel == "Tab to convert")
+
+        viewModel.query = "5 mph in m"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.autocompleteCompletion == "5 mph in m/s")
+    }
+
+    @Test @MainActor func launcherCalculatorCanAcceptFuzzyReplacementWithoutSuffix() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "sqart(25"
+        await viewModel.flushSearchForTesting()
+        #expect(viewModel.autocompleteSuffix.isEmpty)
+        #expect(viewModel.autocompleteCompletion == "sqrt(25)")
+
+        viewModel.acceptAutocomplete()
+        #expect(viewModel.query == "sqrt(25)")
+    }
+
+    @Test @MainActor func launcherCalculatorQuestionCanReturnToSearchForEditing() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "ten plus ten"
+        await viewModel.flushSearchForTesting()
+        guard let result = viewModel.activeCalculatorResult else {
+            Issue.record("Expected calculator result")
+            return
+        }
+        let previousFocusEpoch = viewModel.searchFocusEpoch
+        viewModel.editCalculatorQuestion(resultID: result.id.rawValue)
+        #expect(viewModel.query == "ten plus ten")
+        #expect(viewModel.searchFocusEpoch == previousFocusEpoch + 1)
+    }
+
+    @Test @MainActor func launcherCalculatorMenuProvidesContextualActions() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "2 + 2"
+        await viewModel.flushSearchForTesting()
+        let ids = Set(viewModel.menuActions.map(\.id.rawValue))
+        #expect(ids.contains("copyAnswer"))
+        #expect(ids.contains("copyUnformatted"))
+        #expect(ids.contains("openCalculator"))
+        #expect(ids.contains("addToNote"))
+        #expect(ids.contains("insertResult"))
+        #expect(ids.contains("copyExpression"))
     }
 
     @Test @MainActor func launcherCalculatorDoesNotTriggerForAppNames() async {

@@ -9,6 +9,7 @@ indirect enum Expression: Sendable, Equatable {
     case binary(BinaryOperator, Expression, Expression)
     case percentOf(Expression, Expression) // percent, base  → percent% of base
     case postfixPercent(Expression)
+    case factorial(Expression)
     case call(String, [Expression])
     /// Contextual: base + percent% or base - percent%
     case percentAdjust(BinaryOperator, Expression, Expression)
@@ -103,7 +104,7 @@ struct CalculatorParser: Sendable {
             // Postfix percent is handled in parsePostfix. Modulo uses keyword `mod`
             // or explicit `%` between numbers when next token starts a primary after `%`.
             // We treat identifier `mod` as modulo.
-            if check(.identifier("mod")) {
+            if check(.identifier("mod")) || (check(.percent) && nextTokenStartsValue) {
                 advance()
                 let right = try parseUnary()
                 left = .binary(.modulo, left, right)
@@ -145,8 +146,15 @@ struct CalculatorParser: Sendable {
 
     private mutating func parsePostfix() throws -> Expression {
         var expression = try parsePrimary()
-        while match(.percent) {
-            expression = .postfixPercent(expression)
+        while true {
+            if check(.percent), !nextTokenStartsValue {
+                advance()
+                expression = .postfixPercent(expression)
+            } else if match(.factorial) {
+                expression = .factorial(expression)
+            } else {
+                break
+            }
         }
         return expression
     }
@@ -230,6 +238,16 @@ struct CalculatorParser: Sendable {
         isNumberOrPrimaryStart()
     }
 
+    private var nextTokenStartsValue: Bool {
+        guard current + 1 < tokens.count else { return false }
+        switch tokens[current + 1].kind {
+        case .number, .identifier, .leftParen, .plus, .minus:
+            return true
+        default:
+            return false
+        }
+    }
+
     private var isAtEnd: Bool {
         if case .eof = peek.kind { return true }
         return false
@@ -297,6 +315,7 @@ struct CalculatorParser: Sendable {
              (.slash, .slash),
              (.caret, .caret),
              (.percent, .percent),
+             (.factorial, .factorial),
              (.leftParen, .leftParen),
              (.rightParen, .rightParen),
              (.comma, .comma),
@@ -323,13 +342,67 @@ enum PercentagePhraseParser {
         if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s*%\s*tip\s+on\s*([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
             return makePercentOf(percent: match.0, base: match.1, tagged: "tip")
         }
+        if let match = matchPattern(#"^tip\s+([-+]?[0-9][0-9.,]*)\s*%\s+on\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentOf(percent: match.0, base: match.1, tagged: "tip")
+        }
         if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s*%\s*tax\s+on\s*([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
             return makePercentOf(percent: match.0, base: match.1, tagged: "tax")
         }
         if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s*%\s*discount\s+from\s*([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
             return makePercentOf(percent: match.0, base: match.1, tagged: "discount")
         }
+        if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s*%\s*discount\s+(?:on|from)\s*([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentOf(percent: match.0, base: match.1, tagged: "discount")
+        }
+        if let match = matchPattern(#"^(?:increase|add)\s+([-+]?[0-9][0-9.,]*)\s+(?:by\s+)?([-+]?[0-9][0-9.,]*)\s*%$"#, in: lowered) {
+            return makePercentAdjustment(base: match.0, percent: match.1, operation: .add)
+        }
+        if let match = matchPattern(#"^add\s+([-+]?[0-9][0-9.,]*)\s*%\s+to\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentAdjustment(base: match.1, percent: match.0, operation: .add)
+        }
+        if let match = matchPattern(#"^(?:decrease|reduce)\s+([-+]?[0-9][0-9.,]*)\s+by\s+([-+]?[0-9][0-9.,]*)\s*%$"#, in: lowered) {
+            return makePercentAdjustment(base: match.0, percent: match.1, operation: .subtract)
+        }
+        if let match = matchPattern(#"^subtract\s+([-+]?[0-9][0-9.,]*)\s*%\s+from\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentAdjustment(base: match.1, percent: match.0, operation: .subtract)
+        }
+        if let match = matchPattern(#"^(?:%\s*change|%\s*increase)\s+from\s+([-+]?[0-9][0-9.,]*)\s+to\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentageChange(from: match.0, to: match.1)
+        }
+        if let match = matchPattern(#"^%\s*decrease\s+from\s+([-+]?[0-9][0-9.,]*)\s+to\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentageChange(from: match.0, to: match.1)
+        }
+        if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s+is\s+what\s+%\s+of\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentageOfTotal(part: match.0, total: match.1)
+        }
+        if let match = matchPattern(#"^what\s+%\s+of\s+([-+]?[0-9][0-9.,]*)\s+is\s+([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
+            return makePercentageOfTotal(part: match.1, total: match.0)
+        }
         return nil
+    }
+
+    private static func makePercentAdjustment(
+        base: String,
+        percent: String,
+        operation: BinaryOperator
+    ) -> (Expression, String?)? {
+        guard let baseDecimal = parseSimpleDecimal(base), let percentDecimal = parseSimpleDecimal(percent) else { return nil }
+        return (.percentAdjust(operation, .number(baseDecimal), .number(percentDecimal)), nil)
+    }
+
+    private static func makePercentageChange(from: String, to: String) -> (Expression, String?)? {
+        guard let start = parseSimpleDecimal(from), let end = parseSimpleDecimal(to), start != 0 else { return nil }
+        let expression = Expression.binary(
+            .multiply,
+            .binary(.divide, .binary(.subtract, .number(end), .number(start)), .number(start)),
+            .number(100)
+        )
+        return (expression, nil)
+    }
+
+    private static func makePercentageOfTotal(part: String, total: String) -> (Expression, String?)? {
+        guard let part = parseSimpleDecimal(part), let total = parseSimpleDecimal(total), total != 0 else { return nil }
+        return (.binary(.multiply, .binary(.divide, .number(part), .number(total)), .number(100)), nil)
     }
 
     private static func makePercentOf(percent: String, base: String, tagged: String?) -> (Expression, String?)? {

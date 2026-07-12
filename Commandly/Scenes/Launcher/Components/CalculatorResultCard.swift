@@ -1,56 +1,96 @@
 import SwiftUI
 import DesignSystem
 import CalculatorKit
+import CommandKit
 
 /// Distinctive two-pane calculator answer card pinned above normal launcher results.
 struct CalculatorResultCard: View {
     let result: CalculatorResult
     let isSelected: Bool
+    let actions: [CommandActionDescriptor]
     var onSelect: () -> Void
-    var onConfirm: () -> Void
+    var onEditQuestion: () -> Void
+    var onCopyAnswer: () -> Void
+    var onAction: (CommandActionID) -> Void
     @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
-        Button {
-            onSelect()
-            onConfirm()
-        } label: {
-            HStack(spacing: 0) {
+        HStack(spacing: 0) {
+            Button {
+                onSelect()
+                onEditQuestion()
+            } label: {
                 pane(
                     primary: questionText,
-                    badge: "Question",
+                    badge: "Edit Question",
                     alignment: .leading
                 )
-
-                dividerWithArrow
-
-                pane(
-                    primary: result.formattedPrimaryValue,
-                    badge: resultCaption,
-                    alignment: .leading
-                )
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, density.spacing(.md))
-            .padding(.vertical, density.spacing(.md))
-            .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
-            .background(cardBackground)
-            .overlay {
-                RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? BrandPalette.accent.opacity(0.55) : Color.white.opacity(0.08),
-                        lineWidth: isSelected ? 1.5 : 1
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit calculation question")
+            .accessibilityValue(questionText)
+            .accessibilityHint("Moves the question to the search field for editing")
+
+            dividerWithArrow
+
+            ZStack(alignment: .bottomTrailing) {
+                Button {
+                    onSelect()
+                    onCopyAnswer()
+                } label: {
+                    pane(
+                        primary: result.formattedPrimaryValue,
+                        badge: resultCaption,
+                        alignment: .leading
                     )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy calculator answer")
+                .accessibilityValue(result.formattedPrimaryValue)
+                .accessibilityHint("Copies the answer without closing Commandly")
+
+                Menu {
+                    ForEach(actions) { action in
+                        Button(action.title) {
+                            onAction(action.id)
+                        }
+                        .disabled(action.isEnabled == false)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle.fill")
+                        .commandlyFont(size: 14, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                        .background(
+                            Circle()
+                                .fill(Color.primary.opacity(0.08))
+                        )
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .help("Calculator actions")
+                .accessibilityLabel("Calculator actions")
+                .padding(.trailing, 2)
+                .padding(.bottom, 2)
             }
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, density.spacing(.md))
+        .padding(.vertical, density.spacing(.md))
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
+        .background(cardBackground)
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
+                .strokeBorder(
+                    isSelected ? BrandPalette.accent.opacity(0.55) : Color.white.opacity(0.08),
+                    lineWidth: isSelected ? 1.5 : 1
+                )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous))
         .padding(.horizontal, density.spacing(.xs))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Calculator result \(result.formattedPrimaryValue), expression \(questionText)"
-        )
-        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
-        .accessibilityHint("Copies the result")
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var questionText: String {

@@ -12,6 +12,55 @@ public protocol CalculatorEvaluating: Sendable {
         _ input: String,
         context: CalculatorEvaluationContext
     ) async -> CalculatorEvaluationOutcome
+
+    /// Returns the most likely full input for a live, partially typed query.
+    func suggestion(
+        for input: String,
+        context: CalculatorEvaluationContext
+    ) async -> CalculatorSuggestion?
+}
+
+public extension CalculatorEvaluating {
+    func suggestion(
+        for input: String,
+        context: CalculatorEvaluationContext
+    ) async -> CalculatorSuggestion? {
+        nil
+    }
+}
+
+/// Why an autocomplete candidate was inferred.
+public enum CalculatorSuggestionKind: String, Sendable, Equatable, CaseIterable {
+    case closingDelimiter
+    case missingOperand
+    case function
+    case naturalLanguage
+    case unitConversion
+    case timeZone
+}
+
+/// A complete calculator query inferred from live, partial input.
+public struct CalculatorSuggestion: Sendable, Equatable {
+    public let completedInput: String
+    public let kind: CalculatorSuggestionKind
+    public let confidence: CalculatorConfidence
+
+    public init(
+        completedInput: String,
+        kind: CalculatorSuggestionKind,
+        confidence: CalculatorConfidence
+    ) {
+        self.completedInput = completedInput
+        self.kind = kind
+        self.confidence = confidence
+    }
+
+    /// Text that may be rendered as ghost completion when no replacement is required.
+    public func suffix(after input: String) -> String? {
+        guard completedInput.count > input.count,
+              completedInput.lowercased().hasPrefix(input.lowercased()) else { return nil }
+        return String(completedInput.dropFirst(input.count))
+    }
 }
 
 /// Contextual inputs that influence parsing, evaluation, and formatting.
@@ -28,8 +77,24 @@ public struct CalculatorEvaluationContext: Sendable {
     public var angleMode: CalculatorAngleMode
     /// Previous answer referenced by `ans` / `answer` / `previous`.
     public var previousAnswer: Decimal?
+    /// Previous typed value, used when a conversion needs its unit or currency.
+    public var previousValue: CalculatorValue?
+    /// Session-scoped named values. Hosts decide the lifetime and persistence policy.
+    public var variables: [String: CalculatorVariable]
     /// Optional exchange-rate provider for currency conversion.
     public var exchangeRateProvider: (any ExchangeRateProviding)?
+    /// Configurable paid work hours used by pay-rate calculations.
+    public var workHoursPerWeek: Decimal
+    /// Configurable paid work weeks used by annualized pay calculations.
+    public var workWeeksPerYear: Decimal
+    /// Configurable overtime multiplier; no legal rule is inferred from locale.
+    public var overtimeMultiplier: Decimal
+    /// Calendar weekday numbers treated as weekends (Sunday is 1, Saturday is 7).
+    public var weekendWeekdays: Set<Int>
+    /// Explicit, user-provided non-working dates used by business-day calculations.
+    public var businessDayHolidays: Set<Date>
+    /// Optional birthday month/day stored with the user's consent.
+    public var birthdayMonthDay: DateComponents?
 
     /// Creates an evaluation context.
     public init(
@@ -39,7 +104,15 @@ public struct CalculatorEvaluationContext: Sendable {
         now: Date = Date(),
         angleMode: CalculatorAngleMode = .radians,
         previousAnswer: Decimal? = nil,
-        exchangeRateProvider: (any ExchangeRateProviding)? = nil
+        previousValue: CalculatorValue? = nil,
+        variables: [String: CalculatorVariable] = [:],
+        exchangeRateProvider: (any ExchangeRateProviding)? = nil,
+        workHoursPerWeek: Decimal = 40,
+        workWeeksPerYear: Decimal = 52,
+        overtimeMultiplier: Decimal = Decimal(string: "1.5") ?? 1.5,
+        weekendWeekdays: Set<Int> = [1, 7],
+        businessDayHolidays: Set<Date> = [],
+        birthdayMonthDay: DateComponents? = nil
     ) {
         self.locale = locale
         self.calendar = calendar
@@ -47,7 +120,26 @@ public struct CalculatorEvaluationContext: Sendable {
         self.now = now
         self.angleMode = angleMode
         self.previousAnswer = previousAnswer
+        self.previousValue = previousValue
+        self.variables = variables
         self.exchangeRateProvider = exchangeRateProvider
+        self.workHoursPerWeek = workHoursPerWeek
+        self.workWeeksPerYear = workWeeksPerYear
+        self.overtimeMultiplier = overtimeMultiplier
+        self.weekendWeekdays = weekendWeekdays
+        self.businessDayHolidays = businessDayHolidays
+        self.birthdayMonthDay = birthdayMonthDay
+    }
+}
+
+/// A named calculator value stored by the host for the current session.
+public struct CalculatorVariable: Sendable, Equatable {
+    public let value: Decimal
+    public let isPercentage: Bool
+
+    public init(value: Decimal, isPercentage: Bool = false) {
+        self.value = value
+        self.isPercentage = isPercentage
     }
 }
 
@@ -92,7 +184,13 @@ public enum CalculatorResultKind: String, Sendable, Equatable, CaseIterable {
     case percentage
     case unitConversion
     case currencyConversion
+    case financial
+    case geometry
+    case health
+    case business
+    case developerUtility
     case dateCalculation
+    case timeCalculation
     case timeZoneConversion
 }
 
@@ -104,6 +202,7 @@ public enum CalculatorValue: Sendable, Equatable {
     case measurement(CalculatorMeasurementValue)
     case currency(CalculatorCurrencyValue)
     case timeZoneInstant(CalculatorTimeZoneValue)
+    case text(String)
 }
 
 /// Dimension-agnostic measurement payload for results.
@@ -215,6 +314,8 @@ public struct CalculatorResultMetadata: Sendable, Equatable {
     public var fromTimeZone: String?
     public var toTimeZone: String?
     public var angleMode: CalculatorAngleMode?
+    public var assignedVariableName: String?
+    public var assignedVariable: CalculatorVariable?
     public var notes: [String]
 
     public init(
@@ -232,6 +333,8 @@ public struct CalculatorResultMetadata: Sendable, Equatable {
         fromTimeZone: String? = nil,
         toTimeZone: String? = nil,
         angleMode: CalculatorAngleMode? = nil,
+        assignedVariableName: String? = nil,
+        assignedVariable: CalculatorVariable? = nil,
         notes: [String] = []
     ) {
         self.baseAmount = baseAmount
@@ -248,6 +351,8 @@ public struct CalculatorResultMetadata: Sendable, Equatable {
         self.fromTimeZone = fromTimeZone
         self.toTimeZone = toTimeZone
         self.angleMode = angleMode
+        self.assignedVariableName = assignedVariableName
+        self.assignedVariable = assignedVariable
         self.notes = notes
     }
 }
@@ -264,6 +369,8 @@ public struct CalculatorResult: Sendable, Equatable, Identifiable {
     public let metadata: CalculatorResultMetadata
     public let confidence: CalculatorConfidence
     public let actionHints: [CalculatorActionHint]
+    /// Live-input completion that produced this preview, when applicable.
+    public let suggestion: CalculatorSuggestion?
 
     public init(
         id: CalculatorResultID = .make(),
@@ -275,7 +382,8 @@ public struct CalculatorResult: Sendable, Equatable, Identifiable {
         primaryValue: CalculatorValue,
         metadata: CalculatorResultMetadata = CalculatorResultMetadata(),
         confidence: CalculatorConfidence,
-        actionHints: [CalculatorActionHint] = [.copyResult, .copyResultUnformatted, .copyExpressionAndResult]
+        actionHints: [CalculatorActionHint] = [.copyResult, .copyResultUnformatted, .copyExpressionAndResult],
+        suggestion: CalculatorSuggestion? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -287,6 +395,7 @@ public struct CalculatorResult: Sendable, Equatable, Identifiable {
         self.metadata = metadata
         self.confidence = confidence
         self.actionHints = actionHints
+        self.suggestion = suggestion
     }
 }
 
@@ -395,8 +504,10 @@ enum CalculatorIntent: Sendable, Equatable {
     case percentage
     case unitConversion
     case currencyConversion
+    case financial
     case dateCalculation
     case timeZoneConversion
+    case calculationSuite
 }
 
 struct ClassificationResult: Sendable, Equatable {

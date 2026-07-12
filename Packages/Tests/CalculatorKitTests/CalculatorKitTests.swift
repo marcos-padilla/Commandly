@@ -217,7 +217,9 @@ struct CalculatorKitTests {
     @Test("Ambiguous currency symbol")
     func ambiguousCurrencySymbol() async {
         let provider = InMemoryExchangeRateProvider(rates: ["USD->EUR": 1])
-        let outcome = await service.evaluate("$100 in EUR", context: context(provider: provider))
+        var ambiguousContext = context(provider: provider)
+        ambiguousContext.locale = Locale(identifier: "en_001")
+        let outcome = await service.evaluate("$100 in EUR", context: ambiguousContext)
         guard case .failure = outcome else {
             Issue.record("Expected ambiguous symbol failure")
             return
@@ -275,9 +277,14 @@ struct CalculatorKitTests {
 
     @Test("Incomplete expressions")
     func incomplete() async {
-        for sample in ["2 +", "sqrt(", "100 USD in", "5 feet to", "3 days from"] {
+        for sample in ["sqrt(", "100 USD in", "3 days from"] {
             let outcome = await service.evaluate(sample, context: context())
             #expect(outcome == .incomplete, "Expected incomplete for \(sample)")
+        }
+        for sample in ["2 +", "5 feet to"] {
+            let outcome = await service.evaluate(sample, context: context())
+            guard case .success(let result) = outcome else { Issue.record("Expected predicted preview for \(sample)"); continue }
+            #expect(result.suggestion != nil)
         }
     }
 

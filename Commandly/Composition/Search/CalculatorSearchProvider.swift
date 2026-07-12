@@ -67,6 +67,7 @@ struct CalculatorSearchProvider: SearchProviding, Sendable {
 final class CalculatorSessionStore {
     private(set) var previousAnswer: Decimal?
     private(set) var lastResult: CalculatorResult?
+    private(set) var variables: [String: CalculatorVariable] = [:]
     private(set) var angleMode: CalculatorAngleMode
     private let exchangeRateProvider: any ExchangeRateProviding
 
@@ -86,6 +87,8 @@ final class CalculatorSessionStore {
             now: Date(),
             angleMode: angleMode,
             previousAnswer: previousAnswer,
+            previousValue: lastResult?.primaryValue,
+            variables: variables,
             exchangeRateProvider: exchangeRateProvider
         )
     }
@@ -94,6 +97,10 @@ final class CalculatorSessionStore {
         lastResult = result
         if case .decimal(let value) = result.primaryValue {
             previousAnswer = value
+        }
+        if let name = result.metadata.assignedVariableName,
+           let variable = result.metadata.assignedVariable {
+            variables[name] = variable
         }
     }
 

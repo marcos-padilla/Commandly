@@ -133,6 +133,18 @@ enum CalculatorArithmetic {
             metadata.percentage = percent
             return percent / DecimalMath.hundred
 
+        case .factorial(let expr):
+            let value = try eval(expr, context: context, metadata: &metadata, usedScientific: &usedScientific, phraseTag: phraseTag)
+            var rounded = Decimal()
+            var input = value
+            NSDecimalRound(&rounded, &input, 0, .plain)
+            guard rounded == value, value >= 0,
+                  let integer = Int(exactly: NSDecimalNumber(decimal: value)), integer <= 32
+            else {
+                throw CalculatorError.invalidDomain(function: "factorial")
+            }
+            return (1...max(integer, 1)).reduce(Decimal(1)) { $0 * Decimal($1) }
+
         case .percentAdjust(let op, let baseExpr, let percentExpr):
             let base = try eval(baseExpr, context: context, metadata: &metadata, usedScientific: &usedScientific, phraseTag: phraseTag)
             let percent = try eval(percentExpr, context: context, metadata: &metadata, usedScientific: &usedScientific, phraseTag: phraseTag)
@@ -179,8 +191,9 @@ enum CalculatorArithmetic {
             return left / right
         case .modulo:
             if right == .zero { throw CalculatorError.divisionByZero }
-            let quotient = left / right
-            let truncated = Decimal(NSDecimalNumber(decimal: quotient).intValue)
+            var quotient = left / right
+            var truncated = Decimal()
+            NSDecimalRound(&truncated, &quotient, 0, quotient < 0 ? .up : .down)
             return left - (truncated * right)
         case .power:
             return try power(left, right)

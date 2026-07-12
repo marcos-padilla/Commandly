@@ -2,6 +2,7 @@ import SwiftUI
 import DesignSystem
 import AppKit
 import CommandKit
+import CalculatorKit
 
 struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
@@ -102,6 +103,7 @@ struct LauncherRootView: View {
             LauncherSearchField(
                 query: $viewModel.query,
                 autocompleteSuffix: viewModel.autocompleteSuffix,
+                autocompleteActionLabel: viewModel.autocompleteActionLabel,
                 focusEpoch: viewModel.searchFocusEpoch,
                 onSubmit: { viewModel.confirmSelection() },
                 onMoveSelection: { viewModel.moveSelection(offset: $0) },
@@ -127,8 +129,15 @@ struct LauncherRootView: View {
                                 CalculatorResultCard(
                                     result: calculatorResult,
                                     isSelected: calculatorItem.id == viewModel.selectedItem?.id,
+                                    actions: viewModel.menuActions,
                                     onSelect: { viewModel.select(calculatorItem.id) },
-                                    onConfirm: { viewModel.confirmSelection() }
+                                    onEditQuestion: {
+                                        viewModel.editCalculatorQuestion(resultID: calculatorResult.id.rawValue)
+                                    },
+                                    onCopyAnswer: {
+                                        viewModel.copyCalculatorAnswer(resultID: calculatorResult.id.rawValue)
+                                    },
+                                    onAction: { viewModel.performFooterAction($0) }
                                 )
                                 .id(calculatorItem.id)
                                 .onHover { hovering in

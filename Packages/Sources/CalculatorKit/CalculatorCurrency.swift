@@ -106,10 +106,18 @@ enum CalculatorCurrency {
 
     static func evaluate(
         _ text: String,
-        provider: any ExchangeRateProviding
+        provider: any ExchangeRateProviding,
+        locale: Locale
     ) async throws -> ConversionResult {
         try Task.checkCancellation()
-        guard let parsed = parse(text) else {
+        let canonical = text.lowercased()
+        if let divided = try await evaluateRateDivision(canonical, provider: provider, locale: locale) {
+            return divided
+        }
+        if let arithmetic = try await evaluateArithmetic(canonical, provider: provider, locale: locale) {
+            return arithmetic
+        }
+        guard let parsed = try parse(canonical, locale: locale) else {
             throw CalculatorError.unsupportedOperation
         }
 
@@ -146,15 +154,17 @@ enum CalculatorCurrency {
         let to: CurrencyCode
     }
 
-    private static func parse(_ text: String) -> Parsed? {
+    private static func parse(_ text: String, locale: Locale) throws -> Parsed? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Symbol forms: $100 in EUR, 100$ in EUR
-        if let symbolParsed = parseSymbolForm(trimmed) {
+        if let symbolParsed = try parseSymbolForm(trimmed, locale: locale) {
             return symbolParsed
         }
+        if let short = try parseShortForm(trimmed, locale: locale) {
+            return short
+        }
 
-        let pattern = #"^([-+]?\d+(?:[.,]\d+)?)\s*([A-Za-z]{3})\s+(?:in|to|into|as)\s+([A-Za-z]{3})$"#
+        let pattern = #"^([-+]?\d+(?:[.,]\d+)?)\s*(.+?)\s+(?:in|to|into|as)\s+(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
             return nil
         }
@@ -171,31 +181,166 @@ enum CalculatorCurrency {
         guard let amount = Decimal(string: amountText, locale: Locale(identifier: "en_US_POSIX")) else {
             return nil
         }
+        let source = try currencyCode(for: String(trimmed[fromRange]), locale: locale)
+        let target = try currencyCode(for: String(trimmed[toRange]), locale: locale)
+        return Parsed(amount: amount, from: source, to: target)
+    }
+
+    private static func parseShortForm(_ text: String, locale: Locale) throws -> Parsed? {
+        let pattern = #"^([-+]?\d+(?:[.,]\d+)?)\s*([A-Za-z]{3})\s+([A-Za-z]{3})$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)),
+              let amountRange = Range(match.range(at: 1), in: text),
+              let sourceRange = Range(match.range(at: 2), in: text),
+              let targetRange = Range(match.range(at: 3), in: text),
+              let amount = Decimal(string: String(text[amountRange]).replacingOccurrences(of: ",", with: ""))
+        else { return nil }
         return Parsed(
             amount: amount,
-            from: CurrencyCode(String(trimmed[fromRange])),
-            to: CurrencyCode(String(trimmed[toRange]))
+            from: try currencyCode(for: String(text[sourceRange]), locale: locale),
+            to: try currencyCode(for: String(text[targetRange]), locale: locale)
         )
     }
 
-    private static func parseSymbolForm(_ text: String) -> Parsed? {
-        // Ambiguous symbols map to failure via known set.
-        let ambiguous: Set<Character> = ["$"] // could be USD/CAD/AUD — require ISO when ambiguous without context
-        // Allow $ only as USD for unambiguous US-centric default? Spec says prefer clarification.
-        // Treat bare $ as ambiguous.
-        if text.contains("$") {
-            // If explicitly "USD" not present and only $, fail ambiguous.
-            let pattern = #"^\$?\s*([-+]?\d+(?:[.,]\d+)?)\s*\$?\s+(?:in|to|into|as)\s+([A-Za-z]{3})$"#
-            if text.contains("$"),
-               let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..<text.endIndex, in: text)),
-               match.numberOfRanges == 3 {
-                // Ambiguous $
-                _ = ambiguous
+    private static func parseSymbolForm(_ text: String, locale: Locale) throws -> Parsed? {
+        let patterns = [
+            #"^([$€£¥])\s*([-+]?\d+(?:[.,]\d+)?)\s+(?:in|to|into|as)\s+(.+)$"#,
+            #"^([-+]?\d+(?:[.,]\d+)?)\s*([$€£¥])\s+(?:in|to|into|as)\s+(.+)$"#,
+        ]
+        for (index, pattern) in patterns.enumerated() {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)),
+                  let firstRange = Range(match.range(at: 1), in: text),
+                  let secondRange = Range(match.range(at: 2), in: text),
+                  let targetRange = Range(match.range(at: 3), in: text)
+            else { continue }
+            let symbol = index == 0 ? String(text[firstRange]) : String(text[secondRange])
+            let amountText = index == 0 ? String(text[secondRange]) : String(text[firstRange])
+            guard let amount = Decimal(string: amountText.replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX")) else {
                 return nil
             }
+            return Parsed(
+                amount: amount,
+                from: try currencyCode(for: symbol, locale: locale),
+                to: try currencyCode(for: String(text[targetRange]), locale: locale)
+            )
         }
         return nil
+    }
+
+    private static func evaluateArithmetic(
+        _ text: String,
+        provider: any ExchangeRateProviding,
+        locale: Locale
+    ) async throws -> ConversionResult? {
+        let pattern = #"^([-+]?\d+(?:[.,]\d+)?)\s*(.+?)\s*\+\s*([-+]?\d+(?:[.,]\d+)?)\s*(.+?)\s+in\s+(.+)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)),
+              match.numberOfRanges == 6,
+              let firstAmountRange = Range(match.range(at: 1), in: text),
+              let firstCodeRange = Range(match.range(at: 2), in: text),
+              let secondAmountRange = Range(match.range(at: 3), in: text),
+              let secondCodeRange = Range(match.range(at: 4), in: text),
+              let targetRange = Range(match.range(at: 5), in: text),
+              let firstAmount = Decimal(string: String(text[firstAmountRange]).replacingOccurrences(of: ",", with: "")),
+              let secondAmount = Decimal(string: String(text[secondAmountRange]).replacingOccurrences(of: ",", with: ""))
+        else { return nil }
+
+        let firstCode = try currencyCode(for: String(text[firstCodeRange]), locale: locale)
+        let secondCode = try currencyCode(for: String(text[secondCodeRange]), locale: locale)
+        let target = try currencyCode(for: String(text[targetRange]), locale: locale)
+        async let firstRate = provider.rate(from: firstCode, to: target)
+        async let secondRate = provider.rate(from: secondCode, to: target)
+        let (firstExchange, secondExchange) = try await (firstRate, secondRate)
+        try Task.checkCancellation()
+        let total = firstAmount * firstExchange.rate + secondAmount * secondExchange.rate
+        var metadata = CalculatorResultMetadata(
+            rateTimestamp: max(firstExchange.timestamp, secondExchange.timestamp),
+            rateIsStale: firstExchange.isStale || secondExchange.isStale,
+            fromCurrency: "\(firstCode.rawValue)+\(secondCode.rawValue)",
+            toCurrency: target.rawValue
+        )
+        metadata.total = total
+        metadata.notes.append("Rates: \(firstCode.rawValue)/\(target.rawValue) \(firstExchange.rate), \(secondCode.rawValue)/\(target.rawValue) \(secondExchange.rate)")
+        return ConversionResult(
+            value: CalculatorCurrencyValue(amount: total, code: target),
+            metadata: metadata,
+            displayExpression: "\(firstAmount) \(firstCode.rawValue) + \(secondAmount) \(secondCode.rawValue) → \(target.rawValue)"
+        )
+    }
+
+    private static func evaluateRateDivision(
+        _ text: String,
+        provider: any ExchangeRateProviding,
+        locale: Locale
+    ) async throws -> ConversionResult? {
+        let pattern = #"^([-+]?\d+(?:[.,]\d+)?)\s*(.+?)\s*/\s*(?:the\s+)?(.+?)\s+exchange rate$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)),
+              let amountRange = Range(match.range(at: 1), in: text),
+              let sourceRange = Range(match.range(at: 2), in: text),
+              let targetRange = Range(match.range(at: 3), in: text),
+              let amount = Decimal(string: String(text[amountRange]).replacingOccurrences(of: ",", with: ""))
+        else { return nil }
+        let source = try currencyCode(for: String(text[sourceRange]), locale: locale)
+        let target = try currencyCode(for: String(text[targetRange]), locale: locale)
+        let exchange = try await provider.rate(from: target, to: source)
+        guard exchange.rate != 0 else { throw CalculatorError.divisionByZero }
+        let converted = amount / exchange.rate
+        var metadata = CalculatorResultMetadata(
+            exchangeRate: exchange.rate,
+            rateTimestamp: exchange.timestamp,
+            rateIsStale: exchange.isStale,
+            fromCurrency: source.rawValue,
+            toCurrency: target.rawValue
+        )
+        metadata.baseAmount = amount
+        metadata.total = converted
+        metadata.notes.append("Divided by quoted \(target.rawValue)/\(source.rawValue) rate \(exchange.rate)")
+        return ConversionResult(
+            value: CalculatorCurrencyValue(amount: converted, code: target),
+            metadata: metadata,
+            displayExpression: "\(amount) \(source.rawValue) ÷ \(target.rawValue)/\(source.rawValue) rate → \(target.rawValue)"
+        )
+    }
+
+    private static func currencyCode(for raw: String, locale: Locale) throws -> CurrencyCode {
+        let token = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let aliases: [String: String] = [
+            "usd": "USD", "us dollar": "USD", "us dollars": "USD", "american dollar": "USD", "american dollars": "USD",
+            "eur": "EUR", "euro": "EUR", "euros": "EUR", "€": "EUR",
+            "gbp": "GBP", "british pound": "GBP", "british pounds": "GBP", "pound sterling": "GBP", "£": "GBP",
+            "jpy": "JPY", "yen": "JPY", "japanese yen": "JPY",
+            "cad": "CAD", "canadian dollar": "CAD", "canadian dollars": "CAD",
+            "aud": "AUD", "australian dollar": "AUD", "australian dollars": "AUD",
+            "nzd": "NZD", "new zealand dollar": "NZD", "new zealand dollars": "NZD",
+            "cny": "CNY", "chinese yuan": "CNY", "yuan": "CNY",
+            "mxn": "MXN", "mexican peso": "MXN", "mexican pesos": "MXN",
+        ]
+        if let code = aliases[token] { return CurrencyCode(code) }
+        if token.count == 3, token.allSatisfy(\.isLetter) { return CurrencyCode(token) }
+
+        let region = locale.region?.identifier.uppercased()
+        if token == "$" || token == "dollar" || token == "dollars" {
+            switch region {
+            case "US": return CurrencyCode("USD")
+            case "CA": return CurrencyCode("CAD")
+            case "AU": return CurrencyCode("AUD")
+            case "NZ": return CurrencyCode("NZD")
+            default: throw CalculatorError.ambiguousCurrencySymbol(raw)
+            }
+        }
+        if token == "¥" {
+            switch region {
+            case "JP": return CurrencyCode("JPY")
+            case "CN": return CurrencyCode("CNY")
+            default: throw CalculatorError.ambiguousCurrencySymbol(raw)
+            }
+        }
+        if ["peso", "pesos", "kr"].contains(token) {
+            throw CalculatorError.ambiguousCurrencySymbol(raw)
+        }
+        throw CalculatorError.unknownCurrency(raw)
     }
 
     static func ambiguousSymbolError(for symbol: String) -> CalculatorError {

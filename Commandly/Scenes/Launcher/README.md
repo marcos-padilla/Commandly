@@ -12,7 +12,8 @@ The main field is the primary entry point for discovering and running work:
 - Ranked results via SearchKit providers: **commands**, **applications**, and honest **placeholders**
 - Calculator-shaped queries are evaluated via **CalculatorKit** in parallel and pinned in a dedicated **Calculator** two-pane card above other results
 - `CompositeSearchService` merges scores (prefix > keyword > contains) and cancels in-flight work on each keystroke
-- Ghost autocomplete for the best prefix match; **Tab** accepts, **Return** confirms the selected row
+- Ghost autocomplete for the best result prefix or calculator completion; **Tab** and the right-side Tab control accept it, while **Return** confirms the selected row
+- Calculator autocomplete recomputes recoverable expressions, inferred unit targets, and unique fuzzy corrections on every keystroke; stale asynchronous suggestions are discarded
 - Installed apps are enumerated from standard Applications folders and opened through `ApplicationOpening` (full catalog; Applications section appears below Commands)
 - Application rows show each app’s real icon from its bundle via `NSWorkspace`
 

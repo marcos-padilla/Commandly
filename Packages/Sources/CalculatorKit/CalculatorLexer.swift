@@ -10,6 +10,7 @@ enum TokenKind: Sendable, Equatable {
     case slash
     case caret
     case percent
+    case factorial
     case leftParen
     case rightParen
     case comma
@@ -58,6 +59,9 @@ struct CalculatorLexer: Sendable {
             case "%":
                 tokens.append(Token(kind: .percent, location: location, lexeme: "%"))
                 index += 1
+            case "!":
+                tokens.append(Token(kind: .factorial, location: location, lexeme: "!"))
+                index += 1
             case "(":
                 tokens.append(Token(kind: .leftParen, location: location, lexeme: "("))
                 index += 1
@@ -93,6 +97,7 @@ struct CalculatorLexer: Sendable {
         var index = start
         var raw = ""
         var sawDot = false
+        var sawExponent = false
 
         // Locale-aware: treat grouping separators carefully.
         let decimalSeparator = locale.decimalSeparator ?? "."
@@ -106,17 +111,32 @@ struct CalculatorLexer: Sendable {
                 continue
             }
 
-            let chString = String(ch)
-            if chString == decimalSeparator && !sawDot {
-                // Peek: decimal sep must be followed by digit to avoid trailing junk.
-                let next = index + 1 < chars.count ? chars[index + 1] : nil
-                if next?.isNumber == true || raw.isEmpty {
-                    raw.append(".")
-                    sawDot = true
-                    index += 1
+            if (ch == "e" || ch == "E"), !sawExponent, !raw.isEmpty {
+                let signIndex = index + 1
+                let digitIndex = signIndex < chars.count && (chars[signIndex] == "+" || chars[signIndex] == "-")
+                    ? signIndex + 1
+                    : signIndex
+                if digitIndex < chars.count, chars[digitIndex].isNumber {
+                    raw.append("e")
+                    if digitIndex != signIndex {
+                        raw.append(chars[signIndex])
+                    }
+                    index = digitIndex
+                    sawExponent = true
                     continue
                 }
-                break
+            }
+
+            let chString = String(ch)
+            if chString == decimalSeparator && !sawDot {
+                let next = index + 1 < chars.count ? chars[index + 1] : nil
+                // A leading point needs a following digit; a populated literal
+                // may end in a point (`5.`) as accepted by the grammar.
+                if raw.isEmpty, next?.isNumber != true { break }
+                raw.append(".")
+                sawDot = true
+                index += 1
+                continue
             }
 
             if chString == groupingSeparator {

@@ -6,6 +6,7 @@ import AppKit
 struct LauncherSearchField: View {
     @Binding var query: String
     var autocompleteSuffix: String = ""
+    var autocompleteActionLabel: String?
     var focusEpoch: Int = 0
     var onSubmit: () -> Void
     var onMoveSelection: (Int) -> Void = { _ in }
@@ -77,6 +78,24 @@ struct LauncherSearchField: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
+            }
+
+            if let autocompleteActionLabel {
+                Button(action: onAcceptAutocomplete) {
+                    HStack(spacing: density.spacing(.xxs)) {
+                        Text("Tab")
+                            .commandlyFont(size: 10, weight: .semibold)
+                            .padding(.horizontal, density.spacing(.xs))
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        Text(autocompleteActionLabel == "Tab to convert" ? "to convert" : "to complete")
+                            .commandlyFont(size: 11, weight: .medium)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(autocompleteActionLabel)
+                .accessibilityHint("Completes the suggested calculator or search input")
             }
         }
         .padding(.horizontal, density.spacing(.md))

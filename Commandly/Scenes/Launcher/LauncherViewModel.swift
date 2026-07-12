@@ -38,6 +38,8 @@ final class LauncherViewModel {
     private(set) var placeholderItems: [LauncherItem]
     private(set) var rootItems: [LauncherItem] = []
     private(set) var autocompleteSuffix: String = ""
+    private(set) var autocompleteCompletion: String?
+    private(set) var autocompleteActionLabel: String?
     /// Bumped on each presentation so the search field can reclaim focus.
     private(set) var searchFocusEpoch: Int = 0
     private(set) var activeCalculatorResult: CalculatorResult?
@@ -65,6 +67,7 @@ final class LauncherViewModel {
     private var cachedApplications: [InstalledApplicationSnapshot] = []
     @ObservationIgnored
     private var didLoadApplications = false
+    private var calculatorSuggestion: CalculatorSuggestion?
 
     init(
         catalog: CommandCatalog = .makeBuiltIn(),
@@ -174,11 +177,23 @@ final class LauncherViewModel {
     }
 
     var menuActions: [CommandActionDescriptor] {
-        if activeCalculatorResult != nil, case .root = route {
-            return [
+        if let result = activeCalculatorResult, case .root = route {
+            var actions = [
+                CommandActionDescriptor(
+                    id: CommandActionID(rawValue: "copyAnswer"),
+                    title: "Copy Answer"
+                ),
                 CommandActionDescriptor(
                     id: CommandActionID(rawValue: "copyUnformatted"),
                     title: "Copy Without Formatting"
+                ),
+                CommandActionDescriptor(
+                    id: CommandActionID(rawValue: "openCalculator"),
+                    title: "Open in Calculator"
+                ),
+                CommandActionDescriptor(
+                    id: CommandActionID(rawValue: "addToNote"),
+                    title: "Copy and Open Notes"
                 ),
                 CommandActionDescriptor(
                     id: CommandActionID(rawValue: "insertResult"),
@@ -189,6 +204,13 @@ final class LauncherViewModel {
                     title: "Copy Expression and Result"
                 )
             ]
+            if result.actionHints.contains(.copyResultUnformatted) == false {
+                actions.removeAll { $0.id.rawValue == "copyUnformatted" }
+            }
+            if supportsOpenInCalculator(result.primaryValue) == false {
+                actions.removeAll { $0.id.rawValue == "openCalculator" }
+            }
+            return actions
         }
         return clipboardViewModel?.menuActions ?? []
     }
@@ -279,9 +301,8 @@ final class LauncherViewModel {
     }
 
     func acceptAutocomplete() {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard autocompleteSuffix.isEmpty == false else { return }
-        query = trimmed + autocompleteSuffix
+        guard let autocompleteCompletion else { return }
+        query = autocompleteCompletion
     }
 
     func confirmSelection() {
@@ -331,7 +352,7 @@ final class LauncherViewModel {
             guard let result = activeCalculatorResult, result.id.rawValue == resultID else { return }
             calculatorSession.recordSuccess(result)
             await pasteboard.writeString(result.formattedPrimaryValue)
-            dismiss()
+            statusMessage = "Copied answer."
         default:
             confirmSelection()
         }
@@ -350,24 +371,50 @@ final class LauncherViewModel {
             onOpenSettings()
         case "close":
             dismiss()
+        case "copyAnswer":
+            if let result = activeCalculatorResult {
+                copyCalculatorAnswer(resultID: result.id.rawValue)
+            }
         case "copyUnformatted":
             if let result = activeCalculatorResult {
                 Task { @MainActor [weak self] in
                     await self?.pasteboard.writeString(result.formattedPrimaryValue.replacingOccurrences(of: ",", with: ""))
-                    self?.dismiss()
+                    self?.statusMessage = "Copied without formatting."
                 }
             }
         case "insertResult":
             if let result = activeCalculatorResult {
                 query = result.formattedPrimaryValue
+                requestSearchFocus()
             }
         case "copyExpression":
             if let result = activeCalculatorResult {
                 let combined = "\(result.displayExpression) = \(result.formattedPrimaryValue)"
                 Task { @MainActor [weak self] in
                     await self?.pasteboard.writeString(combined)
-                    self?.dismiss()
+                    self?.statusMessage = "Copied expression and answer."
                 }
+            }
+        case "openCalculator":
+            guard let result = activeCalculatorResult else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await pasteboard.writeString(result.formattedPrimaryValue)
+                await openCompanionApplication(
+                    bundleIdentifier: "com.apple.calculator",
+                    failureMessage: "Couldn’t open Calculator."
+                )
+            }
+        case "addToNote":
+            guard let result = activeCalculatorResult else { return }
+            let combined = "\(result.displayExpression) = \(result.formattedPrimaryValue)"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await pasteboard.writeString(combined)
+                await openCompanionApplication(
+                    bundleIdentifier: "com.apple.Notes",
+                    failureMessage: "Couldn’t open Notes."
+                )
             }
         default:
             break
@@ -387,7 +434,31 @@ final class LauncherViewModel {
         calculatorSession.recordSuccess(result)
         Task { @MainActor [weak self] in
             await self?.pasteboard.writeString(result.formattedPrimaryValue)
-            self?.dismiss()
+            self?.statusMessage = "Copied answer."
+        }
+    }
+
+    func editCalculatorQuestion(resultID: String) {
+        guard let result = activeCalculatorResult, result.id.rawValue == resultID else { return }
+        query = result.originalInput
+        requestSearchFocus()
+    }
+
+    func copyCalculatorAnswer(resultID: String) {
+        guard let result = activeCalculatorResult, result.id.rawValue == resultID else { return }
+        calculatorSession.recordSuccess(result)
+        Task { @MainActor [weak self] in
+            await self?.pasteboard.writeString(result.formattedPrimaryValue)
+            self?.statusMessage = "Copied answer."
+        }
+    }
+
+    private func supportsOpenInCalculator(_ value: CalculatorValue) -> Bool {
+        switch value {
+        case .decimal, .double, .measurement, .currency:
+            return true
+        case .date, .timeZoneInstant, .text:
+            return false
         }
     }
 
@@ -457,8 +528,21 @@ final class LauncherViewModel {
         }
     }
 
+    private func openCompanionApplication(bundleIdentifier: String, failureMessage: String) async {
+        do {
+            try await applicationOpener.openApplication(bundleIdentifier: bundleIdentifier)
+            statusMessage = "Copied."
+        } catch {
+            statusMessage = failureMessage
+        }
+    }
+
     private func scheduleSearch(loadApplicationsIfNeeded: Bool = false) {
         searchTask?.cancel()
+        calculatorSuggestion = nil
+        autocompleteCompletion = nil
+        autocompleteActionLabel = nil
+        autocompleteSuffix = ""
         let queryText = query
         searchTask = Task { @MainActor [weak self] in
             await self?.performSearch(
@@ -487,11 +571,14 @@ final class LauncherViewModel {
         let calcContext = calculatorSession.makeContext()
         do {
             async let calcOutcome = calculator.evaluate(queryText, context: calcContext)
+            async let calcSuggestion = calculator.suggestion(for: queryText, context: calcContext)
             async let searchResult = service.search(searchQuery)
 
             let outcome = await calcOutcome
+            let suggestion = await calcSuggestion
             let result = try await searchResult
             guard Task.isCancelled == false else { return }
+            calculatorSuggestion = suggestion
 
             var mapped = result.items.compactMap { mapSearchItem($0) }
             let previousSelected = selectedID
@@ -511,6 +598,7 @@ final class LauncherViewModel {
             return
         } catch {
             guard Task.isCancelled == false else { return }
+            calculatorSuggestion = nil
             applySearchResult(items: fallbackItems(matching: queryText), queryText: queryText)
         }
     }
@@ -652,14 +740,27 @@ final class LauncherViewModel {
         let trimmed = (queryText ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else {
             autocompleteSuffix = ""
+            autocompleteCompletion = nil
+            autocompleteActionLabel = nil
+            return
+        }
+        if let suggestion = calculatorSuggestion,
+           suggestion.completedInput.caseInsensitiveCompare(trimmed) != .orderedSame {
+            autocompleteCompletion = suggestion.completedInput
+            autocompleteSuffix = suggestion.suffix(after: trimmed) ?? ""
+            autocompleteActionLabel = suggestion.kind == .unitConversion ? "Tab to convert" : "Tab to complete"
             return
         }
         let needle = trimmed.lowercased()
         guard let match = rootItems.first(where: { $0.title.lowercased().hasPrefix(needle) && $0.title.count > trimmed.count }) else {
             autocompleteSuffix = ""
+            autocompleteCompletion = nil
+            autocompleteActionLabel = nil
             return
         }
         let suffix = String(match.title.dropFirst(trimmed.count))
         autocompleteSuffix = suffix
+        autocompleteCompletion = match.title
+        autocompleteActionLabel = "Tab to complete"
     }
 }
