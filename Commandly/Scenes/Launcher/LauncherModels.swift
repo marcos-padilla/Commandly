@@ -51,8 +51,8 @@ enum LauncherItemBadge: String, Sendable, Equatable {
 enum LauncherItemAction: Sendable, Equatable {
     case openSettings
     case dismiss
-    case openCommand(CommandID)
-    case openApplication(bundleIdentifier: String)
+    case launchApplication(CommandID)
+    case openInstalledApplication(bundleIdentifier: String)
     case placeholder(message: String)
     case copyText(String)
     case calculatorPrimary(resultID: String)

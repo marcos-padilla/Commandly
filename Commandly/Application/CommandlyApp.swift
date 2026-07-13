@@ -139,8 +139,8 @@ private struct LauncherWindowHost: View {
             runtime.showsLauncher = true
             if let query = CommandlyDebugLaunchOptions.fileSearchQuery,
                viewModel.route == .root {
-                viewModel.push(commandID: BuiltInCommandID.searchFiles)
-                viewModel.fileSearchViewModel?.query = query
+                viewModel.launch(BuiltInCommandID.searchFiles)
+                viewModel.activeApplicationModel(as: FileSearchViewModel.self)?.query = query
             }
         }
         .onDisappear {

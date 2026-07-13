@@ -11,6 +11,7 @@ import Infrastructure
 import DesignSystem
 import SearchKit
 import CalculatorKit
+import SwiftUI
 
 struct CommandlyTests {
     @Test @MainActor func dependencyContainerBootstrapsToRootWhenOnboarded() {
@@ -254,19 +255,20 @@ struct CommandlyTests {
         #expect(settings.load().viewMode == .compact)
     }
 
-    @Test @MainActor func launcherOpensClipboardHistoryCommand() {
-        let catalog = CommandCatalog.makeBuiltIn()
+    @Test @MainActor func launcherOpensClipboardHistoryApplication() {
         let store = ClipboardHistoryStore()
-        let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        let viewModel = LauncherViewModel(
+            clipboardHistoryStore: store
+        )
         viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
         viewModel.confirmSelection()
-        #expect(viewModel.route == .command(BuiltInCommandID.clipboardHistory))
-        #expect(viewModel.clipboardViewModel != nil)
+        #expect(viewModel.route == .application(BuiltInCommandID.clipboardHistory))
+        #expect(viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self) != nil)
         #expect(viewModel.contextTitle == "Clipboard History")
         #expect(viewModel.footerActions.contains { $0.id == BuiltInCommandActionID.copy })
     }
 
-    @Test @MainActor func launcherOpensFileSearchCommand() async throws {
+    @Test @MainActor func launcherOpensFileSearchApplication() async throws {
         let item = FileSearchItem(
             url: URL(fileURLWithPath: "/Users/test/Documents/Plan.pdf"),
             name: "Plan.pdf",
@@ -276,19 +278,46 @@ struct CommandlyTests {
             contentTypeDescription: "PDF document"
         )
         let service = InMemoryFileSearchService(items: [item])
-        let viewModel = LauncherViewModel(
-            catalog: .makeBuiltIn(),
-            fileSearchService: service
-        )
+        let viewModel = LauncherViewModel(fileSearchService: service)
         viewModel.selectedID = BuiltInCommandID.searchFiles.rawValue
 
         viewModel.confirmSelection()
 
-        #expect(viewModel.route == .command(BuiltInCommandID.searchFiles))
-        let fileViewModel = try #require(viewModel.fileSearchViewModel)
+        #expect(viewModel.route == .application(BuiltInCommandID.searchFiles))
+        let fileViewModel = try #require(
+            viewModel.activeApplicationModel(as: FileSearchViewModel.self)
+        )
         await fileViewModel.flushSearchForTesting()
         #expect(fileViewModel.results == [item])
         #expect(viewModel.footerActions.first?.id == BuiltInCommandActionID.openFile)
+    }
+
+    @Test @MainActor func launcherRegistryRejectsDuplicateApplicationIdentifiers() throws {
+        let registry = LauncherApplicationRegistry()
+        try registry.register(TestLauncherApplication())
+
+        do {
+            try registry.register(TestLauncherApplication())
+            Issue.record("Expected duplicate application registration to fail")
+        } catch let error as LauncherApplicationRegistryError {
+            #expect(error == .duplicateApplication(TestLauncherApplication.id))
+        }
+    }
+
+    @Test @MainActor func registeredApplicationLaunchesWithoutRootFeatureBranch() throws {
+        let registry = LauncherApplicationRegistry()
+        try registry.register(TestLauncherApplication())
+        let viewModel = LauncherViewModel(
+            applicationRegistry: registry,
+            placeholderItems: []
+        )
+
+        viewModel.launch(TestLauncherApplication.id)
+
+        #expect(viewModel.route == .application(TestLauncherApplication.id))
+        #expect(viewModel.contextTitle == "Test Application")
+        #expect(viewModel.activeApplicationModel(as: TestLauncherApplicationModel.self) != nil)
+        #expect(viewModel.footerActions.first?.id == TestLauncherApplication.primaryActionID)
     }
 
     @Test @MainActor func launcherFileArtworkCoversCommonFileFamilies() {
@@ -1138,16 +1167,17 @@ struct CommandlyTests {
     }
 
     @Test @MainActor func launcherResetAfterDismissClearsClipboardSurface() {
-        let catalog = CommandCatalog.makeBuiltIn()
         let store = ClipboardHistoryStore()
-        let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        let viewModel = LauncherViewModel(
+            clipboardHistoryStore: store
+        )
         viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
         viewModel.confirmSelection()
-        #expect(viewModel.clipboardViewModel != nil)
+        #expect(viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self) != nil)
 
         viewModel.resetAfterDismiss()
         #expect(viewModel.route == .root)
-        #expect(viewModel.clipboardViewModel == nil)
+        #expect(viewModel.activeApplication == nil)
         #expect(viewModel.query.isEmpty)
     }
 
@@ -1167,9 +1197,10 @@ struct CommandlyTests {
     }
 
     @Test @MainActor func launcherGoBackRequestsSearchFocus() {
-        let catalog = CommandCatalog.makeBuiltIn()
         let store = ClipboardHistoryStore()
-        let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        let viewModel = LauncherViewModel(
+            clipboardHistoryStore: store
+        )
         viewModel.query = "clip"
         viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
         viewModel.confirmSelection()
@@ -1181,11 +1212,9 @@ struct CommandlyTests {
         #expect(viewModel.searchFocusEpoch == epochBeforeReturn + 1)
     }
 
-    @Test @MainActor func launcherEscapeFromCommandReturnsHomeThenSignalsHide() async {
+    @Test @MainActor func launcherEscapeFromApplicationReturnsHomeThenSignalsHide() async {
         var dismissed = false
-        let catalog = CommandCatalog.makeBuiltIn()
         let viewModel = LauncherViewModel(
-            catalog: catalog,
             clipboardHistoryStore: ClipboardHistoryStore(),
             onDismiss: { dismissed = true }
         )
@@ -1193,11 +1222,11 @@ struct CommandlyTests {
         await viewModel.flushSearchForTesting()
         viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
         viewModel.confirmSelection()
-        #expect(viewModel.clipboardViewModel != nil)
+        #expect(viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self) != nil)
 
         #expect(viewModel.handleEscape())
         #expect(viewModel.route == .root)
-        #expect(viewModel.clipboardViewModel == nil)
+        #expect(viewModel.activeApplication == nil)
         #expect(viewModel.query.isEmpty)
         #expect(dismissed == false)
 
@@ -1206,6 +1235,25 @@ struct CommandlyTests {
         #expect(dismissed == false)
         viewModel.dismiss()
         #expect(dismissed)
+    }
+
+    @Test @MainActor func launcherEscapeClearsApplicationQueryBeforeReturningHome() async {
+        let viewModel = LauncherViewModel(
+            clipboardHistoryStore: ClipboardHistoryStore()
+        )
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+        viewModel.confirmSelection()
+        let clipboard = viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self)
+        #expect(clipboard != nil)
+        clipboard?.query = "needle"
+
+        #expect(viewModel.handleEscape())
+        #expect(viewModel.route == .application(BuiltInCommandID.clipboardHistory))
+        #expect(clipboard?.query.isEmpty == true)
+
+        #expect(viewModel.handleEscape())
+        #expect(viewModel.route == .root)
+        #expect(viewModel.activeApplication == nil)
     }
 
     @Test @MainActor func launcherEscapeClosesApplicationActionsPanelBeforeGoingBack() {
@@ -1291,14 +1339,14 @@ struct CommandlyTests {
         let viewModel = runtime.makeLauncherViewModel(onOpenSettings: {})
         viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
         viewModel.confirmSelection()
-        #expect(viewModel.clipboardViewModel != nil)
+        #expect(viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self) != nil)
 
         runtime.showLauncher()
         #expect(runtime.showsLauncher)
         runtime.hideLauncher()
         #expect(runtime.showsLauncher == false)
         #expect(viewModel.route == .root)
-        #expect(viewModel.clipboardViewModel == nil)
+        #expect(viewModel.activeApplication == nil)
     }
 
     @Test @MainActor func clipboardHistoryStorePollDoesNotRequireUIActivation() {
@@ -1641,7 +1689,9 @@ struct CommandlyTests {
 
         viewModel.query = "Alpha"
         await viewModel.flushSearchForTesting()
-        #expect(viewModel.rootItems.contains { $0.action == .openApplication(bundleIdentifier: "com.example.alpha") })
+        #expect(viewModel.rootItems.contains {
+            $0.action == .openInstalledApplication(bundleIdentifier: "com.example.alpha")
+        })
         #expect(viewModel.rootItems.contains {
             if case .application(let path) = $0.icon {
                 return path == "/Applications/Alpha.app"
@@ -2110,5 +2160,53 @@ private actor FileEventRecorder {
 
     func contains(path: String) -> Bool {
         paths.contains(path)
+    }
+}
+
+@MainActor
+private struct TestLauncherApplication: LauncherApplication {
+    static let id = CommandID(rawValue: "test.application")
+    static let primaryActionID = CommandActionID(rawValue: "test.primary")
+
+    let manifest = CommandManifest(
+        id: id,
+        title: "Test Application",
+        subtitle: "Exercises dynamic application registration",
+        systemImage: "testtube.2",
+        category: .productivity,
+        mode: .view,
+        keywords: ["test"],
+        defaultActions: [
+            CommandActionDescriptor(
+                id: primaryActionID,
+                title: "Run",
+                isPrimary: true
+            )
+        ]
+    )
+
+    func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
+        let model = TestLauncherApplicationModel()
+        return .present(
+            LauncherApplicationSession(manifest: manifest, model: model) { _ in
+                EmptyView()
+            }
+        )
+    }
+}
+
+@MainActor
+private final class TestLauncherApplicationModel: LauncherApplicationModel {
+    var statusMessage: String?
+    var footerActions = TestLauncherApplication().manifest.defaultActions
+    var menuActions: [CommandActionDescriptor] = []
+    var showsActionsMenu = false
+
+    func moveSelection(offset: Int) {
+        _ = offset
+    }
+
+    func perform(_ actionID: CommandActionID) {
+        statusMessage = actionID == TestLauncherApplication.primaryActionID ? "Ran" : nil
     }
 }

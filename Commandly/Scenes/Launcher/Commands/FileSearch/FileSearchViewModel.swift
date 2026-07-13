@@ -236,9 +236,13 @@ final class FileSearchViewModel {
     }
 
     func moveSelection(offset: Int) {
-        guard results.isEmpty == false else { return }
-        let current = selectedItem.flatMap { item in results.firstIndex(where: { $0.id == item.id }) } ?? 0
-        selectedID = results[(current + offset + results.count) % results.count].id
+        guard let nextID = LauncherListSelection.nextID(
+            in: results,
+            selectedID: selectedID,
+            offset: offset,
+            id: \.id
+        ) else { return }
+        selectedID = nextID
         shouldScrollToSelection = true
     }
 
@@ -562,11 +566,25 @@ final class FileSearchViewModel {
         onGoBack()
     }
 
-    private func refreshSelection() {
-        if let selectedID, results.contains(where: { $0.id == selectedID }) {
-            return
+    /// Closes nested action UI / clears search before the shell returns home.
+    func handleEscape() -> Bool {
+        if showsActionPanel {
+            actionPanelBack()
+            return true
         }
-        selectedID = results.first?.id
+        if query.isEmpty == false {
+            query = ""
+            return true
+        }
+        return false
+    }
+
+    private func refreshSelection() {
+        selectedID = LauncherListSelection.resolvedID(
+            in: results,
+            selectedID: selectedID,
+            id: \.id
+        )
     }
 
     private func applyResults(_ newResults: [FileSearchItem]) {

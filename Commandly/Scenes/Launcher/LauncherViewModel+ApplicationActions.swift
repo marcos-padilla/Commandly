@@ -10,7 +10,8 @@ extension LauncherViewModel {
             || selectedApplicationBundleID == bundleIdentifier
         else {
             // Allow presentation even if cache is briefly empty by resolving from selection.
-            if case .openApplication(let id) = selectedItem?.action, id == bundleIdentifier {
+            if case .openInstalledApplication(let id) = selectedItem?.action,
+               id == bundleIdentifier {
                 applicationActionsTargetBundleID = bundleIdentifier
                 applicationActionsQuery = ""
                 return
@@ -348,7 +349,7 @@ extension LauncherViewModel {
         if let cached = cachedApplications.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
             return cached
         }
-        if case .openApplication(let id) = selectedItem?.action,
+        if case .openInstalledApplication(let id) = selectedItem?.action,
            id == bundleIdentifier,
            case .application(let path) = selectedItem?.icon {
             return InstalledApplicationSnapshot(

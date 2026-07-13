@@ -34,9 +34,8 @@ enum ClipboardHistoryFilter: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 final class ClipboardHistoryViewModel {
     /// Not observation-ignored: the clipboard surface must refresh when
-    /// `store.entries` changes while this view model is alive. Dismiss paths
-    /// nil out `LauncherViewModel.clipboardViewModel` so background polls do
-    /// not keep the launcher subscribed after close.
+    /// `store.entries` changes while this application session is alive. Dismiss paths
+    /// release the active session so background polls do not keep the launcher subscribed.
     private let store: ClipboardHistoryStore
     private let onGoBack: () -> Void
     private let onDismiss: () -> Void
@@ -94,9 +93,7 @@ final class ClipboardHistoryViewModel {
         let grouped = Dictionary(grouping: filteredEntries) { entry -> String in
             if calendar.isDateInToday(entry.createdAt) { return "Today" }
             if calendar.isDateInYesterday(entry.createdAt) { return "Yesterday" }
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            return formatter.string(from: entry.createdAt)
+            return entry.createdAt.formatted(date: .abbreviated, time: .omitted)
         }
         let order = ["Today", "Yesterday"]
         let keys = grouped.keys.sorted { left, right in
@@ -182,19 +179,24 @@ final class ClipboardHistoryViewModel {
 
     func moveSelection(offset: Int) {
         let list = filteredEntries
-        guard list.isEmpty == false else { return }
-        let currentIndex = list.firstIndex { $0.id == selectedID } ?? 0
-        let nextIndex = (currentIndex + offset + list.count) % list.count
+        guard let nextID = LauncherListSelection.nextID(
+            in: list,
+            selectedID: selectedID,
+            offset: offset,
+            id: \.id
+        ) else { return }
         inputDevice = .keyboard
         shouldScrollToSelection = true
-        selectedID = list[nextIndex].id
+        selectedID = nextID
         statusMessage = nil
     }
 
     func refreshSelection() {
-        if filteredEntries.contains(where: { $0.id == selectedID }) == false {
-            selectedID = filteredEntries.first?.id
-        }
+        selectedID = LauncherListSelection.resolvedID(
+            in: filteredEntries,
+            selectedID: selectedID,
+            id: \.id
+        )
     }
 
     func perform(_ actionID: CommandActionID) {
@@ -241,20 +243,26 @@ final class ClipboardHistoryViewModel {
         onGoBack()
     }
 
+    /// Clears in-app search before the shell returns home.
+    func handleEscape() -> Bool {
+        if query.isEmpty == false {
+            query = ""
+            return true
+        }
+        return false
+    }
+
     func dismiss() {
         onDismiss()
     }
 
     func copiedLabel(for entry: ClipboardHistoryEntry) -> String {
-        let formatter = DateFormatter()
         if Calendar.current.isDateInToday(entry.createdAt) {
-            formatter.dateFormat = "'Today at' h:mm:ss a"
-        } else if Calendar.current.isDateInYesterday(entry.createdAt) {
-            formatter.dateFormat = "'Yesterday at' h:mm:ss a"
-        } else {
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .medium
+            return "Today at \(entry.createdAt.formatted(date: .omitted, time: .standard))"
         }
-        return formatter.string(from: entry.createdAt)
+        if Calendar.current.isDateInYesterday(entry.createdAt) {
+            return "Yesterday at \(entry.createdAt.formatted(date: .omitted, time: .standard))"
+        }
+        return entry.createdAt.formatted(date: .abbreviated, time: .standard)
     }
 }

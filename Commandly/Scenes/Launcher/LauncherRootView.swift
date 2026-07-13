@@ -1,12 +1,9 @@
-import AppKit
-import CalculatorKit
 import CommandKit
 import DesignSystem
 import SwiftUI
 
 struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
-    @State private var lastPointerLocation: CGPoint?
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.commandlyLayoutDensity) private var density
 
@@ -20,17 +17,10 @@ struct LauncherRootView: View {
             Group {
                 switch viewModel.route {
                 case .root:
-                    rootContent
-                case .command(let id) where id == BuiltInCommandID.clipboardHistory:
-                    if let clipboardViewModel = viewModel.clipboardViewModel {
-                        ClipboardHistoryView(viewModel: clipboardViewModel)
-                    } else {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                case .command(let id) where id == BuiltInCommandID.searchFiles:
-                    if let fileSearchViewModel = viewModel.fileSearchViewModel {
-                        FileSearchView(viewModel: fileSearchViewModel)
+                    LauncherHomeView(viewModel: viewModel, onRequestClose: closeLauncher)
+                case .application:
+                    if let application = viewModel.activeApplication {
+                        application.makeSurface()
                     } else {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,11 +32,6 @@ struct LauncherRootView: View {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                case .command:
-                    Text("This command has no surface yet.")
-                        .commandlyFont(size: 13)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -71,7 +56,7 @@ struct LauncherRootView: View {
                     menuActions: viewModel.rootActionsMenuItems,
                     onAction: { viewModel.performFooterAction($0) }
                 )
-            case .command:
+            case .application:
                 LauncherFooterBar(
                     contextTitle: viewModel.contextTitle,
                     contextSystemImage: viewModel.contextSystemImage,
@@ -142,18 +127,22 @@ struct LauncherRootView: View {
             .easeInOut(duration: MotionDuration.fast.rawValue),
             value: viewModel.showsApplicationActionsPanel
         )
-        .launcherWindowChrome(onRequestClose: { closeLauncher() })
-        .onKeyPress(.escape) {
-            if viewModel.handleEscape() == false {
-                closeLauncher()
+        .launcherWindowChrome(
+            onRequestClose: { closeLauncher() },
+            onEscape: {
+                if viewModel.handleEscape() == false {
+                    closeLauncher()
+                }
+                // Always consume Escape while the launcher is key so AppKit
+                // TextField editors cannot swallow it without navigating.
+                return true
             }
-            return .handled
-        }
+        )
         .onKeyPress(keys: [KeyEquivalent("k")], phases: .down) { press in
             if press.modifiers.contains(.command) {
                 if viewModel.route == .root {
                     viewModel.presentApplicationActionsForSelection()
-                } else if case .command = viewModel.route {
+                } else if case .application = viewModel.route {
                     viewModel.performFooterAction(BuiltInCommandActionID.openActions)
                 }
                 return .handled
@@ -178,150 +167,7 @@ struct LauncherRootView: View {
     }
 
     private var activeStatusMessage: String? {
-        viewModel.clipboardViewModel?.statusMessage
-            ?? viewModel.fileSearchViewModel?.statusMessage
-            ?? viewModel.statusMessage
-    }
-
-    private var rootContent: some View {
-        @Bindable var viewModel = viewModel
-        return VStack(spacing: 0) {
-            LauncherSearchField(
-                query: $viewModel.query,
-                autocompleteSuffix: viewModel.autocompleteSuffix,
-                autocompleteActionLabel: viewModel.autocompleteActionLabel,
-                focusEpoch: viewModel.searchFocusEpoch,
-                onSubmit: { viewModel.confirmSelection() },
-                onMoveSelection: { viewModel.moveSelection(offset: $0) },
-                onAcceptAutocomplete: { viewModel.acceptAutocomplete() },
-                onCancel: {
-                    if viewModel.handleEscape() == false {
-                        closeLauncher()
-                    }
-                }
-            )
-
-            Rectangle()
-                .fill(LauncherPalette.separator)
-                .frame(height: 1)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: density.spacing(.xxxs)) {
-                        if viewModel.sections.isEmpty {
-                            emptyState
-                        } else {
-                            if let calculatorResult = viewModel.activeCalculatorResult,
-                                let calculatorItem = viewModel.rootItems.first(where: {
-                                    $0.section == .calculator
-                                })
-                            {
-                                LauncherSectionHeader(title: LauncherSectionKind.calculator.title)
-                                CalculatorResultCard(
-                                    result: calculatorResult,
-                                    isSelected: calculatorItem.id == viewModel.selectedItem?.id,
-                                    actions: viewModel.menuActions,
-                                    onSelect: { viewModel.select(calculatorItem.id) },
-                                    onEditQuestion: {
-                                        viewModel.editCalculatorQuestion(
-                                            resultID: calculatorResult.id.rawValue)
-                                    },
-                                    onCopyAnswer: {
-                                        viewModel.copyCalculatorAnswer(
-                                            resultID: calculatorResult.id.rawValue)
-                                    },
-                                    onAction: { viewModel.performFooterAction($0) }
-                                )
-                                .id(calculatorItem.id)
-                                .onHover { hovering in
-                                    if hovering {
-                                        viewModel.setHovered(calculatorItem.id)
-                                    } else {
-                                        viewModel.clearHovered(calculatorItem.id)
-                                    }
-                                }
-                                .padding(.bottom, density.spacing(.xxs))
-                            }
-
-                            ForEach(
-                                viewModel.sections.filter { $0.kind != .calculator }, id: \.kind
-                            ) { section in
-                                LauncherSectionHeader(title: section.kind.title)
-
-                                ForEach(section.items) { item in
-                                    LauncherResultRow(
-                                        item: item,
-                                        isSelected: item.id == viewModel.selectedItem?.id,
-                                        onHoverChange: { hovering in
-                                            if hovering {
-                                                viewModel.setHovered(item.id)
-                                            } else {
-                                                viewModel.clearHovered(item.id)
-                                            }
-                                        },
-                                        onContextAction: {
-                                            guard case .openApplication(let bundleID) = item.action
-                                            else {
-                                                return
-                                            }
-                                            viewModel.select(item.id)
-                                            viewModel.presentApplicationActions(
-                                                forBundleID: bundleID)
-                                        }
-                                    ) {
-                                        viewModel.select(item.id)
-                                        viewModel.confirmSelection()
-                                    }
-                                    .id(item.id)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, density.spacing(.xxs))
-                    .padding(.bottom, density.spacing(.xs))
-                }
-                .frame(maxHeight: .infinity)
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentOffset.y
-                } action: { oldOffset, newOffset in
-                    guard oldOffset != newOffset else { return }
-                    viewModel.beginResultsScrolling()
-                }
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        if lastPointerLocation != location {
-                            lastPointerLocation = location
-                            viewModel.beginPointerInput()
-                        }
-                    case .ended:
-                        lastPointerLocation = nil
-                    }
-                }
-                .onChange(of: viewModel.selectedID) { _, newValue in
-                    guard let newValue, viewModel.shouldScrollToSelection else { return }
-                    withAnimation(.easeOut(duration: MotionDuration.fast.rawValue)) {
-                        proxy.scrollTo(newValue, anchor: .center)
-                    }
-                }
-            }
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: Spacing.xs.rawValue) {
-            Image(systemName: "magnifyingglass")
-                .commandlyFont(size: 22, weight: .medium)
-                .foregroundStyle(.tertiary)
-            Text("No matches")
-                .commandlyFont(size: 13, weight: .semibold)
-            Text("Try a different search.")
-                .commandlyFont(size: 11, weight: .regular)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.xl.rawValue)
-        .accessibilityElement(children: .combine)
+        viewModel.activeApplication?.statusMessage ?? viewModel.statusMessage
     }
 
     private func closeLauncher() {

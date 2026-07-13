@@ -6,124 +6,39 @@ import CommandKit
 struct ClipboardHistoryView: View {
     @Bindable var viewModel: ClipboardHistoryViewModel
     @State private var lastPointerLocation: CGPoint?
-    @State private var isSearchHovered = false
-    @FocusState private var isSearchFocused: Bool
     @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Rectangle()
-                .fill(LauncherPalette.separator)
-                .frame(height: 1)
-            content
-        }
-        .onAppear {
-            isSearchFocused = true
-        }
-        .accessibilityLabel("Clipboard History")
-    }
-
-    private var header: some View {
-        HStack(spacing: density.spacing(.sm)) {
-            CommandlyBackButton {
-                viewModel.goBack()
+        LauncherApplicationScreen(
+            query: $viewModel.query,
+            searchPlaceholder: viewModel.searchPlaceholder,
+            searchAccessibilityIdentifier: "clipboard-history-query",
+            onBack: viewModel.goBack,
+            onSubmit: { viewModel.perform(BuiltInCommandActionID.copy) },
+            onMoveSelection: viewModel.moveSelection,
+            onEscape: {
+                if viewModel.handleEscape() == false {
+                    viewModel.goBack()
+                }
             }
-
-            HStack(spacing: density.spacing(.xs)) {
-                Image(systemName: "magnifyingglass")
-                    .commandlyFont(size: 13, weight: .medium)
-                    .foregroundStyle(.tertiary)
-                TextField(viewModel.searchPlaceholder, text: $viewModel.query)
-                    .textFieldStyle(.plain)
-                    .commandlyFont(size: 14, weight: .medium)
-                    .focused($isSearchFocused)
-                    .onSubmit {
-                        viewModel.perform(BuiltInCommandActionID.copy)
-                    }
-                    .onKeyPress(.upArrow) {
-                        viewModel.moveSelection(offset: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        viewModel.moveSelection(offset: 1)
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        if viewModel.query.isEmpty == false {
-                            viewModel.query = ""
-                            return .handled
-                        }
-                        viewModel.goBack()
-                        return .handled
-                    }
-            }
-            .padding(.horizontal, density.spacing(.sm))
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(searchFillOpacity))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(searchStrokeOpacity), lineWidth: 1)
-            }
-            .onHover { hovering in
-                isSearchHovered = hovering
-            }
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isSearchHovered)
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isSearchFocused)
-            .accessibilityElement(children: .contain)
-
+        ) {
             CommandlyOptionMenu(
                 items: ClipboardHistoryFilter.allCases.map {
                     CommandlyOptionItem(id: $0.rawValue, title: $0.title)
                 },
                 selectionID: viewModel.filter.rawValue,
-                accessibilityLabelText: "Filter by type",
-                onSelect: { item in
-                    if let filter = ClipboardHistoryFilter(rawValue: item.id) {
-                        viewModel.filter = filter
-                    }
+                accessibilityLabelText: "Filter by type"
+            ) { item in
+                if let filter = ClipboardHistoryFilter(rawValue: item.id) {
+                    viewModel.filter = filter
                 }
-            )
-            .zIndex(30)
-        }
-        .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.xs))
-        .background(LauncherPalette.chrome)
-        .zIndex(20)
-    }
-
-    private var searchFillOpacity: Double {
-        if isSearchFocused { return 0.09 }
-        if isSearchHovered { return 0.07 }
-        return 0.05
-    }
-
-    private var searchStrokeOpacity: Double {
-        if isSearchFocused { return 0.18 }
-        if isSearchHovered { return 0.10 }
-        return 0
-    }
-
-    private var content: some View {
-        HStack(spacing: 0) {
+            }
+        } sidebar: {
             listPane
-                .frame(width: 270)
-                .layoutPriority(1)
-                .background(LauncherPalette.sidebar)
-                .clipped()
-            Rectangle()
-                .fill(LauncherPalette.separator)
-                .frame(width: 1)
+        } detail: {
             detailPane
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .layoutPriority(0)
-                .background(LauncherPalette.detail)
-                .clipped()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityLabel("Clipboard History")
     }
 
     private var listPane: some View {
@@ -211,17 +126,11 @@ struct ClipboardHistoryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(spacing: density.spacing(.xs)) {
-                    Image(systemName: "clipboard")
-                        .commandlyFont(size: 28, weight: .medium)
-                        .foregroundStyle(.tertiary)
-                    Text("Select an entry")
-                        .commandlyFont(size: 13, weight: .semibold)
-                    Text("Copy something to start building history.")
-                        .commandlyFont(size: 11)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                LauncherApplicationEmptyState(
+                    systemImage: "clipboard",
+                    title: "Select an entry",
+                    message: "Copy something to start building history."
+                )
             }
         }
     }
@@ -332,157 +241,12 @@ struct ClipboardHistoryView: View {
     }
 
     private func infoRow(label: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .commandlyFont(size: 12, weight: .medium)
-                .foregroundStyle(.secondary)
-                .frame(width: 100, alignment: .leading)
-            Text(value)
-                .commandlyFont(size: 12, weight: .medium)
-                .foregroundStyle(.primary)
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-/// Sidebar row with hover Copy control. Copy sits outside the selection control
-/// so clicking it does not also trigger row selection.
-private struct ClipboardHistoryRow: View {
-    let entry: ClipboardHistoryEntry
-    let isSelected: Bool
-    let density: CommandlyLayoutDensity
-    let onSelect: () -> Void
-    let onCopy: () -> Void
-    let onHoverChange: (Bool) -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: density.spacing(.sm)) {
-            Button(action: onSelect) {
-                HStack(spacing: density.spacing(.sm)) {
-                    LauncherGlyph(
-                        systemName: artwork.symbolName,
-                        tone: artwork.tone,
-                        isSelected: isSelected,
-                        size: density.iconSize
-                    )
-
-                    Text(entry.preview)
-                        .commandlyFont(size: 12, weight: .medium)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if isHovered {
-                ClipboardHistoryCopyButton(onCopy: onCopy)
-            }
-        }
-        .padding(.horizontal, density.spacing(.sm))
-        .padding(.vertical, density.rowVerticalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .fill(isSelected ? LauncherPalette.selection : Color.clear)
+        LauncherApplicationMetadataRow(
+            label: label,
+            value: value,
+            labelWidth: 100,
+            fontSize: 12,
+            truncatesValue: false
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .strokeBorder(isSelected ? LauncherPalette.separator : Color.clear, lineWidth: 1)
-        }
-        .padding(.horizontal, density.spacing(.xs))
-        .onHover { hovering in
-            isHovered = hovering
-            onHoverChange(hovering)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(entry.preview)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityAction(named: "Copy", onCopy)
-    }
-
-    private var artwork: LauncherFileArtwork {
-        switch entry.contentType {
-        case .text:
-            return .text
-        case .image:
-            return .image
-        case .fileURL:
-            guard let url = entry.fileURLs.first else { return .generic }
-            return LauncherFileArtwork(fileURL: url)
-        }
-    }
-}
-
-/// Compact row Copy control with hover chrome and a brief success morph.
-private struct ClipboardHistoryCopyButton: View {
-    let onCopy: () -> Void
-
-    @State private var isHovered = false
-    @State private var isPressed = false
-    @State private var didSucceed = false
-    @State private var successToken = 0
-
-    var body: some View {
-        Button {
-            onCopy()
-            successToken += 1
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: didSucceed ? "checkmark" : "doc.on.doc")
-                    .commandlyFont(size: 10, weight: .semibold)
-                    .contentTransition(.symbolEffect(.replace))
-                    .symbolEffect(.bounce, value: didSucceed)
-
-                Text(didSucceed ? "Copied" : "Copy")
-                    .commandlyFont(size: 11, weight: .semibold)
-                    .contentTransition(.opacity)
-            }
-            .foregroundStyle(labelColor)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(fillColor)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(
-                        BrandPalette.accent.opacity(isHovered || didSucceed ? 0.28 : 0),
-                        lineWidth: 1
-                    )
-            }
-            .scaleEffect(isPressed ? 0.96 : (isHovered || didSucceed ? 1.04 : 1))
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHovered)
-        .animation(CopySuccessFeedback.succeedSpring, value: didSucceed)
-        .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isPressed)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
-        .task(id: successToken) {
-            await CopySuccessFeedback.runMorph(token: successToken, didSucceed: $didSucceed)
-        }
-        .accessibilityLabel(didSucceed ? "Copied" : "Copy")
-    }
-
-    private var labelColor: Color {
-        if didSucceed { return BrandPalette.accentSoft }
-        return isHovered ? Color.primary : Color.secondary
-    }
-
-    private var fillColor: Color {
-        if didSucceed { return BrandPalette.accent.opacity(0.22) }
-        if isHovered { return BrandPalette.accent.opacity(0.14) }
-        return Color.primary.opacity(0.08)
     }
 }

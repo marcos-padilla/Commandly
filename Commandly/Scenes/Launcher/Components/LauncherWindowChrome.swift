@@ -6,21 +6,25 @@ import ObjectiveC
 /// Configures the launcher as a floating, draggable, vibrancy panel without traffic lights.
 struct LauncherWindowConfigurator: NSViewRepresentable {
     var onRequestClose: () -> Void
+    /// Called for Escape while the launcher window is key. Return `true` to consume the event.
+    var onEscape: () -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onRequestClose: onRequestClose)
+        Coordinator(onRequestClose: onRequestClose, onEscape: onEscape)
     }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         view.isHidden = true
         context.coordinator.onRequestClose = onRequestClose
+        context.coordinator.onEscape = onEscape
         scheduleConfigure(for: view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.onRequestClose = onRequestClose
+        context.coordinator.onEscape = onEscape
         scheduleConfigure(for: nsView, coordinator: context.coordinator)
     }
 
@@ -100,16 +104,19 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
     /// Mutable state is only read or written on the main queue.
     final class Coordinator: @unchecked Sendable {
         var onRequestClose: () -> Void
+        var onEscape: () -> Bool
         private weak var window: NSWindow?
         private var localMouseMonitor: Any?
         private var globalMouseMonitor: Any?
+        private var escapeKeyMonitor: Any?
         private var resignKeyObserver: NSObjectProtocol?
         private var resignActiveObserver: NSObjectProtocol?
         private var needsCentering = true
         private var isClosing = false
 
-        init(onRequestClose: @escaping () -> Void) {
+        init(onRequestClose: @escaping () -> Void, onEscape: @escaping () -> Bool) {
             self.onRequestClose = onRequestClose
+            self.onEscape = onEscape
         }
 
         @MainActor
@@ -152,6 +159,28 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
                 }
             }
 
+            // TextField's field editor swallows Escape before SwiftUI `.onKeyPress` /
+            // `.onExitCommand` reliably see it. Intercept at AppKit so Esc can leave
+            // applications and hide the launcher.
+            escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.keyCode == 53 else { return event }
+                guard event.modifierFlags
+                    .intersection([.command, .option, .control, .shift])
+                    .isEmpty
+                else {
+                    return event
+                }
+                var consumed = false
+                if Thread.isMainThread {
+                    consumed = self.handleEscapeOnMain()
+                } else {
+                    DispatchQueue.main.sync {
+                        consumed = self.handleEscapeOnMain()
+                    }
+                }
+                return consumed ? nil : event
+            }
+
             resignKeyObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: window,
@@ -174,6 +203,14 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
                     self?.requestCloseAfterFocusLoss()
                 }
             }
+        }
+
+        @MainActor
+        private func handleEscapeOnMain() -> Bool {
+            guard let window, window.isKeyWindow, window.isVisible, isClosing == false else {
+                return false
+            }
+            return onEscape()
         }
 
         @MainActor
@@ -230,6 +267,10 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
             if let globalMouseMonitor {
                 NSEvent.removeMonitor(globalMouseMonitor)
                 self.globalMouseMonitor = nil
+            }
+            if let escapeKeyMonitor {
+                NSEvent.removeMonitor(escapeKeyMonitor)
+                self.escapeKeyMonitor = nil
             }
             if let resignKeyObserver {
                 NotificationCenter.default.removeObserver(resignKeyObserver)
@@ -330,7 +371,15 @@ struct LauncherVisualEffectBackground: NSViewRepresentable {
 }
 
 extension View {
-    func launcherWindowChrome(onRequestClose: @escaping () -> Void) -> some View {
-        background(LauncherWindowConfigurator(onRequestClose: onRequestClose))
+    func launcherWindowChrome(
+        onRequestClose: @escaping () -> Void,
+        onEscape: @escaping () -> Bool
+    ) -> some View {
+        background(
+            LauncherWindowConfigurator(
+                onRequestClose: onRequestClose,
+                onEscape: onEscape
+            )
+        )
     }
 }

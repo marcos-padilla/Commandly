@@ -10,7 +10,7 @@ import AppKit
 /// Navigation stack inside the launcher window.
 enum LauncherRoute: Equatable {
     case root
-    case command(CommandID)
+    case application(CommandID)
     case uninstallReview(bundleIdentifier: String)
 }
 
@@ -23,13 +23,9 @@ enum LauncherInputDevice: Equatable {
 @Observable
 @MainActor
 final class LauncherViewModel {
-    private let catalog: CommandCatalog
+    private let applicationRegistry: LauncherApplicationRegistry
     @ObservationIgnored
     private let clipboardHistoryStore: ClipboardHistoryStore
-    @ObservationIgnored
-    private let fileSearchService: any FileSearching
-    @ObservationIgnored
-    private let urlOpener: any URLOpening
     @ObservationIgnored
     private let applicationOpener: any ApplicationOpening
     @ObservationIgnored
@@ -38,8 +34,6 @@ final class LauncherViewModel {
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
     let fileRevealer: any FileRevealing
-    @ObservationIgnored
-    let fileActionService: any FileActionServicing
     @ObservationIgnored
     let bundleManager: any ApplicationBundleManaging
     @ObservationIgnored
@@ -76,8 +70,7 @@ final class LauncherViewModel {
     private(set) var isResultsScrolling = false
     private var hoveredID: String?
     var route: LauncherRoute = .root
-    var clipboardViewModel: ClipboardHistoryViewModel?
-    var fileSearchViewModel: FileSearchViewModel?
+    private(set) var activeApplication: LauncherApplicationSession?
     var uninstallViewModel: ApplicationUninstallViewModel?
     /// When non-nil, the application actions panel is presented for this bundle ID.
     var applicationActionsTargetBundleID: String?
@@ -98,7 +91,7 @@ final class LauncherViewModel {
     private var calculatorSuggestion: CalculatorSuggestion?
 
     init(
-        catalog: CommandCatalog = .makeBuiltIn(),
+        applicationRegistry: LauncherApplicationRegistry? = nil,
         clipboardHistoryStore: ClipboardHistoryStore = ClipboardHistoryStore(),
         fileSearchService: any FileSearching = InMemoryFileSearchService(),
         urlOpener: any URLOpening = NoOpURLOpener(),
@@ -118,15 +111,11 @@ final class LauncherViewModel {
         onOpenSettings: @escaping () -> Void = {},
         onQuit: @escaping () -> Void = {}
     ) {
-        self.catalog = catalog
         self.clipboardHistoryStore = clipboardHistoryStore
-        self.fileSearchService = fileSearchService
-        self.urlOpener = urlOpener
         self.applicationOpener = applicationOpener
         self.applicationQuery = applicationQuery
         self.applicationPreferencesStore = applicationPreferencesStore
         self.fileRevealer = fileRevealer
-        self.fileActionService = fileActionService
         self.bundleManager = bundleManager
         self.finderInfoPresenter = finderInfoPresenter
         self.uninstallDiscoverer = uninstallDiscoverer
@@ -137,24 +126,30 @@ final class LauncherViewModel {
         self.onDismiss = onDismiss
         self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
+        self.applicationRegistry = applicationRegistry ?? .makeBuiltIn(
+            clipboardHistoryStore: clipboardHistoryStore,
+            fileSearchServices: FileSearchApplicationServices(
+                searchService: fileSearchService,
+                urlOpener: urlOpener,
+                fileRevealer: fileRevealer,
+                fileActionService: fileActionService,
+                finderInfoPresenter: finderInfoPresenter,
+                pasteboard: pasteboard
+            )
+        )
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }
 
-    var runtime: CommandRuntime {
-        CommandRuntime(
-            clipboardHistoryStore: clipboardHistoryStore,
-            fileSearchService: fileSearchService,
-            urlOpener: urlOpener,
-            fileRevealer: fileRevealer,
-            fileActionService: fileActionService,
-            finderInfoPresenter: finderInfoPresenter,
-            pasteboard: pasteboard,
-            dismissLauncher: { [weak self] in self?.dismiss() },
-            openSettings: { [weak self] in
-                self?.dismiss()
-                self?.onOpenSettings()
-            },
-            goBack: { [weak self] in self?.goBack() }
+    private var applicationContext: LauncherApplicationContext {
+        LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: { [weak self] in self?.dismiss() },
+                openSettings: { [weak self] in
+                    self?.dismiss()
+                    self?.onOpenSettings()
+                },
+                goBack: { [weak self] in self?.goBack() }
+            )
         )
     }
 
@@ -176,8 +171,8 @@ final class LauncherViewModel {
         switch route {
         case .root:
             return "Commandly"
-        case .command(let id):
-            return catalog.command(for: id)?.manifest.title ?? "Command"
+        case .application(let id):
+            return applicationRegistry.application(for: id)?.manifest.title ?? "Application"
         case .uninstallReview:
             return uninstallViewModel?.applicationName ?? "Uninstall"
         }
@@ -187,8 +182,8 @@ final class LauncherViewModel {
         switch route {
         case .root:
             return "command"
-        case .command(let id):
-            return catalog.command(for: id)?.manifest.systemImage ?? "command"
+        case .application(let id):
+            return applicationRegistry.application(for: id)?.manifest.systemImage ?? "square.grid.2x2"
         case .uninstallReview:
             return "trash"
         }
@@ -236,7 +231,7 @@ final class LauncherViewModel {
     }
 
     var selectedApplicationBundleID: String? {
-        guard case .openApplication(let bundleID) = selectedItem?.action else { return nil }
+        guard case .openInstalledApplication(let bundleID) = selectedItem?.action else { return nil }
         return bundleID
     }
 
@@ -250,10 +245,8 @@ final class LauncherViewModel {
                     keyHint: .commandK
                 )
             ]
-        case .command:
-            return clipboardViewModel?.footerActions
-                ?? fileSearchViewModel?.footerActions
-                ?? []
+        case .application:
+            return activeApplication?.footerActions ?? []
         case .uninstallReview:
             return []
         }
@@ -295,14 +288,13 @@ final class LauncherViewModel {
             }
             return actions
         }
-        return clipboardViewModel?.menuActions ?? fileSearchViewModel?.menuActions ?? []
+        return activeApplication?.menuActions ?? []
     }
 
     var showsActionsMenu: Bool {
-        get { clipboardViewModel?.showsActionsMenu ?? fileSearchViewModel?.showsActionsMenu ?? false }
+        get { activeApplication?.showsActionsMenu ?? false }
         set {
-            clipboardViewModel?.showsActionsMenu = newValue
-            fileSearchViewModel?.showsActionsMenu = newValue
+            activeApplication?.showsActionsMenu = newValue
         }
     }
 
@@ -332,9 +324,8 @@ final class LauncherViewModel {
         hoveredID = nil
         inputDevice = .pointer
         route = .root
-        clipboardViewModel = nil
-        fileSearchViewModel?.stop()
-        fileSearchViewModel = nil
+        activeApplication?.stop()
+        activeApplication = nil
         uninstallViewModel = nil
         activeCalculatorResult = nil
         dismissApplicationActionsPanel()
@@ -393,21 +384,20 @@ final class LauncherViewModel {
     }
 
     func moveSelection(offset: Int) {
-        if case .command = route {
-            if let clipboardViewModel {
-                clipboardViewModel.moveSelection(offset: offset)
-            } else {
-                fileSearchViewModel?.moveSelection(offset: offset)
-            }
+        if case .application = route {
+            activeApplication?.moveSelection(offset: offset)
             return
         }
         let list = rootItems
-        guard list.isEmpty == false else { return }
-        let currentIndex = list.firstIndex { $0.id == selectedID } ?? 0
-        let nextIndex = (currentIndex + offset + list.count) % list.count
+        guard let nextID = LauncherListSelection.nextID(
+            in: list,
+            selectedID: selectedID,
+            offset: offset,
+            id: \.id
+        ) else { return }
         inputDevice = .keyboard
         shouldScrollToSelection = true
-        selectedID = list[nextIndex].id
+        selectedID = nextID
         statusMessage = nil
         refreshAutocomplete()
     }
@@ -418,12 +408,9 @@ final class LauncherViewModel {
     }
 
     func confirmSelection() {
-        if case .command = route {
-            if let clipboardViewModel {
-                clipboardViewModel.perform(BuiltInCommandActionID.copy)
-            } else {
-                fileSearchViewModel?.perform(BuiltInCommandActionID.openFile)
-            }
+        if case .application = route {
+            guard let primaryActionID = activeApplication?.primaryActionID else { return }
+            activeApplication?.perform(primaryActionID)
             return
         }
         guard let item = selectedItem else { return }
@@ -435,9 +422,9 @@ final class LauncherViewModel {
             onDismiss()
         case .placeholder(let message):
             statusMessage = message
-        case .openCommand(let commandID):
-            activate(commandID)
-        case .openApplication(let bundleIdentifier):
+        case .launchApplication(let applicationID):
+            launch(applicationID)
+        case .openInstalledApplication(let bundleIdentifier):
             Task { @MainActor [weak self] in
                 await self?.openApplication(bundleIdentifier: bundleIdentifier)
             }
@@ -454,8 +441,9 @@ final class LauncherViewModel {
 
     /// Test helper: awaits primary confirm side effects (copy / open).
     func confirmSelectionAndWaitForTesting() async {
-        if case .command = route {
-            clipboardViewModel?.perform(BuiltInCommandActionID.copy)
+        if case .application = route {
+            guard let primaryActionID = activeApplication?.primaryActionID else { return }
+            activeApplication?.perform(primaryActionID)
             return
         }
         guard let item = selectedItem else { return }
@@ -475,12 +463,8 @@ final class LauncherViewModel {
     }
 
     func performFooterAction(_ id: CommandActionID) {
-        if case .command = route {
-            if let clipboardViewModel {
-                clipboardViewModel.perform(id)
-            } else {
-                fileSearchViewModel?.perform(id)
-            }
+        if case .application = route {
+            activeApplication?.perform(id)
             return
         }
         switch id {
@@ -585,14 +569,17 @@ final class LauncherViewModel {
         }
     }
 
-    func activate(_ commandID: CommandID) {
-        guard let command = catalog.command(for: commandID) else {
-            statusMessage = "Command is not registered."
+    func launch(_ applicationID: CommandID) {
+        guard let application = applicationRegistry.application(for: applicationID) else {
+            statusMessage = "Application is not registered."
             return
         }
-        switch command.activate(runtime: runtime) {
-        case .pushView(let id):
-            push(commandID: id)
+        switch application.launch(in: applicationContext) {
+        case .present(let session):
+            activeApplication?.stop()
+            activeApplication = session
+            route = .application(applicationID)
+            statusMessage = nil
         case .openSettings:
             onDismiss()
             onOpenSettings()
@@ -603,44 +590,20 @@ final class LauncherViewModel {
         }
     }
 
-    func push(commandID: CommandID) {
-        guard let command = catalog.command(for: commandID) else { return }
-        route = .command(commandID)
-        if commandID == BuiltInCommandID.clipboardHistory {
-            clipboardViewModel = ClipboardHistoryViewModel(
-                store: clipboardHistoryStore,
-                onGoBack: { [weak self] in self?.goBack() },
-                onDismiss: { [weak self] in self?.dismiss() }
-            )
-        } else if commandID == BuiltInCommandID.searchFiles {
-            fileSearchViewModel = FileSearchViewModel(
-                searchService: fileSearchService,
-                urlOpener: urlOpener,
-                fileRevealer: fileRevealer,
-                fileActionService: fileActionService,
-                finderInfoPresenter: finderInfoPresenter,
-                pasteboard: pasteboard,
-                onGoBack: { [weak self] in self?.goBack() },
-                onDismiss: { [weak self] in self?.dismiss() },
-                onOpenSettings: { [weak self] in
-                    self?.dismiss()
-                    self?.onOpenSettings()
-                }
-            )
-        }
-        statusMessage = nil
-        _ = command
+    /// Returns the active application's strongly typed model when a caller needs feature-specific
+    /// setup, such as deterministic UI validation.
+    func activeApplicationModel<Model>(as type: Model.Type = Model.self) -> Model? {
+        activeApplication?.model(as: type)
     }
 
     func goBack() {
-        fileSearchViewModel?.stop()
+        activeApplication?.stop()
         route = .root
-        clipboardViewModel = nil
-        fileSearchViewModel = nil
+        activeApplication = nil
         uninstallViewModel = nil
         statusMessage = nil
         // Clear residual root search so Esc on home can hide immediately
-        // (instead of only clearing the query that launched the command).
+        // (instead of only clearing the query that launched the application).
         query = ""
         requestSearchFocus()
     }
@@ -651,9 +614,10 @@ final class LauncherViewModel {
 
     /// Handles Escape for the launcher shell.
     ///
-    /// Priority: close overlays → leave the active command for home → otherwise
-    /// signal the caller to hide the launcher window. Returns `true` when the key
-    /// was consumed inside the launcher; `false` when the window should hide.
+    /// Priority: close overlays → let the active application consume Escape →
+    /// leave the application for home → otherwise signal the caller to hide the
+    /// launcher window. Returns `true` when the key was consumed inside the
+    /// launcher; `false` when the window should hide.
     func handleEscape() -> Bool {
         if showsApplicationActionsPanel {
             dismissApplicationActionsPanel()
@@ -664,10 +628,20 @@ final class LauncherViewModel {
             return true
         }
         switch route {
-        case .command, .uninstallReview:
+        case .application:
+            if activeApplication?.handleEscape() == true {
+                return true
+            }
+            goBack()
+            return true
+        case .uninstallReview:
             goBack()
             return true
         case .root:
+            if query.isEmpty == false {
+                query = ""
+                return true
+            }
             return false
         }
     }
@@ -819,7 +793,7 @@ final class LauncherViewModel {
         let preferences = applicationPreferencesStore.load()
         return CompositeSearchService(
             providers: [
-                CommandSearchProvider(manifests: catalog.allManifests()),
+                CommandSearchProvider(manifests: applicationRegistry.allManifests()),
                 ApplicationSearchProvider(
                     applications: cachedApplications,
                     favoriteBundleIDs: preferences.favoriteBundleIDs,
@@ -834,7 +808,7 @@ final class LauncherViewModel {
     private func mapSearchItem(_ item: SearchItem) -> LauncherItem? {
         switch item.providerID {
         case BuiltInSearchProviderID.commands:
-            guard let manifest = catalog.allManifests().first(where: { $0.id.rawValue == item.id }) else {
+            guard let manifest = applicationRegistry.allManifests().first(where: { $0.id.rawValue == item.id }) else {
                 return nil
             }
             let badge: LauncherItemBadge = manifest.id == BuiltInCommandID.openSettings ? .settings : .command
@@ -846,7 +820,7 @@ final class LauncherViewModel {
                 systemImage: manifest.systemImage,
                 badge: badge,
                 keywords: manifest.keywords,
-                action: .openCommand(manifest.id)
+                action: .launchApplication(manifest.id)
             )
         case BuiltInSearchProviderID.applications:
             let path = cachedApplications.first(where: { $0.bundleIdentifier == item.id })?.path
@@ -873,7 +847,7 @@ final class LauncherViewModel {
                 icon: icon,
                 badge: badge,
                 keywords: [item.title],
-                action: .openApplication(bundleIdentifier: item.id)
+                action: .openInstalledApplication(bundleIdentifier: item.id)
             )
         case BuiltInSearchProviderID.placeholders:
             guard let record = LauncherPlaceholderCatalog.searchRecords.first(where: { $0.id == item.id }) else {
@@ -895,7 +869,7 @@ final class LauncherViewModel {
     }
 
     private func fallbackItems(matching queryText: String) -> [LauncherItem] {
-        let commandItems = catalog.allManifests().map { manifest -> LauncherItem in
+        let commandItems = applicationRegistry.allManifests().map { manifest -> LauncherItem in
             let badge: LauncherItemBadge = manifest.id == BuiltInCommandID.openSettings ? .settings : .command
             return LauncherItem(
                 id: manifest.id.rawValue,
@@ -905,7 +879,7 @@ final class LauncherViewModel {
                 systemImage: manifest.systemImage,
                 badge: badge,
                 keywords: manifest.keywords,
-                action: .openCommand(manifest.id)
+                action: .launchApplication(manifest.id)
             )
         }
         return (commandItems + placeholderItems).filter { $0.matches(query: queryText) }
@@ -913,11 +887,11 @@ final class LauncherViewModel {
 
     private func applySearchResult(items: [LauncherItem], queryText: String) {
         rootItems = items
-        if items.isEmpty {
-            selectedID = nil
-        } else if items.contains(where: { $0.id == selectedID }) == false {
-            selectedID = items.first?.id
-        }
+        selectedID = LauncherListSelection.resolvedID(
+            in: items,
+            selectedID: selectedID,
+            id: \.id
+        )
         refreshAutocomplete(queryText: queryText)
     }
 

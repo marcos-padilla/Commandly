@@ -3,6 +3,7 @@ import Observation
 import Infrastructure
 import AppKit
 import CommandKit
+import Observability
 
 /// Observable app runtime for scene-level UI that must react to onboarding completion.
 @Observable
@@ -20,13 +21,16 @@ final class AppRuntime {
     private var cachedSettingsViewModel: SettingsViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
     private let hotkeyMonitor = OptionSpaceHotkeyMonitor()
-    let commandCatalog: CommandCatalog
+    @ObservationIgnored
+    let applicationRegistry: LauncherApplicationRegistry
     /// Pasteboard monitoring must not invalidate scene/`@Bindable` runtime UI.
-    /// Views that need history observe the store through command view models.
+    /// Views that need history observe the store through application models.
     @ObservationIgnored
     let clipboardHistoryStore: ClipboardHistoryStore
     @ObservationIgnored
     let fileSearchService: PersistentFileSearchService
+    @ObservationIgnored
+    private let fileSearchApplicationServices: FileSearchApplicationServices
     @ObservationIgnored
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
@@ -41,27 +45,42 @@ final class AppRuntime {
         self.showMenuBarIcon = settings.showMenuBarIcon
         self.textSize = settings.textSize
         self.viewMode = settings.viewMode
-        self.commandCatalog = .makeBuiltIn()
-        self.clipboardHistoryStore = ClipboardHistoryStore(
+        let clipboardHistoryStore = ClipboardHistoryStore(
             enricher: VisionClipboardContentEnricher()
         )
+        self.clipboardHistoryStore = clipboardHistoryStore
         #if DEBUG
         let fixture = CommandlyFileSearchDebugFixture.prepareIfRequested()
-        self.fileSearchService = PersistentFileSearchService(
+        let fileSearchService = PersistentFileSearchService(
             folderAccessStore: container.dependencies.folderAccessStore,
             databaseURL: fixture?.databaseURL,
             directAuthorizedScopes: fixture.map { [$0.rootURL] } ?? []
         )
         #else
-        self.fileSearchService = PersistentFileSearchService(
+        let fileSearchService = PersistentFileSearchService(
             folderAccessStore: container.dependencies.folderAccessStore
         )
         #endif
+        self.fileSearchService = fileSearchService
+        let fileSearchApplicationServices = FileSearchApplicationServices(
+            searchService: fileSearchService,
+            urlOpener: WorkspaceURLOpener(),
+            fileRevealer: WorkspaceFileRevealer(),
+            fileActionService: WorkspaceFileActionService(),
+            finderInfoPresenter: FinderAppleScriptInfoPresenter(),
+            pasteboard: SystemPasteboard()
+        )
+        self.fileSearchApplicationServices = fileSearchApplicationServices
+        self.applicationRegistry = .makeBuiltIn(
+            clipboardHistoryStore: clipboardHistoryStore,
+            fileSearchServices: fileSearchApplicationServices
+        )
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
         self.autoQuitService = AutoQuitService(preferencesStore: applicationPreferencesStore)
         startHotkeyMonitor()
-        registerBuiltInCommands()
+        registerApplicationManifests()
+        clipboardHistoryStore.startMonitoring()
         if showsOnboarding == false {
             autoQuitService.start()
         }
@@ -107,18 +126,19 @@ final class AppRuntime {
             return cachedLauncherViewModel
         }
         let viewModel = LauncherViewModel(
-            catalog: commandCatalog,
+            applicationRegistry: applicationRegistry,
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchService: fileSearchService,
-            urlOpener: WorkspaceURLOpener(),
+            urlOpener: fileSearchApplicationServices.urlOpener,
             applicationOpener: WorkspaceApplicationOpener(),
             applicationQuery: WorkspaceInstalledApplicationQuery(),
             applicationPreferencesStore: applicationPreferencesStore,
-            fileRevealer: WorkspaceFileRevealer(),
-            fileActionService: WorkspaceFileActionService(),
+            fileRevealer: fileSearchApplicationServices.fileRevealer,
+            fileActionService: fileSearchApplicationServices.fileActionService,
             bundleManager: WorkspaceApplicationBundleManager(),
-            finderInfoPresenter: FinderAppleScriptInfoPresenter(),
+            finderInfoPresenter: fileSearchApplicationServices.finderInfoPresenter,
             uninstallDiscoverer: WorkspaceApplicationUninstallDiscoverer(),
+            pasteboard: fileSearchApplicationServices.pasteboard,
             onDismiss: { [weak self] in
                 self?.hideLauncher()
             },
@@ -191,8 +211,13 @@ final class AppRuntime {
         viewMode = .comfortable
         autoQuitService.stop()
 
+        let logger = dependencies.logger
         Task {
-            try? await dependencies.loginItemManager.setEnabled(false)
+            do {
+                try await dependencies.loginItemManager.setEnabled(false)
+            } catch {
+                logger.error("Could not disable the login item while resetting onboarding")
+            }
         }
     }
 
@@ -210,15 +235,19 @@ final class AppRuntime {
         }
     }
 
-    private func registerBuiltInCommands() {
+    private func registerApplicationManifests() {
         let registry = container.dependencies.commandRegistry
-        let manifests = commandCatalog.allManifests()
+        let manifests = applicationRegistry.allManifests()
+        let logger = container.dependencies.logger
         Task {
-            for manifest in manifests {
-                try? await registry.register(manifest)
+            do {
+                for manifest in manifests {
+                    try await registry.register(manifest)
+                }
+            } catch {
+                logger.error("A built-in launcher application manifest failed registration")
             }
         }
-        clipboardHistoryStore.startMonitoring()
     }
 
 }
