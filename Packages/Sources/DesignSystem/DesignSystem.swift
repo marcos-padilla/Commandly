@@ -55,6 +55,14 @@ public enum LayoutConstants {
     public static let settingsMinWidth: CGFloat = 720
     /// Default settings window height.
     public static let settingsMinHeight: CGFloat = 460
+    /// Minimum width that keeps the Applications table and inspector readable side by side.
+    public static let settingsApplicationsMinWidth: CGFloat = 1_200
+    /// Minimum height for the hierarchy-and-inspector Applications settings pane.
+    public static let settingsApplicationsMinHeight: CGFloat = 640
+    /// Preferred Settings window width on first presentation.
+    public static let settingsIdealWidth: CGFloat = 1_280
+    /// Preferred Settings window height on first presentation.
+    public static let settingsIdealHeight: CGFloat = 720
     /// Settings sidebar width.
     public static let settingsSidebarWidth: CGFloat = 188
     /// Minimum onboarding window width.

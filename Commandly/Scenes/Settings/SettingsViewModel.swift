@@ -4,10 +4,12 @@ import AppKit
 import AppCore
 import Infrastructure
 import SecurityKit
+import CommandKit
 
 /// Sidebar destinations for the settings window.
 enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     case general
+    case applications
     case permissions
     case about
 
@@ -16,6 +18,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .general: return "General"
+        case .applications: return "Applications"
         case .permissions: return "Permissions"
         case .about: return "About"
         }
@@ -25,6 +28,8 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general:
             return "Startup, hotkey, appearance, and everyday Commandly preferences."
+        case .applications:
+            return "Manage application discovery, shortcuts, and declared configuration."
         case .permissions:
             return "Review access Commandly uses for calendar, files, and automation."
         case .about:
@@ -35,6 +40,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .applications: return "square.grid.2x2"
         case .permissions: return "lock.shield"
         case .about: return "info.circle"
         }
@@ -49,6 +55,7 @@ final class SettingsViewModel {
     private let permissionService: any PermissionServicing
     private let privacySettingsOpener: any PrivacySettingsOpening
     let metadata: ApplicationMetadata
+    let applications: LauncherApplicationsSettingsModel
 
     var selectedPane: SettingsPane = .general
     var opensAtLogin: Bool
@@ -71,6 +78,9 @@ final class SettingsViewModel {
         permissionService: any PermissionServicing,
         privacySettingsOpener: any PrivacySettingsOpening,
         metadata: ApplicationMetadata,
+        applicationRegistry: LauncherApplicationRegistry? = nil,
+        onApplicationPreferencesChange: @escaping () -> Void = {},
+        applicationHotkeyIssues: @escaping () -> [CommandID: ApplicationHotkeyRegistrationIssue] = { [:] },
         onMenuBarIconChange: ((Bool) -> Void)? = nil,
         onTextSizeChange: ((AppTextSizePreference) -> Void)? = nil,
         onViewModeChange: ((AppViewModePreference) -> Void)? = nil
@@ -80,6 +90,11 @@ final class SettingsViewModel {
         self.permissionService = permissionService
         self.privacySettingsOpener = privacySettingsOpener
         self.metadata = metadata
+        self.applications = LauncherApplicationsSettingsModel(
+            registry: applicationRegistry ?? .makeBuiltIn(),
+            onPreferencesChange: onApplicationPreferencesChange,
+            hotkeyIssues: applicationHotkeyIssues
+        )
         self.onMenuBarIconChange = onMenuBarIconChange
         self.onTextSizeChange = onTextSizeChange
         self.onViewModeChange = onViewModeChange

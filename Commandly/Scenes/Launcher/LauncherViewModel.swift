@@ -140,8 +140,11 @@ final class LauncherViewModel {
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }
 
-    private var applicationContext: LauncherApplicationContext {
-        LauncherApplicationContext(
+    private func applicationContext(for applicationID: CommandID) -> LauncherApplicationContext? {
+        guard let settings = applicationRegistry.resolvedSettings(for: applicationID) else {
+            return nil
+        }
+        return LauncherApplicationContext(
             navigation: LauncherApplicationNavigation(
                 dismissLauncher: { [weak self] in self?.dismiss() },
                 openSettings: { [weak self] in
@@ -149,7 +152,8 @@ final class LauncherViewModel {
                     self?.onOpenSettings()
                 },
                 goBack: { [weak self] in self?.goBack() }
-            )
+            ),
+            settings: settings
         )
     }
 
@@ -172,7 +176,7 @@ final class LauncherViewModel {
         case .root:
             return "Commandly"
         case .application(let id):
-            return applicationRegistry.application(for: id)?.manifest.title ?? "Application"
+            return applicationRegistry.definition(for: id)?.title ?? "Application"
         case .uninstallReview:
             return uninstallViewModel?.applicationName ?? "Uninstall"
         }
@@ -183,7 +187,7 @@ final class LauncherViewModel {
         case .root:
             return "command"
         case .application(let id):
-            return applicationRegistry.application(for: id)?.manifest.systemImage ?? "square.grid.2x2"
+            return applicationRegistry.definition(for: id)?.systemImage ?? "square.grid.2x2"
         case .uninstallReview:
             return "trash"
         }
@@ -570,11 +574,17 @@ final class LauncherViewModel {
     }
 
     func launch(_ applicationID: CommandID) {
-        guard let application = applicationRegistry.application(for: applicationID) else {
-            statusMessage = "Application is not registered."
+        guard let application = applicationRegistry.enabledApplication(for: applicationID) else {
+            statusMessage = applicationRegistry.application(for: applicationID) == nil
+                ? "Application is not registered."
+                : "Application is disabled."
             return
         }
-        switch application.launch(in: applicationContext) {
+        guard let context = applicationContext(for: applicationID) else {
+            statusMessage = "Application settings are unavailable."
+            return
+        }
+        switch application.launch(in: context) {
         case .present(let session):
             activeApplication?.stop()
             activeApplication = session
@@ -588,6 +598,18 @@ final class LauncherViewModel {
         case .message(let message):
             statusMessage = message
         }
+    }
+
+    /// Rebuilds root discovery after application preferences change.
+    func applicationPreferencesDidChange() {
+        guard route == .root else {
+            if case .application(let id) = route,
+               applicationRegistry.isEffectivelyEnabled(id) == false {
+                goBack()
+            }
+            return
+        }
+        scheduleSearch(loadApplicationsIfNeeded: false)
     }
 
     /// Returns the active application's strongly typed model when a caller needs feature-specific

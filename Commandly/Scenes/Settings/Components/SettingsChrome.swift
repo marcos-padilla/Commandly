@@ -22,19 +22,33 @@ struct SettingsVisualEffectBackground: NSViewRepresentable {
 }
 
 private struct SettingsWindowMaterialConfigurator: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        configureWhenAttached(view)
+        configureWhenAttached(view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        configureWhenAttached(nsView)
+        configureWhenAttached(nsView, coordinator: context.coordinator)
     }
 
-    private func configureWhenAttached(_ view: NSView) {
+    private func configureWhenAttached(_ view: NSView, coordinator: Coordinator) {
         DispatchQueue.main.async {
-            guard let window = view.window else { return }
+            coordinator.configure(view.window)
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
+        private weak var configuredWindow: NSWindow?
+
+        func configure(_ window: NSWindow?) {
+            guard let window, configuredWindow !== window else { return }
+            configuredWindow = window
             window.isOpaque = false
             window.backgroundColor = .clear
             window.hasShadow = true

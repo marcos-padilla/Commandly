@@ -14,6 +14,26 @@ import CalculatorKit
 import SwiftUI
 
 struct CommandlyTests {
+    @Test @MainActor func compactWindowChromeRehidesAWindowTitleRestoredBySwiftUI() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let coordinator = CompactWindowChrome.Coordinator()
+
+        coordinator.configure(window, hidesZoomButton: true)
+        window.title = "Commandly Settings"
+        window.titleVisibility = .visible
+        coordinator.configure(window, hidesZoomButton: true)
+
+        #expect(window.title.isEmpty)
+        #expect(window.titleVisibility == .hidden)
+        #expect(window.styleMask.contains(.fullSizeContentView))
+        #expect(window.standardWindowButton(.zoomButton)?.isHidden == true)
+    }
+
     @Test @MainActor func dependencyContainerBootstrapsToRootWhenOnboarded() {
         let container = makeTestContainer(hasCompletedOnboarding: true)
         #expect(container.dependencies.metadata.name == "Commandly")
@@ -302,6 +322,160 @@ struct CommandlyTests {
         } catch let error as LauncherApplicationRegistryError {
             #expect(error == .duplicateApplication(TestLauncherApplication.id))
         }
+    }
+
+    @Test @MainActor func launcherRegistryBuildsTypedHierarchy() throws {
+        let registry = LauncherApplicationRegistry()
+        let groupID = CommandID(rawValue: "test.group")
+        try registry.register(
+            .group(id: groupID, title: "Test Group", order: 10)
+        )
+        try registry.register(TestLauncherApplication(parentID: groupID))
+
+        #expect(registry.rootDefinitions().map(\.id) == [groupID])
+        #expect(registry.children(of: groupID).map(\.id) == [TestLauncherApplication.id])
+        #expect(registry.definition(for: groupID)?.kind == .group)
+        #expect(registry.definition(for: TestLauncherApplication.id)?.kind == .application)
+    }
+
+    @Test @MainActor func launcherRegistryRejectsMissingParents() {
+        let registry = LauncherApplicationRegistry()
+        let parentID = CommandID(rawValue: "test.missing-parent")
+
+        do {
+            try registry.register(TestLauncherApplication(parentID: parentID))
+            Issue.record("Expected missing parent registration to fail")
+        } catch let error as LauncherApplicationRegistryError {
+            #expect(
+                error == .missingParent(
+                    child: TestLauncherApplication.id,
+                    parent: parentID
+                )
+            )
+        } catch {
+            Issue.record("Unexpected registry error: \(error)")
+        }
+    }
+
+    @Test @MainActor func aliasesParticipateInSearchAndDisabledParentsHideChildren() async throws {
+        let preferences = InMemoryLauncherApplicationPreferencesStore()
+        let registry = LauncherApplicationRegistry(preferencesStore: preferences)
+        let groupID = CommandID(rawValue: "test.group")
+        try registry.register(.group(id: groupID, title: "Test Group"))
+        try registry.register(TestLauncherApplication(parentID: groupID))
+
+        var appPreferences = LauncherApplicationPreferences.empty
+        appPreferences.alias = "rocket"
+        registry.savePreferences(appPreferences, for: TestLauncherApplication.id)
+
+        let result = try await CommandSearchProvider(manifests: registry.allManifests())
+            .search(SearchQuery(text: "rocket"))
+        #expect(result.items.map(\.id) == [TestLauncherApplication.id.rawValue])
+
+        var groupPreferences = LauncherApplicationPreferences.empty
+        groupPreferences.isEnabled = false
+        registry.savePreferences(groupPreferences, for: groupID)
+
+        #expect(registry.allManifests().isEmpty)
+        #expect(registry.enabledApplication(for: TestLauncherApplication.id) == nil)
+    }
+
+    @Test @MainActor func declaredClipboardConfigurationControlsNewSessions() throws {
+        let preferences = InMemoryLauncherApplicationPreferencesStore()
+        let registry = LauncherApplicationRegistry.makeBuiltIn(preferencesStore: preferences)
+        var appPreferences = LauncherApplicationPreferences.empty
+        appPreferences.configuration["defaultFilter"] = .text(ClipboardHistoryFilter.image.rawValue)
+        registry.savePreferences(appPreferences, for: BuiltInCommandID.clipboardHistory)
+        let viewModel = LauncherViewModel(
+            applicationRegistry: registry,
+            placeholderItems: []
+        )
+
+        viewModel.launch(BuiltInCommandID.clipboardHistory)
+
+        let clipboardModel = try #require(
+            viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self)
+        )
+        #expect(clipboardModel.filter == .image)
+    }
+
+    @Test @MainActor func applicationSettingsModelPersistsSchemaValues() throws {
+        let preferences = InMemoryLauncherApplicationPreferencesStore()
+        let registry = LauncherApplicationRegistry.makeBuiltIn(preferencesStore: preferences)
+        var changeCount = 0
+        let model = LauncherApplicationsSettingsModel(
+            registry: registry,
+            onPreferencesChange: { changeCount += 1 }
+        )
+
+        let initialAliases = registry.allDefinitions()
+            .filter { $0.kind != .group }
+            .compactMap { registry.resolvedSettings(for: $0.id)?.alias }
+        #expect(initialAliases.isEmpty == false)
+        #expect(initialAliases.allSatisfy { $0.isEmpty })
+
+        model.select(BuiltInCommandID.searchFiles)
+        model.setAlias("finder", for: BuiltInCommandID.searchFiles)
+        let hotKey = LauncherHotKey(keyCode: 3, modifiers: [.command, .option])
+        model.setHotKey(hotKey, for: BuiltInCommandID.searchFiles)
+        model.setConfiguration(
+            .boolean(false),
+            variable: "showsDetails",
+            for: BuiltInCommandID.searchFiles
+        )
+
+        let settings = try #require(registry.resolvedSettings(for: BuiltInCommandID.searchFiles))
+        #expect(settings.alias == "finder")
+        #expect(settings.hotKey == hotKey)
+        #expect(settings.value(for: "showsDetails") == .boolean(false))
+        #expect(changeCount == 3)
+    }
+
+    @Test @MainActor func applicationHotkeyPlanRejectsDuplicatesAndInvalidShortcuts() {
+        let firstID = CommandID(rawValue: "hotkey.first")
+        let secondID = CommandID(rawValue: "hotkey.second")
+        let invalidID = CommandID(rawValue: "hotkey.invalid")
+        let shortcut = LauncherHotKey(keyCode: 8, modifiers: [.command, .option])
+        let invalid = LauncherHotKey(keyCode: 8, modifiers: [])
+
+        let plan = ApplicationHotkeyPlan.resolve([
+            (firstID, shortcut),
+            (secondID, shortcut),
+            (invalidID, invalid),
+        ])
+
+        #expect(plan.registrations.map(\.0) == [firstID])
+        #expect(plan.issues[secondID] == .duplicate(firstID))
+        #expect(plan.issues[invalidID] == .unavailable)
+    }
+
+    @Test @MainActor func applicationPreferencesRoundTripNonSecretValues() throws {
+        let suiteName = "CommandlyTests.LauncherApplicationPreferences.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsLauncherApplicationPreferencesStore(defaults: defaults)
+        let id = CommandID(rawValue: "test.persisted")
+        let hotKey = LauncherHotKey(
+            keyCode: 9,
+            modifiers: [.command, .shift]
+        )
+        let expected = LauncherApplicationPreferences(
+            alias: "voice",
+            hotKey: hotKey,
+            hasHotKeyOverride: true,
+            isEnabled: false,
+            configuration: [
+                "prompt": .text("Concise"),
+                "count": .integer(3),
+                "temperature": .decimal(0.2),
+                "localOnly": .boolean(true),
+            ]
+        )
+
+        store.save(expected, for: id)
+
+        #expect(store.preferences(for: id) == expected)
+        #expect(hotKey.displayTitle == "⇧⌘V")
     }
 
     @Test @MainActor func registeredApplicationLaunchesWithoutRootFeatureBranch() throws {
@@ -2096,6 +2270,7 @@ struct CommandlyTests {
             privacySettingsOpener: InMemoryPrivacySettingsOpener(),
             onboardingStatusStore: store,
             appSettingsStore: appSettingsStore ?? InMemoryAppSettingsStore(),
+            launcherApplicationPreferencesStore: InMemoryLauncherApplicationPreferencesStore(),
             applicationPreferencesStore: InMemoryApplicationPreferencesStore(),
             folderAccessStore: folderAccessStore ?? InMemoryFolderAccessStore(),
             loginItemManager: InMemoryLoginItemManager(),
@@ -2167,6 +2342,11 @@ private actor FileEventRecorder {
 private struct TestLauncherApplication: LauncherApplication {
     static let id = CommandID(rawValue: "test.application")
     static let primaryActionID = CommandActionID(rawValue: "test.primary")
+    let parentID: CommandID?
+
+    init(parentID: CommandID? = nil) {
+        self.parentID = parentID
+    }
 
     let manifest = CommandManifest(
         id: id,
@@ -2184,6 +2364,15 @@ private struct TestLauncherApplication: LauncherApplication {
             )
         ]
     )
+
+    var definition: LauncherApplicationDefinition {
+        LauncherApplicationDefinition(
+            manifest: manifest,
+            parentID: parentID,
+            kind: .application,
+            order: 0
+        )
+    }
 
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
         let model = TestLauncherApplicationModel()

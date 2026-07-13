@@ -54,7 +54,10 @@ final class AppContainer {
     func makeSettingsViewModel(
         onMenuBarIconChange: @escaping (Bool) -> Void = { _ in },
         onTextSizeChange: @escaping (AppTextSizePreference) -> Void = { _ in },
-        onViewModeChange: @escaping (AppViewModePreference) -> Void = { _ in }
+        onViewModeChange: @escaping (AppViewModePreference) -> Void = { _ in },
+        applicationRegistry: LauncherApplicationRegistry? = nil,
+        onApplicationPreferencesChange: @escaping () -> Void = {},
+        applicationHotkeyIssues: @escaping () -> [CommandID: ApplicationHotkeyRegistrationIssue] = { [:] }
     ) -> SettingsViewModel {
         SettingsViewModel(
             settingsStore: dependencies.appSettingsStore,
@@ -62,6 +65,9 @@ final class AppContainer {
             permissionService: dependencies.permissionService,
             privacySettingsOpener: dependencies.privacySettingsOpener,
             metadata: dependencies.metadata,
+            applicationRegistry: applicationRegistry,
+            onApplicationPreferencesChange: onApplicationPreferencesChange,
+            applicationHotkeyIssues: applicationHotkeyIssues,
             onMenuBarIconChange: onMenuBarIconChange,
             onTextSizeChange: onTextSizeChange,
             onViewModeChange: onViewModeChange

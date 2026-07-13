@@ -6,6 +6,7 @@ import SwiftUI
 
 struct SettingsRootView: View {
     @State private var viewModel: SettingsViewModel
+    @State private var isSidebarVisible = true
     @Namespace private var sidebarNamespace
 
     init(viewModel: SettingsViewModel) {
@@ -14,24 +15,45 @@ struct SettingsRootView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SettingsSidebar(
-                selection: $viewModel.selectedPane,
-                versionLabel: versionLabel,
-                namespace: sidebarNamespace
-            )
-            .frame(width: LayoutConstants.settingsSidebarWidth)
+            if isSidebarVisible {
+                SettingsSidebar(
+                    selection: $viewModel.selectedPane,
+                    versionLabel: versionLabel,
+                    namespace: sidebarNamespace
+                )
+                .frame(width: LayoutConstants.settingsSidebarWidth)
+                .transition(
+                    .move(edge: .leading)
+                        .combined(with: .opacity)
+                )
+            }
 
-            ZStack {
-                pageContent
-                    .id(viewModel.selectedPane)
-                    .transition(pageTransition)
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: SettingsTopBar.titlebarInset)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
+                SettingsTopBar(
+                    selectedPane: viewModel.selectedPane,
+                    isSidebarVisible: isSidebarVisible,
+                    onToggleSidebar: toggleSidebar
+                )
+
+                ZStack {
+                    pageContent
+                        .id(viewModel.selectedPane)
+                        .transition(pageTransition)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
         }
+        .clipped()
         .frame(
-            minWidth: LayoutConstants.settingsMinWidth,
-            minHeight: LayoutConstants.settingsMinHeight
+            minWidth: LayoutConstants.settingsApplicationsMinWidth,
+            minHeight: LayoutConstants.settingsApplicationsMinHeight
         )
         .background {
             ZStack {
@@ -71,11 +93,19 @@ struct SettingsRootView: View {
         )
     }
 
+    private func toggleSidebar() {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            isSidebarVisible.toggle()
+        }
+    }
+
     @ViewBuilder
     private var pageContent: some View {
         switch viewModel.selectedPane {
         case .general:
             GeneralSettingsPage(viewModel: viewModel)
+        case .applications:
+            ApplicationsSettingsPage(model: viewModel.applications)
         case .permissions:
             PermissionsSettingsPage(viewModel: viewModel)
         case .about:

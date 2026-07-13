@@ -10,5 +10,6 @@ ADRs capture significant technical decisions for Commandly.
 | [ADR-0002](ADR-0002-dependency-injection.md) | Initializer-based composition root DI | Accepted |
 | [ADR-0003](ADR-0003-persistent-file-index.md) | Persistent local file index | Accepted |
 | [ADR-0004](ADR-0004-registered-launcher-applications.md) | Registered launcher applications and reusable screen composition | Accepted |
+| [ADR-0005](ADR-0005-configurable-application-definitions.md) | Typed, configurable launcher application definitions | Accepted |
 
 Open items live in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).

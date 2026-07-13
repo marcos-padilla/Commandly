@@ -80,6 +80,8 @@ final class FileSearchViewModel {
         fileActionService: any FileActionServicing = InMemoryFileActionService(),
         finderInfoPresenter: any FinderInfoPresenting = InMemoryFinderInfoPresenter(),
         pasteboard: any PasteboardAccessing,
+        initialCategory: FileSearchCategory = .all,
+        initiallyShowsDetails: Bool = true,
         onGoBack: @escaping () -> Void = {},
         onDismiss: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {}
@@ -90,6 +92,8 @@ final class FileSearchViewModel {
         self.fileActionService = fileActionService
         self.finderInfoPresenter = finderInfoPresenter
         self.pasteboard = pasteboard
+        self.category = initialCategory
+        self.showsDetails = initiallyShowsDetails
         self.onGoBack = onGoBack
         self.onDismiss = onDismiss
         self.onOpenSettings = onOpenSettings

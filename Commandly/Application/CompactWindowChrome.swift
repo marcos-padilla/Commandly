@@ -5,35 +5,67 @@ import SwiftUI
 struct CompactWindowChrome: NSViewRepresentable {
     var hidesZoomButton: Bool = true
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         view.isHidden = true
-        scheduleConfigure(for: view)
+        scheduleConfigure(for: view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        scheduleConfigure(for: nsView)
+        scheduleConfigure(for: nsView, coordinator: context.coordinator)
     }
 
-    private func scheduleConfigure(for view: NSView) {
+    private func scheduleConfigure(for view: NSView, coordinator: Coordinator) {
         DispatchQueue.main.async {
-            Self.applyChrome(to: view.window, hidesZoomButton: hidesZoomButton)
+            coordinator.configure(view.window, hidesZoomButton: hidesZoomButton)
         }
     }
 
-    private static func applyChrome(to window: NSWindow?, hidesZoomButton: Bool) {
-        guard let window else { return }
+    @MainActor
+    final class Coordinator {
+        func configure(_ window: NSWindow?, hidesZoomButton: Bool) {
+            guard let window else { return }
 
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.fullSizeContentView)
-        window.isMovableByWindowBackground = true
-        window.toolbar = nil
+            if window.title.isEmpty == false {
+                window.title = ""
+            }
+            if window.titleVisibility != .hidden {
+                window.titleVisibility = .hidden
+            }
+            if window.titlebarAppearsTransparent == false {
+                window.titlebarAppearsTransparent = true
+            }
+            if window.styleMask.contains(.fullSizeContentView) == false {
+                window.styleMask.insert(.fullSizeContentView)
+            }
+            if window.isMovableByWindowBackground == false {
+                window.isMovableByWindowBackground = true
+            }
+            if window.toolbar != nil {
+                window.toolbar = nil
+            }
 
-        window.standardWindowButton(.closeButton)?.isHidden = false
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
-        window.standardWindowButton(.zoomButton)?.isHidden = hidesZoomButton
+            setHidden(false, for: .closeButton, in: window)
+            setHidden(false, for: .miniaturizeButton, in: window)
+            setHidden(hidesZoomButton, for: .zoomButton, in: window)
+        }
+
+        private func setHidden(
+            _ isHidden: Bool,
+            for button: NSWindow.ButtonType,
+            in window: NSWindow
+        ) {
+            guard let control = window.standardWindowButton(button),
+                  control.isHidden != isHidden else {
+                return
+            }
+            control.isHidden = isHidden
+        }
     }
 }
 

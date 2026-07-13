@@ -17,6 +17,7 @@ struct AppDependencies: Sendable {
     let privacySettingsOpener: any PrivacySettingsOpening
     let onboardingStatusStore: any OnboardingStatusStoring
     let appSettingsStore: any AppSettingsStoring
+    let launcherApplicationPreferencesStore: any LauncherApplicationPreferencesStoring
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     let folderAccessStore: any FolderAccessStoring
     let loginItemManager: any LoginItemManaging

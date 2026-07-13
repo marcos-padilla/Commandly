@@ -21,6 +21,9 @@ final class AppRuntime {
     private var cachedSettingsViewModel: SettingsViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
     private let hotkeyMonitor = OptionSpaceHotkeyMonitor()
+    private let applicationHotkeyMonitor = ApplicationHotkeyMonitor()
+    private var pendingApplicationID: CommandID?
+    private(set) var applicationHotkeyIssues: [CommandID: ApplicationHotkeyRegistrationIssue] = [:]
     @ObservationIgnored
     let applicationRegistry: LauncherApplicationRegistry
     /// Pasteboard monitoring must not invalidate scene/`@Bindable` runtime UI.
@@ -73,12 +76,14 @@ final class AppRuntime {
         self.fileSearchApplicationServices = fileSearchApplicationServices
         self.applicationRegistry = .makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
-            fileSearchServices: fileSearchApplicationServices
+            fileSearchServices: fileSearchApplicationServices,
+            preferencesStore: container.dependencies.launcherApplicationPreferencesStore
         )
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
         self.autoQuitService = AutoQuitService(preferencesStore: applicationPreferencesStore)
         startHotkeyMonitor()
+        refreshApplicationHotkeys()
         registerApplicationManifests()
         clipboardHistoryStore.startMonitoring()
         if showsOnboarding == false {
@@ -105,6 +110,13 @@ final class AppRuntime {
             },
             onViewModeChange: { [weak self] viewMode in
                 self?.viewMode = viewMode
+            },
+            applicationRegistry: applicationRegistry,
+            onApplicationPreferencesChange: { [weak self] in
+                self?.applicationPreferencesDidChange()
+            },
+            applicationHotkeyIssues: { [weak self] in
+                self?.applicationHotkeyIssues ?? [:]
             }
         )
         cachedSettingsViewModel = viewModel
@@ -147,6 +159,12 @@ final class AppRuntime {
         )
         cachedLauncherViewModel = viewModel
         return viewModel
+    }
+
+    func consumePendingApplicationLaunch(using viewModel: LauncherViewModel) {
+        guard let pendingApplicationID else { return }
+        self.pendingApplicationID = nil
+        viewModel.launch(pendingApplicationID)
     }
 
     func toggleLauncher() {
@@ -232,6 +250,37 @@ final class AppRuntime {
             Task { @MainActor in
                 self?.toggleLauncher()
             }
+        }
+    }
+
+    private func applicationPreferencesDidChange() {
+        refreshApplicationHotkeys()
+        cachedLauncherViewModel?.applicationPreferencesDidChange()
+    }
+
+    private func refreshApplicationHotkeys() {
+        let hotKeys: [(CommandID, LauncherHotKey)] = applicationRegistry
+            .allDefinitions()
+            .compactMap { definition -> (CommandID, LauncherHotKey)? in
+                guard applicationRegistry.isEffectivelyEnabled(definition.id),
+                      let hotKey = applicationRegistry.resolvedSettings(for: definition.id)?.hotKey,
+                      applicationRegistry.application(for: definition.id) != nil else {
+                    return nil
+                }
+                return (definition.id, hotKey)
+            }
+        applicationHotkeyIssues = applicationHotkeyMonitor.replace(hotKeys) { [weak self] id in
+            self?.openApplicationFromHotKey(id)
+        }
+    }
+
+    private func openApplicationFromHotKey(_ id: CommandID) {
+        guard applicationRegistry.isEffectivelyEnabled(id) else { return }
+        pendingApplicationID = id
+        showLauncher()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let viewModel = self.cachedLauncherViewModel else { return }
+            self.consumePendingApplicationLaunch(using: viewModel)
         }
     }
 

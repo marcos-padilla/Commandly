@@ -5,7 +5,7 @@ import SwiftUI
 struct ClipboardHistoryApplication: LauncherApplication {
     private let store: ClipboardHistoryStore
 
-    let manifest = CommandManifest(
+    private static let manifest = CommandManifest(
         id: BuiltInCommandID.clipboardHistory,
         title: "Clipboard History",
         subtitle: "Browse and copy recent clipboard items",
@@ -29,18 +29,41 @@ struct ClipboardHistoryApplication: LauncherApplication {
         ]
     )
 
+    let definition = LauncherApplicationDefinition(
+        manifest: Self.manifest,
+        parentID: BuiltInLauncherApplicationGroup.catalogID,
+        kind: .extension,
+        order: 10,
+        configurationFields: [
+            LauncherConfigurationField(
+                id: "default-filter",
+                variable: "defaultFilter",
+                title: "Default filter",
+                description: "Choose which clipboard items appear when the application opens.",
+                kind: .selection,
+                defaultValue: .text(ClipboardHistoryFilter.all.rawValue),
+                options: ClipboardHistoryFilter.allCases.map {
+                    LauncherConfigurationOption(id: $0.rawValue, title: $0.title)
+                }
+            )
+        ]
+    )
+
     init(store: ClipboardHistoryStore) {
         self.store = store
     }
 
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
+        let configuredFilter = context.settings.value(for: "defaultFilter")?.textValue
+            .flatMap { ClipboardHistoryFilter(rawValue: $0) } ?? .all
         let model = ClipboardHistoryViewModel(
             store: store,
+            initialFilter: configuredFilter,
             onGoBack: context.navigation.goBack,
             onDismiss: context.navigation.dismissLauncher
         )
         return .present(
-            LauncherApplicationSession(manifest: manifest, model: model) {
+            LauncherApplicationSession(manifest: Self.manifest, model: model) {
                 ClipboardHistoryView(viewModel: $0)
             }
         )

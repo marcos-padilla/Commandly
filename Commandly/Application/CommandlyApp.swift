@@ -52,9 +52,10 @@ struct CommandlyApp: App {
                 .commandlyViewMode(runtime.viewMode)
                 .background(LauncherPresentationBridge(runtime: runtime))
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(
-            width: LayoutConstants.settingsMinWidth,
-            height: LayoutConstants.settingsMinHeight
+            width: LayoutConstants.settingsIdealWidth,
+            height: LayoutConstants.settingsIdealHeight
         )
     }
 }
@@ -137,6 +138,7 @@ private struct LauncherWindowHost: View {
         LauncherRootView(viewModel: viewModel)
         .onAppear {
             runtime.showsLauncher = true
+            runtime.consumePendingApplicationLaunch(using: viewModel)
             if let query = CommandlyDebugLaunchOptions.fileSearchQuery,
                viewModel.route == .root {
                 viewModel.launch(BuiltInCommandID.searchFiles)

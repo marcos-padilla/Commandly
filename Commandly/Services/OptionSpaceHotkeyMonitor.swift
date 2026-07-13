@@ -23,8 +23,23 @@ final class OptionSpaceHotkeyMonitor: @unchecked Sendable {
         let userData = Unmanaged.passUnretained(self).toOpaque()
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, _, userData -> OSStatus in
-                guard let userData else { return noErr }
+            { _, event, userData -> OSStatus in
+                guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+                var hotKeyID = EventHotKeyID()
+                let readStatus = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+                guard readStatus == noErr,
+                      hotKeyID.signature == OptionSpaceHotkeyMonitor.signature,
+                      hotKeyID.id == 1 else {
+                    return OSStatus(eventNotHandledErr)
+                }
                 let monitor = Unmanaged<OptionSpaceHotkeyMonitor>.fromOpaque(userData).takeUnretainedValue()
                 DispatchQueue.main.async {
                     monitor.onTrigger?()
@@ -41,7 +56,7 @@ final class OptionSpaceHotkeyMonitor: @unchecked Sendable {
             return
         }
 
-        let hotKeyID = EventHotKeyID(signature: fourCharCode("CMLY"), id: 1)
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: 1)
         let registerStatus = RegisterEventHotKey(
             UInt32(kVK_Space),
             UInt32(optionKey),
@@ -66,12 +81,6 @@ final class OptionSpaceHotkeyMonitor: @unchecked Sendable {
         }
         onTrigger = nil
     }
-}
 
-private func fourCharCode(_ string: String) -> OSType {
-    var result: OSType = 0
-    for character in string.utf8.prefix(4) {
-        result = (result << 8) + OSType(character)
-    }
-    return result
+    private static let signature: OSType = 0x434D_4C59 // "CMLY"
 }

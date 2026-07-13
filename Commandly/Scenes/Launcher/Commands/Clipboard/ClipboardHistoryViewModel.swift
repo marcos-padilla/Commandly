@@ -59,12 +59,14 @@ final class ClipboardHistoryViewModel {
 
     init(
         store: ClipboardHistoryStore,
+        initialFilter: ClipboardHistoryFilter = .all,
         onGoBack: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.store = store
         self.onGoBack = onGoBack
         self.onDismiss = onDismiss
+        self.filter = initialFilter
         store.startMonitoring()
         store.poll()
         selectedID = filteredEntries.first?.id

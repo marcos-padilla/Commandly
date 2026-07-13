@@ -2,7 +2,7 @@ import CommandKit
 
 @MainActor
 struct OpenSettingsApplication: LauncherApplication {
-    let manifest = CommandManifest(
+    private static let manifest = CommandManifest(
         id: BuiltInCommandID.openSettings,
         title: "Open Settings",
         subtitle: "Preferences, permissions, and about",
@@ -19,6 +19,13 @@ struct OpenSettingsApplication: LauncherApplication {
                 keyHint: .return
             )
         ]
+    )
+
+    let definition = LauncherApplicationDefinition(
+        manifest: Self.manifest,
+        parentID: BuiltInLauncherApplicationGroup.catalogID,
+        kind: .command,
+        order: 30
     )
 
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
