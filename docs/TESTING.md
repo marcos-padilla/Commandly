@@ -48,3 +48,4 @@ so `make verify` remains safe for non-interactive environments.
 - Permission state doubles
 - Extension manifest validation
 - App container bootstrap and router updates
+- Duplicate launcher-application registration rejection and branch-free dynamic session launch

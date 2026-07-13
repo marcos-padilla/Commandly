@@ -48,6 +48,14 @@ Reusable interactive chrome lives in the app target under `Commandly/Scenes/Shar
 - `CommandlyBackButton` — top-leading back control with hover/press motion
 - `CommandlyOptionMenu` — searchable sort/filter menu; screens supply `CommandlyOptionItem` values and selection handling
 
+Reusable launcher-application composition lives under `Commandly/Scenes/Launcher/Applications/`:
+
+- `LauncherApplicationScreen` — opt-in search/filter/sidebar/detail layout with shared focus and keyboard behavior
+- `LauncherApplicationRow` — selection, hover, double-click, and contextual-action row foundation
+- `LauncherApplicationEmptyState` and `LauncherApplicationMetadataRow` — consistent browser-surface states and detail rows
+
+These components encode the existing Commandly visual language; feature-specific content and behavior remain in each application.
+
 ## Rules
 
 - Do not build the final launcher UI here.

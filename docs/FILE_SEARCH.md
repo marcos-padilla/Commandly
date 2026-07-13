@@ -19,8 +19,8 @@
 - Open, Finder info/reveal/enclosing-folder, detail toggle, share, move, copy, duplicate,
   Commandly shortcut, clipboard, and Trash actions
 
-The layout follows Commandly's existing command-surface pattern (search/filter header,
-result list, preview/metadata detail, and shared footer) and uses DesignSystem tokens.
+The layout uses the shared `LauncherApplicationScreen` pattern (search/filter header,
+result list, preview/metadata detail, and shared footer) plus DesignSystem tokens.
 It is intentionally original rather than a copy of another launcher's UI.
 
 ## Architecture
@@ -39,7 +39,9 @@ It is intentionally original rather than a copy of another launcher's UI.
   selection, nested action-card navigation, index-progress observation, and actions on the main actor.
   Native filesystem behavior is injected through `FileActionServicing`. One FTS snapshot query covers
   all enabled fields atomically; filename matches rank above tags, metadata, and content.
-- `FileSearchView` owns focus and presentation only.
+- `FileSearchApplication` owns registration and constructs the feature's strongly typed application session.
+- `FileSearchView` owns feature presentation and opts into `LauncherApplicationScreen`; shared focus,
+  keyboard, split-pane, row, empty-state, and metadata chrome stay outside the feature.
 - `CSVPreviewLoader` performs bounded, cancellable off-main file reads and RFC-style parsing;
   `CSVFilePreview` renders the snapshot without waiting for a Quick Look generator.
 - `QuickLookSnapshotPreview` requests immutable, cancellable thumbnail representations. It does not
