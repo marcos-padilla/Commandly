@@ -639,6 +639,9 @@ final class LauncherViewModel {
         fileSearchViewModel = nil
         uninstallViewModel = nil
         statusMessage = nil
+        // Clear residual root search so Esc on home can hide immediately
+        // (instead of only clearing the query that launched the command).
+        query = ""
         requestSearchFocus()
     }
 
@@ -646,9 +649,18 @@ final class LauncherViewModel {
         onDismiss()
     }
 
+    /// Handles Escape for the launcher shell.
+    ///
+    /// Priority: close overlays → leave the active command for home → otherwise
+    /// signal the caller to hide the launcher window. Returns `true` when the key
+    /// was consumed inside the launcher; `false` when the window should hide.
     func handleEscape() -> Bool {
         if showsApplicationActionsPanel {
             dismissApplicationActionsPanel()
+            return true
+        }
+        if showsActionsMenu {
+            showsActionsMenu = false
             return true
         }
         switch route {

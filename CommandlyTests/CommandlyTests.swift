@@ -1170,13 +1170,66 @@ struct CommandlyTests {
         let catalog = CommandCatalog.makeBuiltIn()
         let store = ClipboardHistoryStore()
         let viewModel = LauncherViewModel(catalog: catalog, clipboardHistoryStore: store)
+        viewModel.query = "clip"
         viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
         viewModel.confirmSelection()
         let epochBeforeReturn = viewModel.searchFocusEpoch
 
         viewModel.goBack()
         #expect(viewModel.route == .root)
+        #expect(viewModel.query.isEmpty)
         #expect(viewModel.searchFocusEpoch == epochBeforeReturn + 1)
+    }
+
+    @Test @MainActor func launcherEscapeFromCommandReturnsHomeThenSignalsHide() async {
+        var dismissed = false
+        let catalog = CommandCatalog.makeBuiltIn()
+        let viewModel = LauncherViewModel(
+            catalog: catalog,
+            clipboardHistoryStore: ClipboardHistoryStore(),
+            onDismiss: { dismissed = true }
+        )
+        viewModel.query = "clip"
+        await viewModel.flushSearchForTesting()
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+        viewModel.confirmSelection()
+        #expect(viewModel.clipboardViewModel != nil)
+
+        #expect(viewModel.handleEscape())
+        #expect(viewModel.route == .root)
+        #expect(viewModel.clipboardViewModel == nil)
+        #expect(viewModel.query.isEmpty)
+        #expect(dismissed == false)
+
+        // Root Esc is not consumed by the view model; the window host hides.
+        #expect(viewModel.handleEscape() == false)
+        #expect(dismissed == false)
+        viewModel.dismiss()
+        #expect(dismissed)
+    }
+
+    @Test @MainActor func launcherEscapeClosesApplicationActionsPanelBeforeGoingBack() {
+        let app = InstalledApplication(
+            bundleIdentifier: "com.example.app",
+            name: "Example",
+            path: "/Applications/Example.app"
+        )
+        let viewModel = LauncherViewModel(
+            applicationQuery: InMemoryInstalledApplicationQuery(applications: [app])
+        )
+        viewModel.cachedApplications = [
+            InstalledApplicationSnapshot(
+                bundleIdentifier: app.bundleIdentifier,
+                name: app.name,
+                path: app.path
+            )
+        ]
+        viewModel.presentApplicationActions(forBundleID: app.bundleIdentifier)
+        #expect(viewModel.showsApplicationActionsPanel)
+
+        #expect(viewModel.handleEscape())
+        #expect(viewModel.showsApplicationActionsPanel == false)
+        #expect(viewModel.route == .root)
     }
 
     @Test @MainActor func launcherWindowChromeKeepsBorderlessKeyable() {
