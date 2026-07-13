@@ -1,8 +1,8 @@
-import SwiftUI
-import DesignSystem
 import AppKit
-import CommandKit
 import CalculatorKit
+import CommandKit
+import DesignSystem
+import SwiftUI
 
 struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
@@ -92,15 +92,27 @@ struct LauncherRootView: View {
             height: density.launcherHeight
         )
         .background {
-            LauncherVisualEffectBackground()
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous))
+            ZStack {
+                LauncherVisualEffectBackground(material: .hudWindow)
+                LauncherPalette.canvas
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.055),
+                        Color.clear,
+                        BrandPalette.accent.opacity(0.035),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous))
         }
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(LauncherPalette.separator, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
+        .shadow(color: .black.opacity(0.42), radius: 32, y: 16)
         .ignoresSafeArea()
         .overlay {
             if viewModel.showsApplicationActionsPanel {
@@ -121,11 +133,15 @@ struct LauncherRootView: View {
                     )
                     .padding(.trailing, density.spacing(.md))
                     .padding(.bottom, 52)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
+                    .transition(
+                        .opacity.combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
                 }
             }
         }
-        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: viewModel.showsApplicationActionsPanel)
+        .animation(
+            .easeInOut(duration: MotionDuration.fast.rawValue),
+            value: viewModel.showsApplicationActionsPanel
+        )
         .launcherWindowChrome(onRequestClose: { closeLauncher() })
         .onKeyPress(.escape) {
             if viewModel.handleEscape() == false {
@@ -185,7 +201,9 @@ struct LauncherRootView: View {
                 }
             )
 
-            Divider().opacity(0.22)
+            Rectangle()
+                .fill(LauncherPalette.separator)
+                .frame(height: 1)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -194,7 +212,10 @@ struct LauncherRootView: View {
                             emptyState
                         } else {
                             if let calculatorResult = viewModel.activeCalculatorResult,
-                               let calculatorItem = viewModel.rootItems.first(where: { $0.section == .calculator }) {
+                                let calculatorItem = viewModel.rootItems.first(where: {
+                                    $0.section == .calculator
+                                })
+                            {
                                 LauncherSectionHeader(title: LauncherSectionKind.calculator.title)
                                 CalculatorResultCard(
                                     result: calculatorResult,
@@ -202,10 +223,12 @@ struct LauncherRootView: View {
                                     actions: viewModel.menuActions,
                                     onSelect: { viewModel.select(calculatorItem.id) },
                                     onEditQuestion: {
-                                        viewModel.editCalculatorQuestion(resultID: calculatorResult.id.rawValue)
+                                        viewModel.editCalculatorQuestion(
+                                            resultID: calculatorResult.id.rawValue)
                                     },
                                     onCopyAnswer: {
-                                        viewModel.copyCalculatorAnswer(resultID: calculatorResult.id.rawValue)
+                                        viewModel.copyCalculatorAnswer(
+                                            resultID: calculatorResult.id.rawValue)
                                     },
                                     onAction: { viewModel.performFooterAction($0) }
                                 )
@@ -220,7 +243,9 @@ struct LauncherRootView: View {
                                 .padding(.bottom, density.spacing(.xxs))
                             }
 
-                            ForEach(viewModel.sections.filter { $0.kind != .calculator }, id: \.kind) { section in
+                            ForEach(
+                                viewModel.sections.filter { $0.kind != .calculator }, id: \.kind
+                            ) { section in
                                 LauncherSectionHeader(title: section.kind.title)
 
                                 ForEach(section.items) { item in
@@ -235,11 +260,13 @@ struct LauncherRootView: View {
                                             }
                                         },
                                         onContextAction: {
-                                            guard case .openApplication(let bundleID) = item.action else {
+                                            guard case .openApplication(let bundleID) = item.action
+                                            else {
                                                 return
                                             }
                                             viewModel.select(item.id)
-                                            viewModel.presentApplicationActions(forBundleID: bundleID)
+                                            viewModel.presentApplicationActions(
+                                                forBundleID: bundleID)
                                         }
                                     ) {
                                         viewModel.select(item.id)

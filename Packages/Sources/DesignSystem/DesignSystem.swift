@@ -56,7 +56,7 @@ public enum LayoutConstants {
     /// Default settings window height.
     public static let settingsMinHeight: CGFloat = 460
     /// Settings sidebar width.
-    public static let settingsSidebarWidth: CGFloat = 168
+    public static let settingsSidebarWidth: CGFloat = 188
     /// Minimum onboarding window width.
     public static let onboardingMinWidth: CGFloat = 960
     /// Minimum onboarding window height.
@@ -118,4 +118,80 @@ public enum BrandPalette {
     public static let glow = Color(red: 0.25, green: 0.45, blue: 0.95).opacity(0.35)
     /// Muted stroke for progress dashes and dividers.
     public static let mutedStroke = Color.white.opacity(0.14)
+}
+
+/// Adaptive colors for the keyboard launcher itself.
+///
+/// The dark appearance layers a near-black navy tint over a native blur material.
+/// The tint preserves legibility while allowing restrained desktop color and
+/// luminance to show through like a native macOS utility panel.
+public enum LauncherPalette {
+    /// Main launcher canvas. Alpha intentionally preserves the material beneath it.
+    public static let canvas = adaptiveColor(
+        light: NSColor(red: 0.930, green: 0.950, blue: 0.980, alpha: 0.68),
+        dark: NSColor(red: 0.018, green: 0.028, blue: 0.050, alpha: 0.68)
+    )
+    /// Header and footer chrome.
+    public static let chrome = adaptiveColor(
+        light: NSColor(red: 0.900, green: 0.925, blue: 0.965, alpha: 0.58),
+        dark: NSColor(red: 0.030, green: 0.046, blue: 0.078, alpha: 0.64)
+    )
+    /// Slightly lifted list surface used by command sidebars.
+    public static let sidebar = adaptiveColor(
+        light: NSColor(red: 0.925, green: 0.945, blue: 0.975, alpha: 0.50),
+        dark: NSColor(red: 0.025, green: 0.040, blue: 0.070, alpha: 0.56)
+    )
+    /// Detail canvas, intentionally quieter than the sidebar.
+    public static let detail = adaptiveColor(
+        light: NSColor(red: 0.960, green: 0.975, blue: 0.990, alpha: 0.46),
+        dark: NSColor(red: 0.016, green: 0.026, blue: 0.046, alpha: 0.50)
+    )
+    /// Selected-row fill with enough contrast in both appearances.
+    public static let selection = adaptiveColor(
+        light: NSColor(red: 0.200, green: 0.420, blue: 0.780, alpha: 0.13),
+        dark: NSColor(red: 0.255, green: 0.520, blue: 0.980, alpha: 0.18)
+    )
+    /// Hairline separators and selected-row outlines.
+    public static let separator = adaptiveColor(
+        light: NSColor.black.withAlphaComponent(0.09),
+        dark: NSColor.white.withAlphaComponent(0.09)
+    )
+
+    private static func adaptiveColor(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+            return match == .darkAqua ? dark : light
+        })
+    }
+}
+
+/// Adaptive material tints for the macOS Settings window.
+public enum SettingsPalette {
+    /// Translucent window tint placed over the native blur material.
+    public static let canvas = adaptiveColor(
+        light: NSColor(red: 0.930, green: 0.950, blue: 0.980, alpha: 0.58),
+        dark: NSColor(red: 0.022, green: 0.032, blue: 0.054, alpha: 0.64)
+    )
+    /// Sidebar tint, slightly more saturated than the detail canvas.
+    public static let sidebar = adaptiveColor(
+        light: NSColor(red: 0.875, green: 0.915, blue: 0.970, alpha: 0.48),
+        dark: NSColor(red: 0.028, green: 0.050, blue: 0.086, alpha: 0.56)
+    )
+    /// Very low-opacity tint used under native Liquid Glass cards.
+    public static let card = adaptiveColor(
+        light: NSColor.white.withAlphaComponent(0.13),
+        dark: NSColor.white.withAlphaComponent(0.035)
+    )
+    /// Hairline used around glass cards and between the sidebar and detail pane.
+    public static let border = adaptiveColor(
+        light: NSColor.white.withAlphaComponent(0.42),
+        dark: NSColor.white.withAlphaComponent(0.10)
+    )
+
+    private static func adaptiveColor(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+            return match == .darkAqua ? dark : light
+        })
+    }
 }

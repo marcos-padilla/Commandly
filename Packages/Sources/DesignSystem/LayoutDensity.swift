@@ -21,23 +21,23 @@ public struct CommandlyLayoutDensity: Equatable, Sendable {
 
     public static let comfortable = CommandlyLayoutDensity(
         spacingScale: 1.0,
-        rowVerticalPadding: 5,
-        rowHorizontalPadding: 10,
-        iconSize: 26,
+        rowVerticalPadding: 3,
+        rowHorizontalPadding: 8,
+        iconSize: 24,
         launcherHeight: LayoutConstants.launcherIdealHeight,
-        searchVerticalPadding: 12,
-        sectionHeaderTopPadding: 8,
+        searchVerticalPadding: 10,
+        sectionHeaderTopPadding: 6,
         pageStackSpacing: 12
     )
 
     public static let compact = CommandlyLayoutDensity(
         spacingScale: 0.82,
-        rowVerticalPadding: 3,
-        rowHorizontalPadding: 8,
-        iconSize: 22,
+        rowVerticalPadding: 2,
+        rowHorizontalPadding: 7,
+        iconSize: 21,
         launcherHeight: 400,
-        searchVerticalPadding: 8,
-        sectionHeaderTopPadding: 5,
+        searchVerticalPadding: 7,
+        sectionHeaderTopPadding: 4,
         pageStackSpacing: 8
     )
 

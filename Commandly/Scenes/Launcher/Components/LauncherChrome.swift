@@ -1,7 +1,7 @@
-import SwiftUI
-import DesignSystem
-import CommandKit
 import AppKit
+import CommandKit
+import DesignSystem
+import SwiftUI
 
 struct LauncherSearchField: View {
     @Binding var query: String
@@ -17,10 +17,11 @@ struct LauncherSearchField: View {
 
     var body: some View {
         HStack(spacing: density.spacing(.sm)) {
-            Image(systemName: "magnifyingglass")
-                .commandlyFont(size: 14, weight: .medium)
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
+            LauncherGlyph(
+                systemName: "magnifyingglass",
+                tone: .cyan,
+                size: density.iconSize
+            )
 
             ZStack(alignment: .leading) {
                 if autocompleteSuffix.isEmpty == false, query.isEmpty == false {
@@ -87,9 +88,14 @@ struct LauncherSearchField: View {
                             .commandlyFont(size: 10, weight: .semibold)
                             .padding(.horizontal, density.spacing(.xs))
                             .padding(.vertical, 2)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                        Text(autocompleteActionLabel == "Tab to convert" ? "to convert" : "to complete")
-                            .commandlyFont(size: 11, weight: .medium)
+                            .background(
+                                .quaternary,
+                                in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        Text(
+                            autocompleteActionLabel == "Tab to convert"
+                                ? "to convert" : "to complete"
+                        )
+                        .commandlyFont(size: 11, weight: .medium)
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -100,6 +106,7 @@ struct LauncherSearchField: View {
         }
         .padding(.horizontal, density.spacing(.md))
         .padding(.vertical, density.searchVerticalPadding)
+        .background(LauncherPalette.chrome)
         .onAppear {
             reclaimFocus()
         }
@@ -178,9 +185,15 @@ struct LauncherResultRow: View {
             .padding(.vertical, density.rowVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
+                    .fill(isSelected ? LauncherPalette.selection : Color.clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? LauncherPalette.separator : Color.clear, lineWidth: 1)
+            }
+            .contentShape(
+                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, density.spacing(.xs))
@@ -232,7 +245,7 @@ struct LauncherRootFooterBar: View {
                 actions: appMenuActions,
                 onAction: onAction
             ) {
-                LauncherAppMark(size: density.iconSize - 10)
+                LauncherAppMark(size: density.iconSize - 4)
             }
             .accessibilityLabel("Commandly menu")
 
@@ -263,10 +276,10 @@ struct LauncherRootFooterBar: View {
         }
         .padding(.horizontal, density.spacing(.md))
         .padding(.vertical, density.spacing(.sm))
-        .background(Color.primary.opacity(0.04))
+        .background(LauncherPalette.chrome)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(LauncherPalette.separator)
                 .frame(height: 1)
         }
         .accessibilityElement(children: .contain)
@@ -336,10 +349,10 @@ struct LauncherFooterBar: View {
         }
         .padding(.horizontal, density.spacing(.md))
         .padding(.vertical, density.spacing(.sm))
-        .background(Color.primary.opacity(0.04))
+        .background(LauncherPalette.chrome)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(LauncherPalette.separator)
                 .frame(height: 1)
         }
     }
@@ -381,14 +394,7 @@ struct LauncherAppMark: View {
     var size: CGFloat = 18
 
     var body: some View {
-        Image(systemName: "command")
-            .commandlyFont(size: size * 0.55, weight: .semibold)
-            .foregroundStyle(BrandPalette.accentSoft)
-            .frame(width: size, height: size)
-            .background(
-                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-                    .fill(BrandPalette.accent.opacity(0.18))
-            )
+        CommandlyApplicationIcon(size: size)
             .accessibilityHidden(true)
     }
 }
@@ -444,7 +450,9 @@ private struct LauncherUpwardMenuButton<Label: View>: View {
                 item.target = bridge
                 item.representedObject = action.id.rawValue
                 item.isEnabled = action.isEnabled
-                if action.id == BuiltInCommandActionID.settings || action.id == BuiltInCommandActionID.quit {
+                if action.id == BuiltInCommandActionID.settings
+                    || action.id == BuiltInCommandActionID.quit
+                {
                     item.keyEquivalentModifierMask = [.command]
                 }
                 menu.addItem(item)
@@ -668,7 +676,8 @@ private func footerChrome(
                             )
                     }
                     .shadow(
-                        color: BrandPalette.accent.opacity(isHovered && didSucceed == false ? 0.28 : 0),
+                        color: BrandPalette.accent.opacity(
+                            isHovered && didSucceed == false ? 0.28 : 0),
                         radius: isHovered && didSucceed == false ? 6 : 0,
                         y: isHovered && didSucceed == false ? 1 : 0
                     )
@@ -728,7 +737,8 @@ struct LauncherRightClickCatcher: NSViewRepresentable {
 
         private func installMonitorIfNeeded() {
             guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) {
+                [weak self] event in
                 guard let self, self.window != nil else { return event }
                 let location = self.convert(event.locationInWindow, from: nil)
                 guard self.bounds.contains(location) else { return event }
@@ -757,19 +767,12 @@ func launcherItemIcon(icon: LauncherItemIcon, emphasized: Bool, size: CGFloat = 
 }
 
 func launcherIcon(systemName: String, emphasized: Bool, size: CGFloat = 28) -> some View {
-    Image(systemName: systemName)
-        .commandlyFont(size: size * 0.46, weight: .semibold)
-        .foregroundStyle(emphasized ? Color.white : BrandPalette.accentSoft)
-        .frame(width: size, height: size)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    emphasized
-                        ? BrandPalette.accent
-                        : BrandPalette.accent.opacity(0.16)
-                )
-        )
-        .accessibilityHidden(true)
+    LauncherGlyph(
+        systemName: LauncherCommandArtwork.filledSymbol(for: systemName),
+        tone: LauncherCommandArtwork.tone(for: systemName),
+        isSelected: emphasized,
+        size: size
+    )
 }
 
 /// Renders an installed application's real icon from its `.app` bundle path.

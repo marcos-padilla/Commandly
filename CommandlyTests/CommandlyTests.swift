@@ -291,6 +291,35 @@ struct CommandlyTests {
         #expect(viewModel.footerActions.first?.id == BuiltInCommandActionID.openFile)
     }
 
+    @Test @MainActor func launcherFileArtworkCoversCommonFileFamilies() {
+        let cases: [(String, LauncherFileArtwork, String)] = [
+            ("report.pdf", .pdf, "doc.richtext.fill"),
+            ("budget.xlsx", .spreadsheet, "tablecells.fill"),
+            ("slides.key", .presentation, "rectangle.fill.on.rectangle.fill"),
+            ("archive.zip", .archive, "archivebox.fill"),
+            ("App.swift", .sourceCode, "chevron.left.forwardslash.chevron.right"),
+            ("photo.heic", .image, "photo.fill"),
+            ("recording.m4a", .audio, "speaker.wave.2.fill"),
+            ("clip.mov", .video, "film.fill"),
+            ("bookmark.webloc", .web, "globe.americas.fill"),
+            ("font.otf", .font, "textformat"),
+            ("notes.md", .text, "doc.text.fill"),
+            ("unknown.data", .generic, "doc.fill")
+        ]
+
+        for (filename, expectedArtwork, expectedSymbol) in cases {
+            let artwork = LauncherFileArtwork(fileURL: URL(fileURLWithPath: "/tmp/\(filename)"))
+            #expect(artwork == expectedArtwork)
+            #expect(artwork.symbolName == expectedSymbol)
+        }
+    }
+
+    @Test @MainActor func launcherCommandArtworkUsesFilledVariants() {
+        #expect(LauncherCommandArtwork.filledSymbol(for: "clipboard") == "clipboard.fill")
+        #expect(LauncherCommandArtwork.filledSymbol(for: "gearshape") == "gearshape.fill")
+        #expect(LauncherCommandArtwork.filledSymbol(for: "rectangle.split.2x1") == "rectangle.split.2x1.fill")
+    }
+
     @Test @MainActor func fileSearchForwardsQueryContentAndTypeFilter() async throws {
         let service = InMemoryFileSearchService()
         let viewModel = FileSearchViewModel(

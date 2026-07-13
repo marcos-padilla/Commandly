@@ -12,7 +12,9 @@ struct FileSearchView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.35)
+            Rectangle()
+                .fill(LauncherPalette.separator)
+                .frame(height: 1)
             content
         }
         .onAppear {
@@ -109,7 +111,8 @@ struct FileSearchView: View {
             .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.sm))
+        .padding(.vertical, density.spacing(.xs))
+        .background(LauncherPalette.chrome)
         .zIndex(20)
     }
 
@@ -122,12 +125,16 @@ struct FileSearchView: View {
     private var content: some View {
         HStack(spacing: 0) {
             resultsPane
-                .frame(width: 280)
+                .frame(width: 270)
                 .layoutPriority(1)
+                .background(LauncherPalette.sidebar)
                 .clipped()
-            Divider().opacity(0.35)
+            Rectangle()
+                .fill(LauncherPalette.separator)
+                .frame(width: 1)
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(LauncherPalette.detail)
                 .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -308,14 +315,12 @@ private struct FileSearchResultRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: density.spacing(.sm)) {
-                Image(systemName: itemSystemImage)
-                    .commandlyFont(size: 13, weight: .semibold)
-                    .foregroundStyle(isSelected ? Color.white : BrandPalette.accentSoft)
-                    .frame(width: 25, height: 25)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue, style: .continuous)
-                            .fill(isSelected ? BrandPalette.accent : BrandPalette.accent.opacity(0.16))
-                    )
+                LauncherGlyph(
+                    systemName: artwork.symbolName,
+                    tone: artwork.tone,
+                    isSelected: isSelected,
+                    size: density.iconSize
+                )
                 Text(item.name)
                     .commandlyFont(size: 12, weight: .medium)
                     .lineLimit(1)
@@ -330,8 +335,12 @@ private struct FileSearchResultRow: View {
         .padding(.vertical, density.rowVerticalPadding)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .fill(isSelected ? BrandPalette.accent.opacity(0.18) : Color.clear)
+                .fill(isSelected ? LauncherPalette.selection : Color.clear)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                .strokeBorder(isSelected ? LauncherPalette.separator : Color.clear, lineWidth: 1)
+        }
         .padding(.horizontal, density.spacing(.xs))
         .background {
             LauncherRightClickCatcher(onRightClick: onShowActions)
@@ -346,16 +355,7 @@ private struct FileSearchResultRow: View {
         .accessibilityAction(named: "Show Actions", onShowActions)
     }
 
-    private var itemSystemImage: String {
-        if item.kind == .folder { return "folder.fill" }
-        guard let identifier = item.contentTypeIdentifier else { return "doc.fill" }
-        if identifier.contains("image") { return "photo.fill" }
-        if identifier.contains("audio") { return "waveform" }
-        if identifier.contains("movie") || identifier.contains("video") { return "film.fill" }
-        if identifier.contains("archive") || identifier.contains("zip") { return "archivebox.fill" }
-        if identifier.contains("source") || identifier.contains("script") { return "chevron.left.forwardslash.chevron.right" }
-        return "doc.fill"
-    }
+    private var artwork: LauncherFileArtwork { LauncherFileArtwork(item: item) }
 }
 
 private struct FileSearchPreview: View {

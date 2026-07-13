@@ -1,38 +1,14 @@
-import SwiftUI
 import DesignSystem
+import SwiftUI
 
 /// Geometric mark used on the welcome step — original to Commandly, not a competitor logo.
 struct OnboardingMark: View {
     var size: CGFloat = 72
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            BrandPalette.accent.opacity(0.25),
-                            BrandPalette.accent.opacity(0.05)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: size * 1.15, height: size * 1.15)
-
-            Image(systemName: "command")
-                .commandlyFont(size: size * 0.42, weight: .semibold)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [BrandPalette.accentSoft, BrandPalette.accent],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .accessibilityHidden(true)
-        }
-        .frame(width: size * 1.15, height: size * 1.15)
-        .accessibilityLabel("Commandly")
+        CommandlyApplicationIcon(size: size * 1.15)
+            .shadow(color: BrandPalette.glow, radius: size * 0.18, y: size * 0.08)
+            .accessibilityLabel("Commandly")
     }
 }
 
@@ -58,7 +34,7 @@ struct OnboardingProgressIndicator: View {
                                         colors: [
                                             Color.white.opacity(0.55),
                                             Color.white.opacity(0.05),
-                                            .clear
+                                            .clear,
                                         ],
                                         startPoint: .leading,
                                         endPoint: .trailing
@@ -130,10 +106,12 @@ struct OnboardingFooter: View {
                             .background(circleChrome)
                     }
                     .buttonStyle(OnboardingChromeButtonStyle())
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.85)),
-                        removal: .opacity.combined(with: .scale(scale: 0.9))
-                    ))
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.85)),
+                            removal: .opacity.combined(with: .scale(scale: 0.9))
+                        )
+                    )
                     .accessibilityLabel("Back")
                 }
 
@@ -144,7 +122,8 @@ struct OnboardingFooter: View {
                         .commandlyFont(size: 10, weight: .medium, design: .rounded)
                         .foregroundStyle(Color.white.opacity(0.38))
                         .contentTransition(.numericText())
-                        .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: stepIndex)
+                        .animation(
+                            .easeInOut(duration: MotionDuration.normal.rawValue), value: stepIndex)
                 }
             }
 
@@ -168,10 +147,12 @@ struct OnboardingFooter: View {
                     .shadow(color: BrandPalette.accent.opacity(0.35), radius: 16, y: 6)
                 }
                 .buttonStyle(OnboardingPrimaryButtonStyle())
-                .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .move(edge: .trailing)),
-                    removal: .opacity.combined(with: .scale(scale: 0.96))
-                ))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .trailing)),
+                        removal: .opacity.combined(with: .scale(scale: 0.96))
+                    )
+                )
                 .accessibilityLabel(primaryTitle)
             }
         }
@@ -199,7 +180,7 @@ struct OnboardingFooter: View {
                 LinearGradient(
                     colors: [
                         BrandPalette.accentSoft,
-                        BrandPalette.accent
+                        BrandPalette.accent,
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -212,7 +193,7 @@ struct OnboardingFooter: View {
                             colors: [
                                 Color.white.opacity(0.28),
                                 Color.white.opacity(0.04),
-                                .clear
+                                .clear,
                             ],
                             startPoint: .top,
                             endPoint: .bottom
@@ -235,7 +216,7 @@ struct OnboardingFooter: View {
             LinearGradient(
                 colors: [
                     Color.white.opacity(0.05),
-                    Color.clear
+                    Color.clear,
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -245,7 +226,7 @@ struct OnboardingFooter: View {
             LinearGradient(
                 colors: [
                     BrandPalette.accent.opacity(0.10),
-                    .clear
+                    .clear,
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
@@ -260,7 +241,7 @@ struct OnboardingFooter: View {
                         colors: [
                             Color.white.opacity(0.14),
                             BrandPalette.accent.opacity(0.25),
-                            Color.white.opacity(0.08)
+                            Color.white.opacity(0.08),
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
@@ -278,7 +259,8 @@ private struct OnboardingChromeButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(
+                .spring(response: 0.28, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
@@ -293,7 +275,8 @@ private struct OnboardingPrimaryButtonStyle: ButtonStyle {
                 radius: configuration.isPressed ? 8 : 16,
                 y: configuration.isPressed ? 2 : 6
             )
-            .animation(.spring(response: 0.3, dampingFraction: 0.68), value: configuration.isPressed)
+            .animation(
+                .spring(response: 0.3, dampingFraction: 0.68), value: configuration.isPressed)
     }
 }
 
@@ -307,7 +290,7 @@ struct OnboardingBackdrop: View {
                 colors: [
                     BrandPalette.accent.opacity(0.18),
                     BrandPalette.accent.opacity(0.04),
-                    .clear
+                    .clear,
                 ],
                 center: .top,
                 startRadius: 40,
@@ -319,7 +302,7 @@ struct OnboardingBackdrop: View {
                 colors: [
                     Color.black.opacity(0.15),
                     Color.clear,
-                    Color.black.opacity(0.35)
+                    Color.black.opacity(0.35),
                 ],
                 startPoint: .top,
                 endPoint: .bottom

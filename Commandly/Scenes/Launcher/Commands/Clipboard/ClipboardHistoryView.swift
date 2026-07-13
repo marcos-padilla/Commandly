@@ -13,7 +13,9 @@ struct ClipboardHistoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.35)
+            Rectangle()
+                .fill(LauncherPalette.separator)
+                .frame(height: 1)
             content
         }
         .onAppear {
@@ -88,7 +90,8 @@ struct ClipboardHistoryView: View {
             .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.sm))
+        .padding(.vertical, density.spacing(.xs))
+        .background(LauncherPalette.chrome)
         .zIndex(20)
     }
 
@@ -107,13 +110,17 @@ struct ClipboardHistoryView: View {
     private var content: some View {
         HStack(spacing: 0) {
             listPane
-                .frame(width: 280)
+                .frame(width: 270)
                 .layoutPriority(1)
+                .background(LauncherPalette.sidebar)
                 .clipped()
-            Divider().opacity(0.35)
+            Rectangle()
+                .fill(LauncherPalette.separator)
+                .frame(width: 1)
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(0)
+                .background(LauncherPalette.detail)
                 .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -354,14 +361,12 @@ private struct ClipboardHistoryRow: View {
         HStack(spacing: density.spacing(.sm)) {
             Button(action: onSelect) {
                 HStack(spacing: density.spacing(.sm)) {
-                    Image(systemName: entry.contentType.systemImage)
-                        .commandlyFont(size: 12, weight: .semibold)
-                        .foregroundStyle(isSelected ? Color.white : BrandPalette.accentSoft)
-                        .frame(width: 24, height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(isSelected ? BrandPalette.accent : BrandPalette.accent.opacity(0.16))
-                        )
+                    LauncherGlyph(
+                        systemName: artwork.symbolName,
+                        tone: artwork.tone,
+                        isSelected: isSelected,
+                        size: density.iconSize
+                    )
 
                     Text(entry.preview)
                         .commandlyFont(size: 12, weight: .medium)
@@ -382,8 +387,12 @@ private struct ClipboardHistoryRow: View {
         .padding(.vertical, density.rowVerticalPadding)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .fill(isSelected ? BrandPalette.accent.opacity(0.18) : Color.clear)
+                .fill(isSelected ? LauncherPalette.selection : Color.clear)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                .strokeBorder(isSelected ? LauncherPalette.separator : Color.clear, lineWidth: 1)
+        }
         .padding(.horizontal, density.spacing(.xs))
         .onHover { hovering in
             isHovered = hovering
@@ -393,6 +402,18 @@ private struct ClipboardHistoryRow: View {
         .accessibilityLabel(entry.preview)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: "Copy", onCopy)
+    }
+
+    private var artwork: LauncherFileArtwork {
+        switch entry.contentType {
+        case .text:
+            return .text
+        case .image:
+            return .image
+        case .fileURL:
+            guard let url = entry.fileURLs.first else { return .generic }
+            return LauncherFileArtwork(fileURL: url)
+        }
     }
 }
 

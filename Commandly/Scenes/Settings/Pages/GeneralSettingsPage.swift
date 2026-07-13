@@ -1,5 +1,5 @@
-import SwiftUI
 import DesignSystem
+import SwiftUI
 
 struct GeneralSettingsPage: View {
     @Bindable var viewModel: SettingsViewModel
@@ -7,134 +7,138 @@ struct GeneralSettingsPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: density.pageStackSpacing) {
-                SettingsPageHeader(
-                    title: viewModel.selectedPane.title,
-                    subtitle: viewModel.selectedPane.subtitle
-                )
-
-                SettingsCard {
-                    SettingsToggleRow(
-                        icon: "power",
-                        title: "Open at Login",
-                        subtitle: "Launch Commandly when you sign in.",
-                        isOn: Binding(
-                            get: { viewModel.opensAtLogin },
-                            set: { viewModel.setOpensAtLogin($0) }
-                        ),
-                        isDisabled: viewModel.isUpdatingLoginItem
+            GlassEffectContainer(spacing: density.pageStackSpacing) {
+                VStack(alignment: .leading, spacing: density.pageStackSpacing) {
+                    SettingsPageHeader(
+                        title: viewModel.selectedPane.title,
+                        subtitle: viewModel.selectedPane.subtitle
                     )
 
-                    SettingsDivider()
-
-                    HotkeySettingsRow(hotkeyDisplay: viewModel.hotkeyDisplay)
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        icon: "menubar.rectangle",
-                        title: "Menu Bar Icon",
-                        subtitle: "Show Commandly in the menu bar.",
-                        isOn: Binding(
-                            get: { viewModel.showMenuBarIcon },
-                            set: { viewModel.setShowMenuBarIcon($0) }
+                    SettingsCard {
+                        SettingsToggleRow(
+                            icon: "power",
+                            title: "Open at Login",
+                            subtitle: "Launch Commandly when you sign in.",
+                            isOn: Binding(
+                                get: { viewModel.opensAtLogin },
+                                set: { viewModel.setOpensAtLogin($0) }
+                            ),
+                            isDisabled: viewModel.isUpdatingLoginItem
                         )
-                    )
-                }
 
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
-                        HStack(spacing: Spacing.sm.rawValue) {
-                            settingsGlyph("rectangle.split.3x1")
-                            Text("View Mode")
-                                .commandlyFont(size: 12.5, weight: .medium)
-                            Spacer()
-                        }
+                        SettingsDivider()
 
-                        HStack(spacing: 6) {
-                            ForEach(AppViewModePreference.allCases) { mode in
-                                SettingsChoiceChip(
-                                    label: mode.title,
-                                    fontSize: 11,
-                                    selected: viewModel.viewMode == mode,
-                                    accessory: { viewModeGlyph(mode) }
-                                ) {
-                                    viewModel.setViewMode(mode)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 6)
+                        HotkeySettingsRow(hotkeyDisplay: viewModel.hotkeyDisplay)
 
-                    SettingsDivider()
+                        SettingsDivider()
 
-                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
-                        HStack(spacing: Spacing.sm.rawValue) {
-                            settingsGlyph("textformat.size")
-                            Text("Text Size")
-                                .commandlyFont(size: 12.5, weight: .medium)
-                            Spacer()
-                        }
-
-                        HStack(spacing: 6) {
-                            ForEach(AppTextSizePreference.allCases) { size in
-                                SettingsChoiceChip(
-                                    label: "Aa",
-                                    fontSize: size == .standard ? 11 : 14,
-                                    selected: viewModel.textSize == size
-                                ) {
-                                    viewModel.setTextSize(size)
-                                }
-                                .accessibilityLabel(size.title)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 6)
-
-                    SettingsDivider()
-
-                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
-                        HStack(spacing: Spacing.sm.rawValue) {
-                            settingsGlyph("circle.lefthalf.filled")
-                            Text("Appearance")
-                                .commandlyFont(size: 12.5, weight: .medium)
-                            Spacer()
-                        }
-
-                        HStack(spacing: 6) {
-                            ForEach(AppAppearancePreference.allCases) { mode in
-                                SettingsChoiceChip(
-                                    label: mode.title,
-                                    fontSize: 11,
-                                    selected: viewModel.appearance == mode,
-                                    accessory: { appearanceGlyph(mode) }
-                                ) {
-                                    viewModel.setAppearance(mode)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 6)
-                }
-
-                SettingsCard {
-                    SettingsToggleRow(
-                        icon: "face.smiling",
-                        title: "Emoji Picker Preference",
-                        subtitle: "Saved for when Commandly’s picker ships.",
-                        isOn: Binding(
-                            get: { viewModel.prefersCommandlyEmojiPicker },
-                            set: { viewModel.setPrefersCommandlyEmojiPicker($0) }
+                        SettingsToggleRow(
+                            icon: "menubar.rectangle",
+                            title: "Menu Bar Icon",
+                            subtitle: "Show Commandly in the menu bar.",
+                            isOn: Binding(
+                                get: { viewModel.showMenuBarIcon },
+                                set: { viewModel.setShowMenuBarIcon($0) }
+                            )
                         )
-                    )
-                }
+                    }
 
-                if let message = viewModel.statusMessage {
-                    Text(message)
-                        .commandlyFont(size: 10.5)
-                        .foregroundStyle(.tertiary)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                        .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: message)
+                    SettingsCard {
+                        VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+                            HStack(spacing: Spacing.sm.rawValue) {
+                                settingsGlyph("rectangle.split.3x1")
+                                Text("View Mode")
+                                    .commandlyFont(size: 12.5, weight: .medium)
+                                Spacer()
+                            }
+
+                            HStack(spacing: 6) {
+                                ForEach(AppViewModePreference.allCases) { mode in
+                                    SettingsChoiceChip(
+                                        label: mode.title,
+                                        fontSize: 11,
+                                        selected: viewModel.viewMode == mode,
+                                        accessory: { viewModeGlyph(mode) }
+                                    ) {
+                                        viewModel.setViewMode(mode)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 6)
+
+                        SettingsDivider()
+
+                        VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+                            HStack(spacing: Spacing.sm.rawValue) {
+                                settingsGlyph("textformat.size")
+                                Text("Text Size")
+                                    .commandlyFont(size: 12.5, weight: .medium)
+                                Spacer()
+                            }
+
+                            HStack(spacing: 6) {
+                                ForEach(AppTextSizePreference.allCases) { size in
+                                    SettingsChoiceChip(
+                                        label: "Aa",
+                                        fontSize: size == .standard ? 11 : 14,
+                                        selected: viewModel.textSize == size
+                                    ) {
+                                        viewModel.setTextSize(size)
+                                    }
+                                    .accessibilityLabel(size.title)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 6)
+
+                        SettingsDivider()
+
+                        VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+                            HStack(spacing: Spacing.sm.rawValue) {
+                                settingsGlyph("circle.lefthalf.filled")
+                                Text("Appearance")
+                                    .commandlyFont(size: 12.5, weight: .medium)
+                                Spacer()
+                            }
+
+                            HStack(spacing: 6) {
+                                ForEach(AppAppearancePreference.allCases) { mode in
+                                    SettingsChoiceChip(
+                                        label: mode.title,
+                                        fontSize: 11,
+                                        selected: viewModel.appearance == mode,
+                                        accessory: { appearanceGlyph(mode) }
+                                    ) {
+                                        viewModel.setAppearance(mode)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+
+                    SettingsCard {
+                        SettingsToggleRow(
+                            icon: "face.smiling",
+                            title: "Emoji Picker Preference",
+                            subtitle: "Saved for when Commandly’s picker ships.",
+                            isOn: Binding(
+                                get: { viewModel.prefersCommandlyEmojiPicker },
+                                set: { viewModel.setPrefersCommandlyEmojiPicker($0) }
+                            )
+                        )
+                    }
+
+                    if let message = viewModel.statusMessage {
+                        Text(message)
+                            .commandlyFont(size: 10.5)
+                            .foregroundStyle(.tertiary)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .animation(
+                                .easeInOut(duration: MotionDuration.normal.rawValue), value: message
+                            )
+                    }
                 }
             }
             .padding(.horizontal, Spacing.md.rawValue)
@@ -145,11 +149,13 @@ struct GeneralSettingsPage: View {
 
 @ViewBuilder
 private func viewModeGlyph(_ mode: AppViewModePreference) -> some View {
-    Image(systemName: mode == .comfortable ? "rectangle.portrait" : "rectangle.arrowtriangle.2.inward")
-        .commandlyFont(size: 10, weight: .semibold)
-        .foregroundStyle(.secondary)
-        .frame(width: 12, height: 12)
-        .accessibilityHidden(true)
+    Image(
+        systemName: mode == .comfortable ? "rectangle.portrait" : "rectangle.arrowtriangle.2.inward"
+    )
+    .commandlyFont(size: 10, weight: .semibold)
+    .foregroundStyle(.secondary)
+    .frame(width: 12, height: 12)
+    .accessibilityHidden(true)
 }
 
 @ViewBuilder

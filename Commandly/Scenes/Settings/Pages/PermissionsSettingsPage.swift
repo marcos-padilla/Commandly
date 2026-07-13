@@ -1,52 +1,54 @@
-import SwiftUI
 import DesignSystem
 import SecurityKit
+import SwiftUI
 
 struct PermissionsSettingsPage: View {
     @Bindable var viewModel: SettingsViewModel
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
-                SettingsPageHeader(
-                    title: viewModel.selectedPane.title,
-                    subtitle: viewModel.selectedPane.subtitle
-                )
-
-                SettingsCard {
-                    permissionRow(
-                        kind: .calendar,
-                        icon: "calendar",
-                        title: "Calendar",
-                        subtitle: "Upcoming meetings in the launcher."
+            GlassEffectContainer(spacing: Spacing.sm.rawValue) {
+                VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
+                    SettingsPageHeader(
+                        title: viewModel.selectedPane.title,
+                        subtitle: viewModel.selectedPane.subtitle
                     )
 
-                    SettingsDivider()
+                    SettingsCard {
+                        permissionRow(
+                            kind: .calendar,
+                            icon: "calendar",
+                            title: "Calendar",
+                            subtitle: "Upcoming meetings in the launcher."
+                        )
 
-                    permissionRow(
-                        kind: .contacts,
-                        icon: "person",
-                        title: "Contacts",
-                        subtitle: "Find people from the keyboard."
-                    )
+                        SettingsDivider()
 
-                    SettingsDivider()
+                        permissionRow(
+                            kind: .contacts,
+                            icon: "person",
+                            title: "Contacts",
+                            subtitle: "Find people from the keyboard."
+                        )
 
-                    permissionRow(
-                        kind: .files,
-                        icon: "folder",
-                        title: "Files and Folders",
-                        subtitle: "Search and manage folders you allow."
-                    )
+                        SettingsDivider()
 
-                    SettingsDivider()
+                        permissionRow(
+                            kind: .files,
+                            icon: "folder",
+                            title: "Files and Folders",
+                            subtitle: "Search and manage folders you allow."
+                        )
 
-                    permissionRow(
-                        kind: .accessibility,
-                        icon: "accessibility",
-                        title: "Accessibility",
-                        subtitle: "Window layouts and automation."
-                    )
+                        SettingsDivider()
+
+                        permissionRow(
+                            kind: .accessibility,
+                            icon: "accessibility",
+                            title: "Accessibility",
+                            subtitle: "Window layouts and automation."
+                        )
+                    }
                 }
             }
             .padding(.horizontal, Spacing.md.rawValue)
