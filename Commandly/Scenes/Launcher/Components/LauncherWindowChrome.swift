@@ -349,7 +349,8 @@ enum LauncherKeyableWindowSupport {
 
         let block: @convention(block) (AnyObject) -> Bool = { object in
             if let window = object as? NSWindow,
-               window.identifier == CommandlyWindowIdentifier.launcher {
+               window.identifier == CommandlyWindowIdentifier.launcher
+                || window.identifier == CommandlyWindowIdentifier.shelf {
                 return true
             }
             if let originalIMP {

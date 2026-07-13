@@ -68,6 +68,22 @@ struct CommandlyApp: App {
             DocumentationCommands()
         }
 
+        Window("Commandly Shelf", id: AppWindowID.shelf) {
+            ShelfWindowHost(runtime: runtime)
+                .commandlyContentSize(runtime.textSize)
+                .commandlyViewMode(runtime.viewMode)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(
+            width: LayoutConstants.shelfBoardSize,
+            height: LayoutConstants.shelfBoardSize
+        )
+        .defaultLaunchBehavior(.suppressed)
+        .commands {
+            DocumentationCommands()
+        }
+
         Settings {
             SettingsRootView(viewModel: runtime.makeSettingsViewModel())
                 .commandlyContentSize(runtime.textSize)
@@ -116,6 +132,7 @@ enum AppWindowID {
     static let onboarding = "onboarding"
     static let launcher = "launcher"
     static let documentation = "documentation"
+    static let shelf = "shelf"
 }
 
 /// Adds a standard Help-menu route that works whenever a Commandly window is active.
@@ -155,6 +172,12 @@ private struct LauncherPresentationBridge: View {
                 runtime.dismissLauncherWindow = {
                     dismissWindow(id: AppWindowID.launcher)
                 }
+                runtime.openShelfWindow = {
+                    openWindow(id: AppWindowID.shelf)
+                }
+                runtime.dismissShelfWindow = {
+                    dismissWindow(id: AppWindowID.shelf)
+                }
             }
             .onChange(of: runtime.showsLauncher) { _, isShowing in
                 if isShowing {
@@ -166,6 +189,17 @@ private struct LauncherPresentationBridge: View {
                     }
                 } else {
                     dismissWindow(id: AppWindowID.launcher)
+                }
+            }
+            .onChange(of: runtime.showsShelf) { _, isShowing in
+                if isShowing {
+                    openWindow(id: AppWindowID.shelf)
+                    NSApp.activate(ignoringOtherApps: true)
+                    DispatchQueue.main.async {
+                        BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.shelf)
+                    }
+                } else {
+                    dismissWindow(id: AppWindowID.shelf)
                 }
             }
     }
@@ -225,6 +259,54 @@ private struct DocumentationWindowHost: View {
 
     var body: some View {
         DocumentationRootView(viewModel: runtime.makeDocumentationViewModel())
+    }
+}
+
+/// Hosts the floating Shelf board and keeps runtime visibility in sync when it closes.
+private struct ShelfWindowHost: View {
+    @Bindable var runtime: AppRuntime
+    @State private var boardModel: ShelfBoardModel?
+    @State private var interaction = ShelfBoardInteractionState()
+
+    var body: some View {
+        Group {
+            if let boardModel {
+                ShelfBoardView(model: boardModel, interaction: interaction)
+            } else {
+                Color.clear
+                    .frame(
+                        width: LayoutConstants.shelfBoardSize,
+                        height: LayoutConstants.shelfBoardSize
+                    )
+                    .accessibilityHidden(true)
+            }
+        }
+        .shelfWindowChrome(
+            preferredCorner: runtime.shelfPreferredCorner,
+            interaction: interaction,
+            onEscape: {
+                runtime.hideShelf()
+                return true
+            }
+        )
+        .onAppear {
+            runtime.showsShelf = true
+            boardModel = ShelfBoardModel(
+                entryMode: runtime.shelfEntryMode,
+                onClose: { runtime.hideShelf() }
+            )
+        }
+        .onChange(of: runtime.shelfEntryMode) { _, mode in
+            boardModel = ShelfBoardModel(
+                entryMode: mode,
+                onClose: { runtime.hideShelf() }
+            )
+        }
+        .onDisappear {
+            if runtime.showsShelf {
+                runtime.showsShelf = false
+            }
+        }
     }
 }
 

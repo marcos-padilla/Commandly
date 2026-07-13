@@ -235,7 +235,8 @@ final class LauncherApplicationRegistry {
         ),
         systemActivityService: any SystemActivityServicing = NativeSystemActivityService(),
         preferencesStore: any LauncherApplicationPreferencesStoring =
-            InMemoryLauncherApplicationPreferencesStore()
+            InMemoryLauncherApplicationPreferencesStore(),
+        shelfLaunchController: ShelfLaunchController = ShelfLaunchController()
     ) -> LauncherApplicationRegistry {
         let registry = LauncherApplicationRegistry(preferencesStore: preferencesStore)
         let resolvedOfflineToolsServices = offlineToolsServices ?? OfflineToolsServices(
@@ -264,6 +265,7 @@ final class LauncherApplicationRegistry {
             )
             try registry.register(DownloadsApplication(services: resolvedDownloadsServices))
             try registry.register(TimersApplication(store: timerStore))
+            try registry.register(ShelfApplication(launchController: shelfLaunchController))
             try registry.register(
                 ProductivityLibraryApplication(services: productivityLibraryServices)
             )

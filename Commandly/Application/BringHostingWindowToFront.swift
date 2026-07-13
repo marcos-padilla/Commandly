@@ -5,6 +5,7 @@ enum CommandlyWindowIdentifier {
     static let documentation = NSUserInterfaceItemIdentifier("commandly.documentation")
     static let settings = NSUserInterfaceItemIdentifier("commandly.settings")
     static let launcher = NSUserInterfaceItemIdentifier("commandly.launcher")
+    static let shelf = NSUserInterfaceItemIdentifier("commandly.shelf")
 }
 
 /// Activates the app and brings the hosting `NSWindow` to the front when it first attaches.

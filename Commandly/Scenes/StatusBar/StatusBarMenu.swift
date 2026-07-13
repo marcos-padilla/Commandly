@@ -33,6 +33,18 @@ struct StatusBarMenu: View {
             }
             .keyboardShortcut(",", modifiers: .command)
 
+            Divider()
+
+            Button("New Shelf") {
+                runtime.openNewShelf()
+            }
+            .keyboardShortcut(.space, modifiers: [.option, .shift])
+
+            Button("New Shelf From Clipboard") {
+                runtime.openNewShelfFromClipboard()
+            }
+            .keyboardShortcut("a", modifiers: [.option, .shift])
+
             #if DEBUG
             Divider()
 

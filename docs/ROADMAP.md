@@ -21,5 +21,6 @@ Status legend: ✅ done · 🔜 next · ⏳ later
 17. ✅ **File search provider** — cancellable, persistent, content-aware files provider behind SearchKit
 18. ⏳ **Natural-language / AI answers** — only after a deliberate product/privacy design
 19. ✅ **Native productivity applications** — recent downloads, timers/focus, calculation history, system activity, emoji, text case, color, dictionary, fonts, and typing practice
+20. 🔜 **Shelf staging board** — floating empty board, menu-bar entry points, and settings; drag-and-drop staging still later
 
 Do not implement later phases under the guise of foundation work.

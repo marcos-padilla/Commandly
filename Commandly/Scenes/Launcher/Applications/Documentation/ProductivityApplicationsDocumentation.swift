@@ -263,4 +263,94 @@ extension RegisteredApplicationDocumentation {
         ],
         keywords: ["snippet", "clipboard template", "quick note", "Quicklink", "bookmark", "deep link", "emoji keyword", "share"]
     )
+
+    static let shelf = LauncherApplicationDocumentation(
+        category: .productivity,
+        overview: "Open a small floating Shelf board from the launcher or the menu bar. Drag it anywhere on screen. File staging is not available yet.",
+        sections: [
+            DocumentationSection(
+                id: "shelf.open",
+                title: "Open Shelf",
+                blocks: [
+                    .steps("shelf.open.steps", [
+                        "Choose New Shelf or New Shelf From Clipboard from Commandly's menu bar item, or search for Shelf in the launcher and press Return.",
+                        "A small floating board appears with Drop files here. Drag the board to reposition it.",
+                        "Choose the close control or press Escape to dismiss the board."
+                    ]),
+                    .shortcuts("shelf.open.shortcuts", [
+                        DocumentationShortcut(
+                            id: "shelf.open.new",
+                            title: "New Shelf from the menu bar",
+                            keys: ["⌥", "⇧", "Space"],
+                            detail: "Shown as a menu-bar key equivalent beside New Shelf."
+                        ),
+                        DocumentationShortcut(
+                            id: "shelf.open.clipboard",
+                            title: "New Shelf From Clipboard from the menu bar",
+                            keys: ["⌥", "⇧", "A"],
+                            detail: "Shown as a menu-bar key equivalent beside New Shelf From Clipboard."
+                        ),
+                        DocumentationShortcut(
+                            id: "shelf.open.escape",
+                            title: "Close Shelf",
+                            keys: ["Esc"]
+                        )
+                    ])
+                ]
+            ),
+            DocumentationSection(
+                id: "shelf.settings",
+                title: "Shelf Settings",
+                blocks: [
+                    .bullets("shelf.settings.items", [
+                        "Keep shelf visible when inactive leaves the board on screen after Commandly loses focus.",
+                        "Close when empty will dismiss the board after the last staged item leaves once staging ships.",
+                        "Preferred corner chooses Bottom right, Bottom left, Top right, or Top left for newly opened boards.",
+                        "Play drop sound records whether staging should play a local macOS sound."
+                    ]),
+                    .callout(
+                        "shelf.settings.scope",
+                        DocumentationCallout(
+                            kind: .important,
+                            title: "Corner placement applies on open",
+                            text: "Preferred corner positions a newly opened board. Dragging the board afterward moves it freely until you close it."
+                        )
+                    )
+                ]
+            ),
+            DocumentationSection(
+                id: "shelf.limits",
+                title: "Current Limits",
+                blocks: [
+                    .callout(
+                        "shelf.limits.preview",
+                        DocumentationCallout(
+                            kind: .limitation,
+                            title: "Empty board only",
+                            text: "Shelf does not stage files, read the clipboard into the board, accept drag-and-drop, or play sounds yet. New Shelf From Clipboard opens the same empty floating board until clipboard seeding ships."
+                        )
+                    ),
+                    .callout(
+                        "shelf.limits.privacy",
+                        DocumentationCallout(
+                            kind: .privacy,
+                            title: "Nothing leaves this Mac",
+                            text: "The board does not log, upload, or persist clipboard contents, file paths, or staged items. Future staging will stay local and must follow Commandly's permission and logging rules."
+                        )
+                    )
+                ]
+            )
+        ],
+        keywords: [
+            "shelf",
+            "staging",
+            "clipboard",
+            "drop",
+            "temporary",
+            "board",
+            "menu bar",
+            "New Shelf",
+            "Drop files here"
+        ]
+    )
 }

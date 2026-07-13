@@ -83,6 +83,12 @@ public enum LayoutConstants {
     public static let onboardingIdealWidth: CGFloat = 1080
     /// Ideal onboarding window height.
     public static let onboardingIdealHeight: CGFloat = 720
+    /// Floating Shelf board edge length (square).
+    public static let shelfBoardSize: CGFloat = 188
+    /// Margin from the screen edge when placing Shelf in a preferred corner.
+    public static let shelfScreenMargin: CGFloat = 28
+    /// Continuous corner radius for the floating Shelf board.
+    public static let shelfCornerRadius: CGFloat = 28
 }
 
 /// Semantic color roles. Mapped to system colors for light/dark compatibility.

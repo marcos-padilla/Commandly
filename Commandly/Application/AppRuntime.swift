@@ -15,9 +15,16 @@ final class AppRuntime {
     var textSize: AppTextSizePreference
     var viewMode: AppViewModePreference
     var showsLauncher: Bool = false
+    /// Whether the floating Shelf board is presented.
+    var showsShelf: Bool = false
+    /// Entry mode shown by the currently presented Shelf board.
+    private(set) var shelfEntryMode: ShelfEntryMode = .empty
     /// Registered by a live SwiftUI scene so hotkeys can open the launcher window.
     var openLauncherWindow: (() -> Void)?
     var dismissLauncherWindow: (() -> Void)?
+    /// Registered by a live SwiftUI scene so Shelf can open its floating board.
+    var openShelfWindow: (() -> Void)?
+    var dismissShelfWindow: (() -> Void)?
     private var cachedSettingsViewModel: SettingsViewModel?
     private var cachedDocumentationViewModel: DocumentationViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
@@ -45,6 +52,8 @@ final class AppRuntime {
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
     private let autoQuitService: AutoQuitService
+    @ObservationIgnored
+    private let shelfLaunchController: ShelfLaunchController
 
     init(container: AppContainer = .bootstrap()) {
         self.container = container
@@ -100,6 +109,8 @@ final class AppRuntime {
         )
         let systemActivityProtectionTracker = SystemActivityProtectionTracker()
         self.systemActivityProtectionTracker = systemActivityProtectionTracker
+        let shelfLaunchController = ShelfLaunchController()
+        self.shelfLaunchController = shelfLaunchController
         self.applicationRegistry = .makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: fileSearchApplicationServices,
@@ -111,7 +122,8 @@ final class AppRuntime {
             systemActivityService: NativeSystemActivityService(
                 protectionTracker: systemActivityProtectionTracker
             ),
-            preferencesStore: container.dependencies.launcherApplicationPreferencesStore
+            preferencesStore: container.dependencies.launcherApplicationPreferencesStore,
+            shelfLaunchController: shelfLaunchController
         )
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
@@ -119,6 +131,9 @@ final class AppRuntime {
         startHotkeyMonitor()
         refreshApplicationHotkeys()
         registerApplicationManifests()
+        shelfLaunchController.onPresent = { [weak self] mode in
+            self?.showFloatingShelf(entryMode: mode)
+        }
         clipboardHistoryStore.startMonitoring()
         if showsOnboarding == false {
             autoQuitService.start()
@@ -249,6 +264,53 @@ final class AppRuntime {
         }
     }
 
+    /// Opens the floating Shelf board from the menu bar.
+    func openNewShelf() {
+        showFloatingShelf(entryMode: .empty)
+    }
+
+    /// Opens the floating Shelf board in the clipboard entry layout from the menu bar.
+    func openNewShelfFromClipboard() {
+        showFloatingShelf(entryMode: .fromClipboard)
+    }
+
+    /// Preferred corner configured for Shelf in Settings → Applications.
+    var shelfPreferredCorner: ShelfPreferredCorner {
+        let rawValue = applicationRegistry
+            .resolvedSettings(for: ShelfApplication.applicationID)?
+            .value(for: "preferredCorner")?
+            .textValue
+        return ShelfPreferredCorner.resolve(rawValue)
+    }
+
+    func showFloatingShelf(entryMode: ShelfEntryMode) {
+        guard showsOnboarding == false,
+              applicationRegistry.isEffectivelyEnabled(ShelfApplication.applicationID) else {
+            return
+        }
+        shelfEntryMode = entryMode
+        let alreadyShowing = showsShelf
+        showsShelf = true
+        openShelfWindow?()
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.shelf)
+            if alreadyShowing {
+                self.openShelfWindow?()
+                BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.shelf)
+            }
+        }
+    }
+
+    func hideShelf() {
+        guard showsShelf else {
+            dismissShelfWindow?()
+            return
+        }
+        showsShelf = false
+        dismissShelfWindow?()
+    }
+
     func hideLauncher() {
         // Drop command-surface observation (e.g. clipboard entries) so background
         // pasteboard polls cannot refresh a dismissed launcher view hierarchy.
@@ -271,6 +333,7 @@ final class AppRuntime {
         cachedSettingsViewModel = nil
         cachedLauncherViewModel = nil
         hideLauncher()
+        hideShelf()
         container.router.navigate(to: .onboarding)
         showsOnboarding = true
         showMenuBarIcon = true

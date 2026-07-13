@@ -65,6 +65,15 @@ dates to avoid tick drift and continues when the launcher closes, but not after 
 Completion can play a local macOS sound. There are no notifications, background launch, or automatic
 Pomodoro cycles.
 
+### Shelf
+
+Open **Shelf** from the launcher, or choose **New Shelf** / **New Shelf From Clipboard** in the
+menu bar (`⌥⇧Space` / `⌥⇧A`). A small floating board appears with **Drop files here**; drag it to
+reposition and use the close control or Escape to dismiss. Settings → Applications stores
+keep-visible, close-when-empty, preferred-corner, and drop-sound preferences. Preferred corner
+places newly opened boards. Staging, clipboard import, and sounds are not implemented yet. See
+`docs/SHELF.md`.
+
 ### Productivity Library
 
 Open **Productivity Library** and use the add menu to create one of four local item types:
