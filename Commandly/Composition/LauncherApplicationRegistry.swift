@@ -94,6 +94,13 @@ final class LauncherApplicationRegistry {
                 reason: "Launchable applications require a command manifest."
             )
         }
+        guard let documentation = definition.documentation else {
+            throw LauncherApplicationRegistryError.invalidDefinition(
+                definition.id,
+                reason: "Launchable applications require documentation."
+            )
+        }
+        try validate(documentation, for: definition.id)
         try register(definition)
         guard applications[definition.id] == nil else {
             removeDefinition(definition)
@@ -325,6 +332,75 @@ final class LauncherApplicationRegistry {
                 }
             }
         }
+    }
+
+    private func validate(
+        _ documentation: LauncherApplicationDocumentation,
+        for id: CommandID
+    ) throws {
+        guard documentation.overview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                == false,
+              documentation.sections.isEmpty == false else {
+            throw LauncherApplicationRegistryError.invalidDefinition(
+                id,
+                reason: "Documentation requires an overview and at least one section."
+            )
+        }
+        let sectionIDs = documentation.sections.map(\.id)
+        guard Set(sectionIDs).count == sectionIDs.count,
+              documentation.sections.allSatisfy({
+                  $0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                      && $0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                      && $0.blocks.isEmpty == false
+              }) else {
+            throw LauncherApplicationRegistryError.invalidDefinition(
+                id,
+                reason: "Documentation section identifiers must be unique and sections nonempty."
+            )
+        }
+        let blocks = documentation.sections.flatMap(\.blocks)
+        let blockIDs = blocks.map(\.id)
+        guard Set(blockIDs).count == blockIDs.count,
+              blocks.allSatisfy({
+                  $0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                      && isValidDocumentationBlock($0)
+              })
+        else {
+            throw LauncherApplicationRegistryError.invalidDefinition(
+                id,
+                reason: "Documentation blocks must have unique IDs and nonempty content."
+            )
+        }
+    }
+
+    private func isValidDocumentationBlock(_ block: DocumentationBlock) -> Bool {
+        switch block.content {
+        case .paragraph(let text):
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        case .bullets(let items), .steps(let items):
+            return items.isEmpty == false && items.allSatisfy(Self.isNonempty)
+        case .shortcuts(let shortcuts):
+            return shortcuts.isEmpty == false
+                && Set(shortcuts.map(\.id)).count == shortcuts.count
+                && shortcuts.allSatisfy { shortcut in
+                    Self.isNonempty(shortcut.id)
+                        && Self.isNonempty(shortcut.title)
+                        && shortcut.keys.isEmpty == false
+                        && shortcut.keys.allSatisfy(Self.isNonempty)
+                }
+        case .examples(let examples):
+            return examples.isEmpty == false
+                && Set(examples.map(\.id)).count == examples.count
+                && examples.allSatisfy { example in
+                    Self.isNonempty(example.id) && Self.isNonempty(example.input)
+                }
+        case .callout(let callout):
+            return Self.isNonempty(callout.title) && Self.isNonempty(callout.text)
+        }
+    }
+
+    private static func isNonempty(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     private func isIndividuallyEnabled(_ definition: LauncherApplicationDefinition) -> Bool {

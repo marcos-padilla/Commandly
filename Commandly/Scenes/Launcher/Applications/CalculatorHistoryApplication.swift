@@ -34,7 +34,8 @@ struct CalculatorHistoryApplication: LauncherApplication {
         manifest: Self.manifest,
         parentID: BuiltInLauncherApplicationGroup.catalogID,
         kind: .application,
-        order: 25
+        order: 25,
+        documentation: RegisteredApplicationDocumentation.calculatorHistory
     )
 
     private let sessionStore: CalculatorSessionStore

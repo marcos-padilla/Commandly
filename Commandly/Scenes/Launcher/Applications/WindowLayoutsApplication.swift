@@ -39,7 +39,8 @@ struct WindowLayoutsApplication: LauncherApplication {
         manifest: Self.manifest,
         parentID: BuiltInLauncherApplicationGroup.catalogID,
         kind: .application,
-        order: 80
+        order: 80,
+        documentation: RegisteredApplicationDocumentation.windowLayouts
     )
 
     private let services: WindowLayoutsApplicationServices

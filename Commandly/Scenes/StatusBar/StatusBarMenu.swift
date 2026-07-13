@@ -23,6 +23,11 @@ struct StatusBarMenu: View {
             }
             .keyboardShortcut("o", modifiers: [.command, .option])
 
+            Button("Documentation") {
+                presentDocumentation()
+            }
+            .keyboardShortcut("?", modifiers: .command)
+
             Button("Settings…") {
                 presentSettings()
             }
@@ -51,6 +56,16 @@ struct StatusBarMenu: View {
         NSApp.activate(ignoringOtherApps: true)
         openSettings()
         BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.settings)
+    }
+
+    private func presentDocumentation() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: AppWindowID.documentation)
+        DispatchQueue.main.async {
+            BringHostingWindowToFront.raiseWindows(
+                with: CommandlyWindowIdentifier.documentation
+            )
+        }
     }
 }
 

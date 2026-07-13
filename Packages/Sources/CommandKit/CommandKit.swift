@@ -242,6 +242,7 @@ public enum BuiltInCommandActionID {
     public static let clearHistory = CommandActionID(rawValue: "clear-history")
     public static let openActions = CommandActionID(rawValue: "open-actions")
     public static let goBack = CommandActionID(rawValue: "go-back")
+    public static let documentation = CommandActionID(rawValue: "documentation")
     public static let settings = CommandActionID(rawValue: "settings")
     public static let quit = CommandActionID(rawValue: "quit")
     public static let openApplication = CommandActionID(rawValue: "app.open")

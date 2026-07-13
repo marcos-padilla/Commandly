@@ -81,7 +81,7 @@ AGENTS.md                  Rules for future AI agents and contributors
 
 ## Architecture summary
 
-The app target is a thin composition root. Domain and infrastructure contracts live in local Swift packages with one-directional dependencies. Concrete services are assembled in `Commandly/Composition`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/NATIVE_FEATURES.md](docs/NATIVE_FEATURES.md).
+The app target is a thin composition root. Domain and infrastructure contracts live in local Swift packages with one-directional dependencies. Concrete services are assembled in `Commandly/Composition`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/NATIVE_FEATURES.md](docs/NATIVE_FEATURES.md), and [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md).
 
 ## Roadmap
 

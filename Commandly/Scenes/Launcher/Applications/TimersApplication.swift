@@ -43,7 +43,8 @@ struct TimersApplication: LauncherApplication {
                 kind: .toggle,
                 defaultValue: .boolean(true)
             )
-        ]
+        ],
+        documentation: RegisteredApplicationDocumentation.timers
     )
 
     private let store: TimerStore

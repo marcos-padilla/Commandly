@@ -79,6 +79,7 @@ final class LauncherViewModel {
     private var resultsScrollEndTask: Task<Void, Never>?
 
     var onDismiss: () -> Void
+    var onOpenDocumentation: () -> Void
     var onOpenSettings: () -> Void
     var onQuit: () -> Void
 
@@ -108,6 +109,7 @@ final class LauncherViewModel {
         calculatorSession: CalculatorSessionStore = CalculatorSessionStore(),
         placeholderItems: [LauncherItem] = LauncherPlaceholderCatalog.nonCommandItems,
         onDismiss: @escaping () -> Void = {},
+        onOpenDocumentation: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
         onQuit: @escaping () -> Void = {}
     ) {
@@ -124,6 +126,7 @@ final class LauncherViewModel {
         self.calculatorSession = calculatorSession
         self.placeholderItems = placeholderItems
         self.onDismiss = onDismiss
+        self.onOpenDocumentation = onOpenDocumentation
         self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
         self.applicationRegistry = applicationRegistry ?? .makeBuiltIn(
@@ -194,9 +197,14 @@ final class LauncherViewModel {
         }
     }
 
-    /// App-icon dropdown on the root footer (Settings, Quit).
+    /// App-icon dropdown on the root footer (Documentation, Settings, Quit).
     var appMenuActions: [CommandActionDescriptor] {
         [
+            CommandActionDescriptor(
+                id: BuiltInCommandActionID.documentation,
+                title: "Documentation",
+                keyHint: CommandKeyHint(symbols: ["⌘", "?"])
+            ),
             CommandActionDescriptor(
                 id: BuiltInCommandActionID.settings,
                 title: "Settings…",
@@ -473,6 +481,9 @@ final class LauncherViewModel {
             return
         }
         switch id {
+        case BuiltInCommandActionID.documentation:
+            onDismiss()
+            onOpenDocumentation()
         case BuiltInCommandActionID.settings:
             onDismiss()
             onOpenSettings()

@@ -38,7 +38,7 @@ launcher's source code, assets, branding, or exact interface.
 The application path has five layers:
 
 1. `LauncherApplicationDefinition` declares identity, type, hierarchy, defaults, discovery metadata,
-   and an optional configuration schema.
+   an optional configuration schema, and typed user documentation for launchable entries.
 2. `LauncherApplication` attaches launch behavior to a launchable definition.
 3. `LauncherApplicationRegistry` is the single source of truth for hierarchy, resolved settings,
    discovery, enablement, and launch lookup.
@@ -58,12 +58,18 @@ lifecycle cleanup.
 2. Conform the model to `LauncherApplicationModel`. Keep domain behavior in services/models and keep
    the conformance limited to shell coordination.
 3. Add a small `LauncherApplication` type under `Commandly/Scenes/Launcher/Applications`. Declare its
-   typed `definition`, including its parent and configuration fields. Its
+   typed `definition`, including its parent, configuration fields, and a focused
+   `LauncherApplicationDocumentation` contribution. The manifest initializer requires
+   documentation. Its
    `launch(in:)` reads resolved configuration from the context, creates the model with
    initializer-injected dependencies, and returns a session.
 4. Register that application in `LauncherApplicationRegistry.makeBuiltIn()`.
-5. Add a registry/session test and focused model tests. No `LauncherRootView` or route switch change
-   should be necessary.
+5. Add a registry/session test and focused model tests. No `LauncherRootView`, documentation-screen,
+   or route switch change should be necessary. The live documentation catalog includes the new
+   application automatically.
+
+See `docs/DOCUMENTATION.md` for the structured content contract, validation rules, and article
+maintenance checklist.
 
 Dependencies shared by one application are grouped in a focused service value such as
 `FileSearchApplicationServices` and injected when the application is registered. The launch context
@@ -76,7 +82,8 @@ state.
 Every registered node has one of these roles: Group, AI Extension, Extension, Command, or
 Application. A group is definition-only; other roles may attach a launch implementation. `parentID`
 creates an arbitrary-depth tree. Parents must be registered before children, identifiers and field
-variables must be unique, and selection defaults must reference declared options.
+variables must be unique, selection defaults must reference declared options, and a launchable
+application must contribute valid non-empty documentation. Definition-only groups may omit it.
 
 The generic Applications settings page derives its entire hierarchy and inspector from these
 definitions. Aliases and global shortcuts are editable directly in the hierarchy table; the

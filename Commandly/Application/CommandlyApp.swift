@@ -32,6 +32,25 @@ struct CommandlyApp: App {
             height: LayoutConstants.launcherIdealHeight
         )
         .defaultLaunchBehavior(CommandlyDebugLaunchOptions.showsLauncherAtLaunch ? .presented : .suppressed)
+        .commands {
+            DocumentationCommands()
+        }
+
+        Window("Commandly Documentation", id: AppWindowID.documentation) {
+            DocumentationWindowHost(runtime: runtime)
+                .commandlyContentSize(runtime.textSize)
+                .commandlyViewMode(runtime.viewMode)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultSize(
+            width: LayoutConstants.documentationIdealWidth,
+            height: LayoutConstants.documentationIdealHeight
+        )
+        .defaultLaunchBehavior(.suppressed)
+        .commands {
+            DocumentationCommands()
+        }
 
         Window("Commandly Setup", id: AppWindowID.onboarding) {
             OnboardingWindowHost(runtime: runtime)
@@ -45,6 +64,9 @@ struct CommandlyApp: App {
             height: LayoutConstants.onboardingIdealHeight
         )
         .defaultLaunchBehavior(runtime.showsOnboarding ? .presented : .suppressed)
+        .commands {
+            DocumentationCommands()
+        }
 
         Settings {
             SettingsRootView(viewModel: runtime.makeSettingsViewModel())
@@ -57,6 +79,9 @@ struct CommandlyApp: App {
             width: LayoutConstants.settingsIdealWidth,
             height: LayoutConstants.settingsIdealHeight
         )
+        .commands {
+            DocumentationCommands()
+        }
     }
 }
 
@@ -90,6 +115,27 @@ enum CommandlyDebugLaunchOptions {
 enum AppWindowID {
     static let onboarding = "onboarding"
     static let launcher = "launcher"
+    static let documentation = "documentation"
+}
+
+/// Adds a standard Help-menu route that works whenever a Commandly window is active.
+private struct DocumentationCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .help) {
+            Button("Commandly Documentation") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: AppWindowID.documentation)
+                DispatchQueue.main.async {
+                    BringHostingWindowToFront.raiseWindows(
+                        with: CommandlyWindowIdentifier.documentation
+                    )
+                }
+            }
+            .keyboardShortcut("?", modifiers: .command)
+        }
+    }
 }
 
 /// Opens / dismisses the launcher window when `AppRuntime.showsLauncher` changes.
@@ -129,12 +175,14 @@ private struct LauncherPresentationBridge: View {
 private struct LauncherWindowHost: View {
     @Bindable var runtime: AppRuntime
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
-        let viewModel = runtime.makeLauncherViewModel {
-            presentSettings()
-        }
+        let viewModel = runtime.makeLauncherViewModel(
+            onOpenSettings: presentSettings,
+            onOpenDocumentation: presentDocumentation
+        )
         LauncherRootView(viewModel: viewModel)
         .onAppear {
             runtime.showsLauncher = true
@@ -158,6 +206,25 @@ private struct LauncherWindowHost: View {
         NSApp.activate(ignoringOtherApps: true)
         openSettings()
         BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.settings)
+    }
+
+    private func presentDocumentation() {
+        runtime.hideLauncher()
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: AppWindowID.documentation)
+        DispatchQueue.main.async {
+            BringHostingWindowToFront.raiseWindows(
+                with: CommandlyWindowIdentifier.documentation
+            )
+        }
+    }
+}
+
+private struct DocumentationWindowHost: View {
+    @Bindable var runtime: AppRuntime
+
+    var body: some View {
+        DocumentationRootView(viewModel: runtime.makeDocumentationViewModel())
     }
 }
 

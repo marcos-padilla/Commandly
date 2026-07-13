@@ -12,7 +12,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 | Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
 | Clipboard History | Browse and re-copy recent pasteboard items from the launcher; on-device Vision/PDFKit indexes images and readable files for search | Activating the Clipboard History command (no TCC prompt for pasteboard monitoring or on-device analysis) | Clear history from the command Actions menu |
-| Automation (Finder) | Show Info in Finder from the application actions panel | First use of **Show Info in Finder** | System Settings → Privacy & Security → Automation → Commandly → Finder |
+| Automation (Finder) | Show an Info window from File Search or an installed application's actions panel | First use of **Show Info in Finder** in either workflow | System Settings → Privacy & Security → Automation → Commandly → Finder |
 
 ## Entitlements and usage strings
 

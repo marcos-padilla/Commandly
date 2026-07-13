@@ -36,7 +36,8 @@ struct ProductivityLibraryApplication: LauncherApplication {
         manifest: Self.manifest,
         parentID: BuiltInLauncherApplicationGroup.catalogID,
         kind: .application,
-        order: 40
+        order: 40,
+        documentation: RegisteredApplicationDocumentation.productivityLibrary
     )
 
     private let services: ProductivityLibraryApplicationServices

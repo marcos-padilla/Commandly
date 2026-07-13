@@ -450,7 +450,9 @@ private struct LauncherUpwardMenuButton<Label: View>: View {
                 item.target = bridge
                 item.representedObject = action.id.rawValue
                 item.isEnabled = action.isEnabled
-                if action.id == BuiltInCommandActionID.settings
+                if action.id == BuiltInCommandActionID.documentation {
+                    item.keyEquivalentModifierMask = [.command]
+                } else if action.id == BuiltInCommandActionID.settings
                     || action.id == BuiltInCommandActionID.quit
                 {
                     item.keyEquivalentModifierMask = [.command]
@@ -468,6 +470,8 @@ private struct LauncherUpwardMenuButton<Label: View>: View {
 
     private func keyEquivalent(for action: CommandActionDescriptor) -> String {
         switch action.id {
+        case BuiltInCommandActionID.documentation:
+            return "?"
         case BuiltInCommandActionID.settings:
             return ","
         case BuiltInCommandActionID.quit:

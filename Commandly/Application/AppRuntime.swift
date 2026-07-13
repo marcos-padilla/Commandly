@@ -19,6 +19,7 @@ final class AppRuntime {
     var openLauncherWindow: (() -> Void)?
     var dismissLauncherWindow: (() -> Void)?
     private var cachedSettingsViewModel: SettingsViewModel?
+    private var cachedDocumentationViewModel: DocumentationViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
     private let hotkeyMonitor = OptionSpaceHotkeyMonitor()
     private let applicationHotkeyMonitor = ApplicationHotkeyMonitor()
@@ -156,8 +157,18 @@ final class AppRuntime {
         return viewModel
     }
 
+    func makeDocumentationViewModel() -> DocumentationViewModel {
+        if let cachedDocumentationViewModel {
+            return cachedDocumentationViewModel
+        }
+        let viewModel = DocumentationViewModel(registry: applicationRegistry)
+        cachedDocumentationViewModel = viewModel
+        return viewModel
+    }
+
     func makeLauncherViewModel(
-        onOpenSettings: @escaping () -> Void
+        onOpenSettings: @escaping () -> Void,
+        onOpenDocumentation: @escaping () -> Void = {}
     ) -> LauncherViewModel {
         let quit: () -> Void = {
             NSApplication.shared.terminate(nil)
@@ -167,6 +178,7 @@ final class AppRuntime {
                 self?.hideLauncher()
             }
             cachedLauncherViewModel.onOpenSettings = onOpenSettings
+            cachedLauncherViewModel.onOpenDocumentation = onOpenDocumentation
             cachedLauncherViewModel.onQuit = quit
             return cachedLauncherViewModel
         }
@@ -188,6 +200,7 @@ final class AppRuntime {
             onDismiss: { [weak self] in
                 self?.hideLauncher()
             },
+            onOpenDocumentation: onOpenDocumentation,
             onOpenSettings: onOpenSettings,
             onQuit: quit
         )
@@ -292,6 +305,7 @@ final class AppRuntime {
     private func applicationPreferencesDidChange() {
         refreshApplicationHotkeys()
         cachedLauncherViewModel?.applicationPreferencesDidChange()
+        cachedDocumentationViewModel?.refresh()
     }
 
     private func refreshApplicationHotkeys() {

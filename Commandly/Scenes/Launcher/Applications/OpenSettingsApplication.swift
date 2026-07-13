@@ -25,7 +25,8 @@ struct OpenSettingsApplication: LauncherApplication {
         manifest: Self.manifest,
         parentID: BuiltInLauncherApplicationGroup.catalogID,
         kind: .command,
-        order: 30
+        order: 30,
+        documentation: RegisteredApplicationDocumentation.openSettings
     )
 
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {

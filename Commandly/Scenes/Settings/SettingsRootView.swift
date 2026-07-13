@@ -57,7 +57,7 @@ struct SettingsRootView: View {
         )
         .background {
             ZStack {
-                SettingsVisualEffectBackground()
+                CommandlyWindowVisualEffectBackground()
                 SettingsPalette.canvas
                 LinearGradient(
                     colors: [
@@ -73,7 +73,7 @@ struct SettingsRootView: View {
         }
         .ignoresSafeArea()
         .compactWindowChrome(hidesZoomButton: true)
-        .settingsWindowMaterial()
+        .commandlyWindowMaterial()
         .bringHostingWindowToFront(identifier: CommandlyWindowIdentifier.settings)
         .commandlyContentSize(viewModel.textSize)
         .commandlyViewMode(viewModel.viewMode)

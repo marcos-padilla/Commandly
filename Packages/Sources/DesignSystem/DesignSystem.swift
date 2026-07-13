@@ -65,6 +65,16 @@ public enum LayoutConstants {
     public static let settingsIdealHeight: CGFloat = 720
     /// Settings sidebar width.
     public static let settingsSidebarWidth: CGFloat = 188
+    /// Minimum width for the searchable documentation browser.
+    public static let documentationMinWidth: CGFloat = 880
+    /// Minimum height for the searchable documentation browser.
+    public static let documentationMinHeight: CGFloat = 600
+    /// Preferred documentation window width on first presentation.
+    public static let documentationIdealWidth: CGFloat = 1_180
+    /// Preferred documentation window height on first presentation.
+    public static let documentationIdealHeight: CGFloat = 760
+    /// Documentation navigation sidebar width.
+    public static let documentationSidebarWidth: CGFloat = 248
     /// Minimum onboarding window width.
     public static let onboardingMinWidth: CGFloat = 960
     /// Minimum onboarding window height.

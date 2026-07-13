@@ -177,6 +177,7 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
     let defaultHotKey: LauncherHotKey?
     let configurationFields: [LauncherConfigurationField]
     let commandManifest: CommandManifest?
+    let documentation: LauncherApplicationDocumentation?
 
     init(
         id: CommandID,
@@ -189,7 +190,8 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
         isEnabledByDefault: Bool = true,
         defaultHotKey: LauncherHotKey? = nil,
         configurationFields: [LauncherConfigurationField] = [],
-        commandManifest: CommandManifest? = nil
+        commandManifest: CommandManifest? = nil,
+        documentation: LauncherApplicationDocumentation? = nil
     ) {
         self.id = id
         self.parentID = parentID
@@ -202,6 +204,7 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
         self.defaultHotKey = defaultHotKey
         self.configurationFields = configurationFields
         self.commandManifest = commandManifest
+        self.documentation = documentation
     }
 
     init(
@@ -211,7 +214,8 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
         order: Int = 0,
         isEnabledByDefault: Bool = true,
         defaultHotKey: LauncherHotKey? = nil,
-        configurationFields: [LauncherConfigurationField] = []
+        configurationFields: [LauncherConfigurationField] = [],
+        documentation: LauncherApplicationDocumentation
     ) {
         self.init(
             id: manifest.id,
@@ -224,7 +228,8 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
             isEnabledByDefault: isEnabledByDefault,
             defaultHotKey: defaultHotKey,
             configurationFields: configurationFields,
-            commandManifest: manifest
+            commandManifest: manifest,
+            documentation: documentation
         )
     }
 

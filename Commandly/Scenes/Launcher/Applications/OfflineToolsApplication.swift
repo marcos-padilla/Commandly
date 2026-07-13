@@ -20,26 +20,15 @@ struct OfflineToolsApplication: LauncherApplication {
             mode: .view,
             keywords: tool.keywords,
             badgeTitle: "Application",
-            defaultActions: [
-                CommandActionDescriptor(
-                    id: BuiltInCommandActionID.copy,
-                    title: "Primary Action",
-                    isPrimary: true,
-                    keyHint: .return
-                ),
-                CommandActionDescriptor(
-                    id: BuiltInCommandActionID.openActions,
-                    title: "Actions",
-                    keyHint: .commandK
-                )
-            ]
+            defaultActions: tool.manifestActions
         )
         self.manifest = manifest
         self.definition = LauncherApplicationDefinition(
             manifest: manifest,
             parentID: BuiltInLauncherApplicationGroup.catalogID,
             kind: .application,
-            order: 100 + (OfflineToolKind.allCases.firstIndex(of: tool) ?? 0)
+            order: 100 + (OfflineToolKind.allCases.firstIndex(of: tool) ?? 0),
+            documentation: tool.documentation
         )
     }
 
@@ -58,3 +47,60 @@ struct OfflineToolsApplication: LauncherApplication {
 }
 
 extension OfflineToolsViewModel: LauncherApplicationModel {}
+
+private extension OfflineToolKind {
+    var manifestActions: [CommandActionDescriptor] {
+        switch self {
+        case .emoji:
+            return [
+                primaryAction(id: BuiltInCommandActionID.copy, title: "Copy Emoji", keyHint: .return),
+                actionsMenu,
+            ]
+        case .textCase:
+            return [
+                primaryAction(id: BuiltInCommandActionID.copy, title: "Copy Converted Text"),
+                actionsMenu,
+            ]
+        case .color:
+            return [
+                primaryAction(id: BuiltInCommandActionID.copy, title: "Copy Hex"),
+                actionsMenu,
+            ]
+        case .dictionary:
+            return [
+                primaryAction(id: OfflineToolsActionID.lookup, title: "Look Up", keyHint: .return),
+                actionsMenu,
+            ]
+        case .fonts:
+            return [
+                primaryAction(id: BuiltInCommandActionID.copy, title: "Copy Font Name", keyHint: .return),
+                actionsMenu,
+            ]
+        case .typing:
+            return [
+                primaryAction(id: OfflineToolsActionID.resetTyping, title: "New Attempt"),
+            ]
+        }
+    }
+
+    func primaryAction(
+        id: CommandActionID,
+        title: String,
+        keyHint: CommandKeyHint? = nil
+    ) -> CommandActionDescriptor {
+        CommandActionDescriptor(
+            id: id,
+            title: title,
+            isPrimary: true,
+            keyHint: keyHint
+        )
+    }
+
+    var actionsMenu: CommandActionDescriptor {
+        CommandActionDescriptor(
+            id: BuiltInCommandActionID.openActions,
+            title: "Actions",
+            keyHint: .commandK
+        )
+    }
+}

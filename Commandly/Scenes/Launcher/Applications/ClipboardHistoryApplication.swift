@@ -46,7 +46,8 @@ struct ClipboardHistoryApplication: LauncherApplication {
                     LauncherConfigurationOption(id: $0.rawValue, title: $0.title)
                 }
             )
-        ]
+        ],
+        documentation: RegisteredApplicationDocumentation.clipboardHistory
     )
 
     init(store: ClipboardHistoryStore) {

@@ -57,7 +57,8 @@ struct DownloadsApplication: LauncherApplication {
         manifest: Self.manifest,
         parentID: BuiltInLauncherApplicationGroup.catalogID,
         kind: .application,
-        order: 35
+        order: 35,
+        documentation: RegisteredApplicationDocumentation.downloads
     )
 
     private let services: DownloadsApplicationServices

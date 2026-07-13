@@ -7,7 +7,7 @@
 - Typography roles
 - Text scale (`CommandlyTextScale` + `commandlyFont` / `commandlyTextScale`)
 - Motion durations
-- Layout constants (including onboarding window sizes)
+- Layout constants (including onboarding, settings, launcher, and documentation window sizes)
 - Semantic color roles (system-mapped for light/dark)
 - `BrandPalette` blue accents for branded moments such as onboarding
 - `LauncherPalette` adaptive launcher canvas, chrome, sidebar, detail, selection, and separator roles
@@ -33,7 +33,12 @@ Launcher and settings chrome read `\.commandlyLayoutDensity` for paddings and si
 
 The launcher layers a translucent near-black navy tint over a native behind-window blur in Dark appearance. This preserves enough desktop color and luminance to feel integrated with macOS while keeping text legible. Light appearance uses the same material structure with a brighter adaptive tint. Header/footer chrome, sidebar/detail separation, selection, and hairlines must use `LauncherPalette` instead of feature-local dark-mode constants.
 
-Settings uses the same native material foundation with `SettingsPalette` tints. Native Liquid Glass is reserved for grouped cards and interactive choice/action controls; it should not be stacked across every row or used as decoration without a hierarchy purpose. Both launcher and Settings windows must remain non-opaque so their behind-window materials can sample the desktop.
+Settings and Documentation use the same native material foundation with `SettingsPalette` tints.
+Documentation adds a wider searchable sidebar and resizable reading canvas while keeping its article
+cards feature-specific. Native Liquid Glass is reserved for grouped cards and interactive
+choice/action controls; it should not be stacked across every row or used as decoration without a
+hierarchy purpose. Launcher, Settings, and Documentation windows must remain non-opaque so their
+behind-window materials can sample the desktop.
 
 ## Launcher artwork
 

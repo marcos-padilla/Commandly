@@ -38,7 +38,8 @@ struct SystemActivityApplication: LauncherApplication {
         manifest: Self.manifest,
         parentID: BuiltInLauncherApplicationGroup.catalogID,
         kind: .application,
-        order: 45
+        order: 45,
+        documentation: RegisteredApplicationDocumentation.systemActivity
     )
 
     private let service: any SystemActivityServicing

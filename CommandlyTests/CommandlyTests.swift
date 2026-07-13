@@ -1009,6 +1009,7 @@ struct CommandlyTests {
         let viewModel = LauncherViewModel()
         #expect(viewModel.route == .root)
         #expect(viewModel.appMenuActions.map(\.id) == [
+            BuiltInCommandActionID.documentation,
             BuiltInCommandActionID.settings,
             BuiltInCommandActionID.quit
         ])
@@ -2376,7 +2377,8 @@ private struct TestLauncherApplication: LauncherApplication {
             manifest: manifest,
             parentID: parentID,
             kind: .application,
-            order: 0
+            order: 0,
+            documentation: DocumentationTestFixtures.validDocumentation
         )
     }
 

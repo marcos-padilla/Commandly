@@ -55,7 +55,8 @@ struct FileSearchApplication: LauncherApplication {
                 kind: .toggle,
                 defaultValue: .boolean(true)
             )
-        ]
+        ],
+        documentation: RegisteredApplicationDocumentation.fileSearch
     )
 
     init(services: FileSearchApplicationServices) {
