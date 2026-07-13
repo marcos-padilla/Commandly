@@ -14,6 +14,24 @@ swift test --package-path Packages
 make verify
 ```
 
+File Search also has an opt-in deterministic macOS UI validation scheme:
+
+```bash
+xcodebuild \
+  -project Commandly.xcodeproj \
+  -scheme CommandlyUIValidation \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  -derivedDataPath .derivedData \
+  test
+```
+
+Its DEBUG-only launch fixture creates sandbox-local CSV and text files, then exercises the production
+filesystem scanner, SQLite FTS index, view model, CSV preview, live content query, and right-click
+actions panel. It also rapidly changes selection across native Quick Look snapshots to cover preview
+cancellation and stale-result handling. The normal `Commandly` scheme keeps GUI automation skipped
+so `make verify` remains safe for non-interactive environments.
+
 ## Rules
 
 - No `XCTAssertTrue(true)` / empty `#expect(true)` style placeholders.

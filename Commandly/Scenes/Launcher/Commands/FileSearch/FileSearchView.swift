@@ -1,7 +1,6 @@
 import AppKit
 import CommandKit
 import DesignSystem
-import QuickLookUI
 import SearchKit
 import SwiftUI
 
@@ -63,6 +62,7 @@ struct FileSearchView: View {
                     .textFieldStyle(.plain)
                     .commandlyFont(size: 14, weight: .medium)
                     .focused($isSearchFocused)
+                    .accessibilityIdentifier("file-search-query")
                     .onSubmit { viewModel.perform(primaryActionID) }
                     .onKeyPress(.upArrow) {
                         viewModel.moveSelection(offset: -1)
@@ -143,6 +143,20 @@ struct FileSearchView: View {
                 Text("Searching your index…")
                     .commandlyFont(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .indexing where viewModel.results.isEmpty:
+            VStack(spacing: density.spacing(.xs)) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Building your local file index…")
+                    .commandlyFont(size: 11, weight: .medium)
+                    .foregroundStyle(.secondary)
+                Text("Names appear first; content and image text are added in the background.")
+                    .commandlyFont(size: 10, weight: .regular)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, density.spacing(.md))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .needsFolderAccess:
@@ -235,8 +249,18 @@ struct FileSearchView: View {
                         if let modifiedAt = item.modifiedAt {
                             metadataRow("Modified", modifiedAt.formatted(date: .abbreviated, time: .shortened))
                         }
-                        if item.matchKind == .contents {
+                        if item.tags.isEmpty == false {
+                            metadataRow("Tags", item.tags.joined(separator: ", "))
+                        }
+                        switch item.matchKind {
+                        case .contents:
                             metadataRow("Matched", "File contents")
+                        case .metadata:
+                            metadataRow("Matched", "Metadata")
+                        case .tag:
+                            metadataRow("Matched", "Finder tag")
+                        case .filename, .recent:
+                            EmptyView()
                         }
                     }
                     .padding(density.spacing(.md))
@@ -316,6 +340,7 @@ private struct FileSearchResultRow: View {
             if hovering { onSelect() }
         }
         .accessibilityLabel("\(item.name), \(item.contentTypeDescription)")
+        .accessibilityIdentifier("file-search-result-\(item.name)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: "Open", onOpen)
         .accessibilityAction(named: "Show Actions", onShowActions)
@@ -351,7 +376,10 @@ private struct FileSearchPreview: View {
             if isCSV {
                 CSVFilePreview(item: item)
             } else {
-                QuickLookPreview(url: item.url)
+                QuickLookSnapshotPreview(
+                    url: item.url,
+                    modificationDate: item.modifiedAt
+                )
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Preview of \(item.name)")
@@ -468,30 +496,6 @@ private struct CSVTablePreview: View {
         .overlay(alignment: .bottom) {
             Divider().opacity(0.35)
         }
-    }
-}
-
-private struct QuickLookPreview: NSViewRepresentable {
-    let url: URL
-
-    func makeNSView(context: Context) -> NSView {
-        let container = NSView()
-        if let preview = QLPreviewView(frame: .zero, style: .normal) {
-            preview.autostarts = true
-            preview.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(preview)
-            NSLayoutConstraint.activate([
-                preview.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                preview.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                preview.topAnchor.constraint(equalTo: container.topAnchor),
-                preview.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-            ])
-        }
-        return container
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        (view.subviews.first { $0 is QLPreviewView } as? QLPreviewView)?.previewItem = url as NSURL
     }
 }
 

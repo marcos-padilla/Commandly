@@ -7,6 +7,7 @@ import SearchKit
 enum FileSearchLoadState: Equatable {
     case idle
     case loading
+    case indexing
     case loaded
     case needsFolderAccess
     case failed
@@ -38,6 +39,9 @@ final class FileSearchViewModel {
     private let pasteboard: any PasteboardAccessing
     @ObservationIgnored
     private var searchTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var indexStatusTask: Task<Void, Never>?
+    private var indexStatus: FileSearchIndexStatus = .idle
 
     var query = "" {
         didSet {
@@ -93,6 +97,7 @@ final class FileSearchViewModel {
 
     deinit {
         searchTask?.cancel()
+        indexStatusTask?.cancel()
     }
 
     var selectedItem: FileSearchItem? {
@@ -163,11 +168,14 @@ final class FileSearchViewModel {
 
     func load() {
         (searchService as? any FileSearchSessionManaging)?.beginFileSearchSession()
+        observeIndexStatus()
         scheduleSearch(debounce: false)
     }
 
     func stop() {
         searchTask?.cancel()
+        indexStatusTask?.cancel()
+        indexStatusTask = nil
         (searchService as? any FileSearchSessionManaging)?.endFileSearchSession()
     }
 
@@ -189,46 +197,17 @@ final class FileSearchViewModel {
     }
 
     func performSearch(query: String, category: FileSearchCategory) async {
-        let namesRequest = FileSearchRequest(
+        let request = FileSearchRequest(
             query: SearchQuery(text: query, limit: 100),
-            category: category,
-            includesFileContents: false
+            category: category
         )
-        loadState = .loading
+        loadState = isIndexBuilding && results.isEmpty ? .indexing : .loading
         statusMessage = nil
         do {
-            if namesRequest.query.isEmpty {
-                let newResults = try await searchService.search(namesRequest)
-                try Task.checkCancellation()
-                guard self.query == query, self.category == category else { return }
-                applyResults(newResults)
-                return
-            }
-
-            let contentRequest = FileSearchRequest(
-                query: namesRequest.query,
-                category: category,
-                includesFileNames: false,
-                includesFileContents: true
-            )
-            async let contentSearch = searchService.search(contentRequest)
-            let filenameResults = try await searchService.search(namesRequest)
+            let newResults = try await searchService.search(request)
             try Task.checkCancellation()
             guard self.query == query, self.category == category else { return }
-            applyResults(filenameResults)
-
-            do {
-                let contentResults = try await contentSearch
-                try Task.checkCancellation()
-                guard self.query == query, self.category == category else { return }
-                applyResults(merge(filenameResults: filenameResults, contentResults: contentResults))
-            } catch is CancellationError {
-                return
-            } catch {
-                // Filename search remains fully usable when Spotlight content extraction
-                // is unavailable for a volume or individual file type.
-                statusMessage = "Some file-content results may be unavailable."
-            }
+            applyResults(newResults)
         } catch is CancellationError {
             return
         } catch FileSearchError.noAuthorizedScopes {
@@ -592,15 +571,46 @@ final class FileSearchViewModel {
 
     private func applyResults(_ newResults: [FileSearchItem]) {
         results = newResults
-        loadState = .loaded
+        loadState = isIndexBuilding && newResults.isEmpty ? .indexing : .loaded
         refreshSelection()
     }
 
-    private func merge(
-        filenameResults: [FileSearchItem],
-        contentResults: [FileSearchItem]
-    ) -> [FileSearchItem] {
-        var seen = Set<String>()
-        return (filenameResults + contentResults).filter { seen.insert($0.id).inserted }
+    private var isIndexBuilding: Bool {
+        switch indexStatus {
+        case .scanning, .enriching: true
+        case .idle, .ready, .failed: false
+        }
+    }
+
+    private func observeIndexStatus() {
+        guard indexStatusTask == nil,
+              let provider = searchService as? any FileSearchIndexStatusProviding else { return }
+        indexStatusTask = Task { [weak self] in
+            let updates = await provider.indexStatusUpdates()
+            for await status in updates {
+                guard let self, Task.isCancelled == false else { return }
+                let previous = indexStatus
+                indexStatus = status
+                switch status {
+                case .scanning:
+                    if results.isEmpty { loadState = .indexing }
+                    scheduleSearch(debounce: false)
+                case let .enriching(_, enrichedItemCount):
+                    if results.isEmpty { loadState = .indexing }
+                    if enrichedItemCount == 0 || enrichedItemCount.isMultiple(of: 120) {
+                        scheduleSearch(debounce: false)
+                    }
+                case .ready:
+                    scheduleSearch(debounce: false)
+                case .failed:
+                    if results.isEmpty {
+                        loadState = .failed
+                        statusMessage = "The local file index will rebuild automatically."
+                    }
+                case .idle:
+                    if previous != .idle, results.isEmpty { loadState = .idle }
+                }
+            }
+        }
     }
 }

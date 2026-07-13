@@ -95,7 +95,7 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
         panel.prompt = "Allow Access"
-        panel.message = "Choose folders Commandly can search. You can add more later in Settings."
+        panel.message = "Choose folders Commandly can search and manage. Select your Home folder for broad coverage; you can change scopes later in Settings."
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
 
         let response = await panel.beginSheetModalIfPossible()

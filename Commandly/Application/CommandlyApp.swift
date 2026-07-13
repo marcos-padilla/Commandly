@@ -72,9 +72,17 @@ enum CommandlyDebugLaunchOptions {
         }
         return arguments[flagIndex + 1]
     }()
+    static let usesFileSearchFixture = ProcessInfo.processInfo.arguments.contains(
+        "--commandly-file-search-fixture"
+    )
+    static let skipsOnboarding = ProcessInfo.processInfo.arguments.contains(
+        "--commandly-skip-onboarding"
+    )
     #else
     static let showsLauncherAtLaunch = false
     static let fileSearchQuery: String? = nil
+    static let usesFileSearchFixture = false
+    static let skipsOnboarding = false
     #endif
 }
 

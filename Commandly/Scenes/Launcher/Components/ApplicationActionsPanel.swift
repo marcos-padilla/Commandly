@@ -97,6 +97,7 @@ struct LauncherActionPanel: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Actions for \(title)")
+        .accessibilityIdentifier("launcher-action-panel")
     }
 }
 
@@ -179,5 +180,6 @@ private struct LauncherActionPanelRow: View {
         .opacity(action.isEnabled ? 1 : 0.5)
         .onHover { isHovered = $0 }
         .accessibilityLabel(action.title)
+        .accessibilityIdentifier("launcher-action-\(action.id.rawValue)")
     }
 }

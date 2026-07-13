@@ -26,7 +26,7 @@ final class AppRuntime {
     @ObservationIgnored
     let clipboardHistoryStore: ClipboardHistoryStore
     @ObservationIgnored
-    let fileSearchService: SpotlightFileSearchService
+    let fileSearchService: PersistentFileSearchService
     @ObservationIgnored
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
@@ -35,7 +35,9 @@ final class AppRuntime {
     init(container: AppContainer = .bootstrap()) {
         self.container = container
         let settings = container.dependencies.appSettingsStore.load()
-        self.showsOnboarding = container.appState.route == .onboarding
+        self.showsOnboarding = CommandlyDebugLaunchOptions.skipsOnboarding
+            ? false
+            : container.appState.route == .onboarding
         self.showMenuBarIcon = settings.showMenuBarIcon
         self.textSize = settings.textSize
         self.viewMode = settings.viewMode
@@ -43,9 +45,18 @@ final class AppRuntime {
         self.clipboardHistoryStore = ClipboardHistoryStore(
             enricher: VisionClipboardContentEnricher()
         )
-        self.fileSearchService = SpotlightFileSearchService(
+        #if DEBUG
+        let fixture = CommandlyFileSearchDebugFixture.prepareIfRequested()
+        self.fileSearchService = PersistentFileSearchService(
+            folderAccessStore: container.dependencies.folderAccessStore,
+            databaseURL: fixture?.databaseURL,
+            directAuthorizedScopes: fixture.map { [$0.rootURL] } ?? []
+        )
+        #else
+        self.fileSearchService = PersistentFileSearchService(
             folderAccessStore: container.dependencies.folderAccessStore
         )
+        #endif
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
         self.autoQuitService = AutoQuitService(preferencesStore: applicationPreferencesStore)

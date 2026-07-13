@@ -726,10 +726,6 @@ struct LauncherRightClickCatcher: NSViewRepresentable {
             }
         }
 
-        deinit {
-            removeMonitor()
-        }
-
         private func installMonitorIfNeeded() {
             guard monitor == nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in

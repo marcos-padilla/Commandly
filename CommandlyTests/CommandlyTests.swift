@@ -305,15 +305,18 @@ struct CommandlyTests {
         await viewModel.flushSearchForTesting()
 
         let requests = await service.requests
-        let request = try #require(requests.first { $0.includesFileContents })
+        let request = try #require(requests.last)
         #expect(request.query.text == "quarterly revenue")
         #expect(request.query.limit == 100)
         #expect(request.category == .documents)
-        #expect(request.includesFileNames == false)
+        #expect(request.includesFileNames)
         #expect(request.includesFileContents)
+        #expect(request.includesMetadata)
+        #expect(request.includesTags)
+        #expect(requests.count == 1)
     }
 
-    @Test @MainActor func fileSearchKeepsFilenameHitsAheadOfContentEnrichment() async throws {
+    @Test @MainActor func fileSearchAppliesCombinedIndexSnapshotAtomically() async {
         let filenameHit = FileSearchItem(
             url: URL(fileURLWithPath: "/Users/test/Desktop/wpb_hoa_contacts.csv"),
             name: "wpb_hoa_contacts.csv",
@@ -331,10 +334,7 @@ struct CommandlyTests {
             contentTypeDescription: "Plain text",
             matchKind: .contents
         )
-        let service = PhasedFileSearchService(
-            filenameResults: [filenameHit],
-            contentResults: [contentHit, filenameHit]
-        )
+        let service = InMemoryFileSearchService(items: [filenameHit, contentHit])
         let viewModel = FileSearchViewModel(
             searchService: service,
             urlOpener: NoOpURLOpener(),
@@ -347,38 +347,7 @@ struct CommandlyTests {
 
         #expect(viewModel.results == [filenameHit, contentHit])
         #expect(viewModel.loadState == .loaded)
-        let requests = await service.requests
-        #expect(requests.count == 2)
-        #expect(requests.contains { $0.includesFileNames && $0.includesFileContents == false })
-        #expect(requests.contains { $0.includesFileNames == false && $0.includesFileContents })
-    }
-
-    @Test @MainActor func fileSearchRetainsFilenameHitsWhenContentSearchFails() async {
-        let filenameHit = FileSearchItem(
-            url: URL(fileURLWithPath: "/Users/test/Desktop/wpb_hoa_contacts.csv"),
-            name: "wpb_hoa_contacts.csv",
-            parentPath: "/Users/test/Desktop",
-            kind: .file,
-            contentTypeDescription: "CSV document"
-        )
-        let service = PhasedFileSearchService(
-            filenameResults: [filenameHit],
-            contentResults: [],
-            contentError: .indexUnavailable
-        )
-        let viewModel = FileSearchViewModel(
-            searchService: service,
-            urlOpener: NoOpURLOpener(),
-            fileRevealer: InMemoryFileRevealer(),
-            pasteboard: InMemoryPasteboard()
-        )
-        viewModel.query = "wpb_hoa_contacts.csv"
-
-        await viewModel.flushSearchForTesting()
-
-        #expect(viewModel.results == [filenameHit])
-        #expect(viewModel.loadState == .loaded)
-        #expect(viewModel.statusMessage == "Some file-content results may be unavailable.")
+        #expect(await service.requests.count == 1)
     }
 
     @Test @MainActor func fileSearchSelectionCopiesPathAndHandlesMissingAccess() async {
@@ -492,116 +461,290 @@ struct CommandlyTests {
         #expect(viewModel.results.isEmpty)
     }
 
-    @Test @MainActor func spotlightFileSearchPredicatesDoNotFilterVisibleResultsToZero() {
+    @Test func persistentFileIndexSearchesNamesContentsMetadataTagsAndCategories() async throws {
+        let root = URL(fileURLWithPath: "/Users/test")
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandlyTests-\(UUID().uuidString).sqlite")
+        let database = FileIndexDatabase(databaseURL: databaseURL)
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+        try await database.replaceAuthorizedScopes(with: [root.path])
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let recentRequest = FileSearchRequest(query: SearchQuery(text: "", limit: 100))
-        let recentDescription = String(
-            describing: SpotlightFileSearchService.predicate(for: recentRequest, now: now)
-        )
-        let recentCompound = SpotlightFileSearchService.predicate(
-            for: recentRequest,
-            now: now
-        ) as? NSCompoundPredicate
-        #expect(recentCompound?.compoundPredicateType == .or)
-        #expect(recentCompound?.subpredicates.count == 2)
-        #expect(recentDescription.contains(NSMetadataItemFSContentChangeDateKey))
-        #expect(recentDescription.contains(NSMetadataItemFSNameKey) == false)
-        #expect(recentDescription.contains("kMDItemFSInvisible") == false)
+        let records = [
+            FileIndexRecord(
+                path: "/Users/test/Desktop/wpb_hoa_contacts.csv",
+                rootPath: root.path,
+                name: "wpb_hoa_contacts.csv",
+                parentPath: "/Users/test/Desktop",
+                kind: .file,
+                category: .documents,
+                contentTypeIdentifier: "public.comma-separated-values-text",
+                contentTypeDescription: "CSV document",
+                byteCount: 200,
+                createdAt: now,
+                modifiedAt: now,
+                lastUsedAt: now,
+                tags: [],
+                metadataText: "CSV spreadsheet",
+                contentText: "",
+                scanGeneration: 1
+            ),
+            FileIndexRecord(
+                path: "/Users/test/Pictures/board-photo.png",
+                rootPath: root.path,
+                name: "board-photo.png",
+                parentPath: "/Users/test/Pictures",
+                kind: .file,
+                category: .images,
+                contentTypeIdentifier: "public.png",
+                contentTypeDescription: "PNG image",
+                byteCount: 500,
+                createdAt: now,
+                modifiedAt: now,
+                lastUsedAt: nil,
+                tags: ["HOA Board"],
+                metadataText: "PNG image",
+                contentText: "",
+                scanGeneration: 1
+            ),
+            FileIndexRecord(
+                path: "/Users/test/Documents/budget.pdf",
+                rootPath: root.path,
+                name: "budget.pdf",
+                parentPath: "/Users/test/Documents",
+                kind: .file,
+                category: .documents,
+                contentTypeIdentifier: "com.adobe.pdf",
+                contentTypeDescription: "PDF document",
+                byteCount: 800,
+                createdAt: now,
+                modifiedAt: now,
+                lastUsedAt: nil,
+                tags: [],
+                metadataText: "Author Treasurer quarterly finance",
+                contentText: "",
+                scanGeneration: 1
+            ),
+            FileIndexRecord(
+                path: "/Users/test/Documents/notes.txt",
+                rootPath: root.path,
+                name: "notes.txt",
+                parentPath: "/Users/test/Documents",
+                kind: .file,
+                category: .documents,
+                contentTypeIdentifier: "public.plain-text",
+                contentTypeDescription: "Plain text",
+                byteCount: 100,
+                createdAt: now,
+                modifiedAt: now,
+                lastUsedAt: nil,
+                tags: [],
+                metadataText: "Plain text",
+                contentText: "",
+                scanGeneration: 1
+            )
+        ]
+        try await database.upsert(records)
+        try await database.updateContent([
+            FileContentUpdate(
+                path: "/Users/test/Documents/notes.txt",
+                text: "homeowner association emergency contacts",
+                metadata: "Plain text",
+                tags: []
+            )
+        ])
 
-        let typedRequest = FileSearchRequest(query: SearchQuery(text: "AppRuntime", limit: 100))
-        let typedDescription = String(
-            describing: SpotlightFileSearchService.predicate(for: typedRequest, now: now)
-        )
-        let typedCompound = SpotlightFileSearchService.predicate(
-            for: typedRequest,
-            now: now
-        ) as? NSCompoundPredicate
-        #expect(typedCompound?.compoundPredicateType == .or)
-        #expect(typedCompound?.subpredicates.count == 3)
-        #expect(typedDescription.contains(NSMetadataItemFSNameKey))
-        #expect(typedDescription.contains(NSMetadataItemTextContentKey))
-        #expect(typedDescription.contains("kMDItemFSInvisible") == false)
+        let names = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "wpb hoa", limit: 10),
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        #expect(names.map(\.name) == ["wpb_hoa_contacts.csv"])
 
-        let namesOnlyRequest = FileSearchRequest(
-            query: SearchQuery(text: "wpb_hoa_contacts.csv", limit: 100),
-            includesFileContents: false
-        )
-        let namesOnlyCompound = SpotlightFileSearchService.predicate(
-            for: namesOnlyRequest,
-            now: now
-        ) as? NSCompoundPredicate
-        let namesOnlyDescription = String(
-            describing: SpotlightFileSearchService.predicate(for: namesOnlyRequest, now: now)
-        )
-        #expect(namesOnlyCompound?.subpredicates.count == 2)
-        #expect(namesOnlyDescription.contains(NSMetadataItemTextContentKey) == false)
-
-        let contentOnlyRequest = FileSearchRequest(
-            query: SearchQuery(text: "homeowner association", limit: 100),
+        let contents = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "emergency contacts", limit: 10),
             includesFileNames: false,
-            includesFileContents: true
-        )
-        let contentOnlyDescription = String(
-            describing: SpotlightFileSearchService.predicate(for: contentOnlyRequest, now: now)
-        )
-        #expect(contentOnlyDescription.contains(NSMetadataItemFSNameKey) == false)
-        #expect(contentOnlyDescription.contains(NSMetadataItemTextContentKey))
-        #expect(contentOnlyDescription.contains("homeowner"))
-        #expect(contentOnlyDescription.contains("association"))
+            includesFileContents: true,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        #expect(contents.first?.name == "notes.txt")
+        #expect(contents.first?.matchKind == .contents)
 
-        let imageRequest = FileSearchRequest(
-            query: SearchQuery(text: "Screenshot 2026", limit: 100),
+        let metadata = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "treasurer finance", limit: 10),
+            includesFileNames: false,
+            includesFileContents: false,
+            includesMetadata: true,
+            includesTags: false
+        ))
+        #expect(metadata.first?.name == "budget.pdf")
+        #expect(metadata.first?.matchKind == .metadata)
+
+        let tags = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "hoa board", limit: 10),
             category: .images,
-            includesFileContents: false
-        )
-        let imageDescription = String(
-            describing: SpotlightFileSearchService.predicate(for: imageRequest, now: now)
-        )
-        #expect(imageDescription.contains("public.image"))
-
-        let folderRequest = FileSearchRequest(
-            query: SearchQuery(text: "Commandly", limit: 100),
-            category: .folders,
-            includesFileContents: false
-        )
-        let folderDescription = String(
-            describing: SpotlightFileSearchService.predicate(for: folderRequest, now: now)
-        )
-        #expect(folderDescription.contains("public.folder"))
-
-        #expect(SpotlightFileSearchService.minimumResultCount(for: recentRequest) == 1)
-        #expect(SpotlightFileSearchService.minimumResultCount(for: typedRequest) == 1)
+            includesFileNames: false,
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: true
+        ))
+        #expect(tags.first?.name == "board-photo.png")
+        #expect(tags.first?.tags == ["HOA Board"])
+        #expect(tags.first?.matchKind == .tag)
     }
 
-    @Test @MainActor func spotlightFileSearchFiltersDotHiddenPathsAfterQuerying() {
-        #expect(
-            SpotlightFileSearchService.isHiddenPath(
-                URL(fileURLWithPath: "/Users/test/.config/settings.json")
-            )
+    @Test func fileIndexScannerFindsFilesImmediatelyAndRefreshesChangedContents() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandlyScannerTests-\(UUID().uuidString)", isDirectory: true)
+        let desktop = root.appendingPathComponent("Desktop", isDirectory: true)
+        try FileManager.default.createDirectory(at: desktop, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = desktop.appendingPathComponent("wpb_hoa_contacts.csv")
+        try Data("name,email\nPalm Beach HOA,first@example.com".utf8).write(to: target)
+        let databaseURL = root
+            .appendingPathComponent("Database", isDirectory: true)
+            .appendingPathComponent("index.sqlite")
+        let database = FileIndexDatabase(databaseURL: databaseURL)
+        let statusHub = FileIndexStatusHub()
+
+        try await FileIndexScanner.scan(scopes: [desktop], database: database, statusHub: statusHub)
+
+        let byName = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "wpb hoa contacts", limit: 10),
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        #expect(byName.first?.url == target)
+
+        let byContents = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "Palm Beach HOA", limit: 10),
+            includesFileNames: false,
+            includesFileContents: true,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        #expect(byContents.first?.url == target)
+
+        try Data("name,email\nWest Palm Board,updated@example.com".utf8).write(to: target)
+        try await FileIndexScanner.scanChangedPath(
+            target.path,
+            scopes: [desktop],
+            database: database,
+            statusHub: statusHub
         )
-        #expect(
-            SpotlightFileSearchService.isHiddenPath(
-                URL(fileURLWithPath: "/Users/test/Projects/.git/config")
+        let refreshed = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "West Palm Board", limit: 10),
+            includesFileNames: false,
+            includesFileContents: true,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        #expect(refreshed.first?.url == target)
+    }
+
+    @Test func fileIndexSearchStaysInteractiveWithTenThousandRecords() async throws {
+        let root = URL(fileURLWithPath: "/Users/test")
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandlyPerformanceTests-\(UUID().uuidString).sqlite")
+        let database = FileIndexDatabase(databaseURL: databaseURL)
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+        try await database.replaceAuthorizedScopes(with: [root.path])
+        let records = (0..<10_000).map { index in
+            let name = index == 7_777 ? "wpb_hoa_contacts.csv" : "document-\(index).txt"
+            return FileIndexRecord(
+                path: "/Users/test/Documents/\(name)",
+                rootPath: root.path,
+                name: name,
+                parentPath: "/Users/test/Documents",
+                kind: .file,
+                category: .documents,
+                contentTypeIdentifier: "public.plain-text",
+                contentTypeDescription: "Plain text",
+                byteCount: 100,
+                createdAt: nil,
+                modifiedAt: nil,
+                lastUsedAt: nil,
+                tags: [],
+                metadataText: "Plain text",
+                contentText: "",
+                scanGeneration: 1
             )
-        )
-        #expect(
-            SpotlightFileSearchService.isHiddenPath(
-                URL(fileURLWithPath: "/Users/test/Documents/Visible.txt")
-            ) == false
+        }
+        let clock = ContinuousClock()
+        let buildStarted = clock.now
+        try await database.upsert(records)
+        let buildElapsed = buildStarted.duration(to: clock.now)
+
+        let started = clock.now
+        let results = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "wpb hoa", limit: 100),
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        let elapsed = started.duration(to: clock.now)
+
+        #expect(results.first?.name == "wpb_hoa_contacts.csv")
+        #expect(elapsed < .milliseconds(250))
+        print(
+            "FILE_INDEX_BENCHMARK records=10000 build_ms=\(milliseconds(buildElapsed)) " +
+                "query_ms=\(milliseconds(elapsed))"
         )
     }
 
-    @Test @MainActor func spotlightUsesHomeMetadataScopeThenPostFiltersAuthorization() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
-        let desktop = home.appending(path: "Desktop", directoryHint: .isDirectory)
-        let homeScopes = SpotlightFileSearchService.metadataSearchScopes(for: [desktop])
-        #expect(homeScopes.count == 1)
-        #expect(homeScopes.first as? String == NSMetadataQueryUserHomeScope)
+    @Test @MainActor func fileIndexChangeMonitorReceivesFileLevelEvents() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandlyFSEventsTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = FileEventRecorder()
+        let monitor = FileIndexChangeMonitor()
+        monitor.start(paths: [root.path]) { paths in
+            Task { await recorder.record(paths) }
+        }
+        defer { monitor.stop() }
+        let changedFile = root.appendingPathComponent("changed.txt")
+        try Data("changed".utf8).write(to: changedFile)
 
-        let external = URL(fileURLWithPath: "/Volumes/External/Search Root")
-        let externalScopes = SpotlightFileSearchService.metadataSearchScopes(for: [external])
-        #expect(externalScopes.count == 1)
-        #expect((externalScopes.first as? URL)?.standardizedFileURL == external.standardizedFileURL)
+        await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            await recorder.contains(path: changedFile.path)
+        }
+
+        #expect(await recorder.contains(path: changedFile.path))
+    }
+
+    @Test func fileIndexNeverIndexesItsOwnDatabaseDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandlySelfIndexTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let visible = root.appendingPathComponent("Visible Notes.txt")
+        try Data("searchable fixture".utf8).write(to: visible)
+        let databaseURL = root
+            .appendingPathComponent("Commandly Index", isDirectory: true)
+            .appendingPathComponent("FileIndex.sqlite")
+        let database = FileIndexDatabase(databaseURL: databaseURL)
+        let statusHub = FileIndexStatusHub()
+
+        try await FileIndexScanner.scan(scopes: [root], database: database, statusHub: statusHub)
+
+        let visibleResults = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "Visible Notes", limit: 10),
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        let selfResults = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "FileIndex", limit: 10),
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false
+        ))
+        #expect(visibleResults.first?.url == visible)
+        #expect(selfResults.isEmpty)
+        #expect(database.isStoragePath(databaseURL.path))
     }
 
     @Test @MainActor func csvPreviewParserHandlesQuotedCommasNewlinesAndEscapedQuotes() throws {
@@ -1851,6 +1994,13 @@ struct CommandlyTests {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
     }
+
+    private nonisolated func milliseconds(_ duration: Duration) -> String {
+        let components = duration.components
+        let value = Double(components.seconds) * 1_000
+            + Double(components.attoseconds) / 1_000_000_000_000_000
+        return String(format: "%.3f", value)
+    }
 }
 
 /// Test double that records privacy pane open requests.
@@ -1869,28 +2019,14 @@ private struct MissingAccessFileSearchService: FileSearching {
     }
 }
 
-private actor PhasedFileSearchService: FileSearching {
-    let filenameResults: [FileSearchItem]
-    let contentResults: [FileSearchItem]
-    let contentError: FileSearchError?
-    private(set) var requests: [FileSearchRequest] = []
+private actor FileEventRecorder {
+    private var paths: Set<String> = []
 
-    init(
-        filenameResults: [FileSearchItem],
-        contentResults: [FileSearchItem],
-        contentError: FileSearchError? = nil
-    ) {
-        self.filenameResults = filenameResults
-        self.contentResults = contentResults
-        self.contentError = contentError
+    func record(_ newPaths: [String]) {
+        paths.formUnion(newPaths)
     }
 
-    func search(_ request: FileSearchRequest) async throws -> [FileSearchItem] {
-        requests.append(request)
-        if request.includesFileContents {
-            if let contentError { throw contentError }
-            return contentResults
-        }
-        return filenameResults
+    func contains(path: String) -> Bool {
+        paths.contains(path)
     }
 }

@@ -124,6 +124,8 @@ public enum FileSearchItemKind: String, Sendable, Codable, Equatable {
 public enum FileSearchMatchKind: String, Sendable, Codable, Equatable {
     case filename
     case contents
+    case metadata
+    case tag
     case recent
 }
 
@@ -133,17 +135,23 @@ public struct FileSearchRequest: Sendable, Equatable {
     public let category: FileSearchCategory
     public let includesFileNames: Bool
     public let includesFileContents: Bool
+    public let includesMetadata: Bool
+    public let includesTags: Bool
 
     public init(
         query: SearchQuery,
         category: FileSearchCategory = .all,
         includesFileNames: Bool = true,
-        includesFileContents: Bool = true
+        includesFileContents: Bool = true,
+        includesMetadata: Bool = true,
+        includesTags: Bool = true
     ) {
         self.query = query
         self.category = category
         self.includesFileNames = includesFileNames
         self.includesFileContents = includesFileContents
+        self.includesMetadata = includesMetadata
+        self.includesTags = includesTags
     }
 }
 
@@ -160,6 +168,7 @@ public struct FileSearchItem: Sendable, Equatable, Identifiable {
     public let createdAt: Date?
     public let modifiedAt: Date?
     public let lastUsedAt: Date?
+    public let tags: [String]
     public let matchKind: FileSearchMatchKind
 
     public init(
@@ -174,6 +183,7 @@ public struct FileSearchItem: Sendable, Equatable, Identifiable {
         createdAt: Date? = nil,
         modifiedAt: Date? = nil,
         lastUsedAt: Date? = nil,
+        tags: [String] = [],
         matchKind: FileSearchMatchKind = .filename
     ) {
         self.id = id ?? url.standardizedFileURL.path
@@ -187,6 +197,7 @@ public struct FileSearchItem: Sendable, Equatable, Identifiable {
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.lastUsedAt = lastUsedAt
+        self.tags = tags
         self.matchKind = matchKind
     }
 }
@@ -197,6 +208,20 @@ public struct FileSearchItem: Sendable, Equatable, Identifiable {
 /// and must restrict results to locations the user has authorized.
 public protocol FileSearching: Sendable {
     func search(_ request: FileSearchRequest) async throws -> [FileSearchItem]
+}
+
+/// Progress emitted by a persistent file index while it scans and enriches authorized scopes.
+public enum FileSearchIndexStatus: Sendable, Equatable {
+    case idle
+    case scanning(indexedItemCount: Int)
+    case enriching(indexedItemCount: Int, enrichedItemCount: Int)
+    case ready(indexedItemCount: Int)
+    case failed
+}
+
+/// Optional event stream for search services that build or refresh an index in the background.
+public protocol FileSearchIndexStatusProviding: Sendable {
+    func indexStatusUpdates() async -> AsyncStream<FileSearchIndexStatus>
 }
 
 /// Keeps sandbox extensions active while a file-search surface displays previews and performs actions.
@@ -210,6 +235,7 @@ public protocol FileSearchSessionManaging: Sendable {
 public enum FileSearchError: Error, Sendable, Equatable {
     case noAuthorizedScopes
     case indexUnavailable
+    case indexCorrupt
 }
 
 /// Deterministic file search used by tests and previews.

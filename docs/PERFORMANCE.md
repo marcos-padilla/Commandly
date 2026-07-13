@@ -20,9 +20,34 @@ These are **future targets**, not measured results. Do not claim they are met un
 
 ## File Search measurements
 
-Measured on July 12, 2026 on the development Apple-silicon Mac. These are system Spotlight
-control-query timings, not current end-to-end UI guarantees. The selected search root was the
-user's home folder.
+### Persistent index (current)
+
+Measured on July 12, 2026 on the development Apple-silicon Mac through the Commandly unit-test
+target. The synthetic test inserts 10,000 file records into a fresh WAL/FTS5 database and then
+searches a multi-token underscore-separated filename near the end of the data set.
+
+| Measurement | Result |
+|-------------|--------|
+| Fresh 10,000-record index build plus one selective query | 268 ms total test duration |
+| Selective 10,000-record FTS query | Under 250 ms (enforced assertion; build time is excluded) |
+| Direct scan + content extraction + changed-file refresh in a temporary tree | 20 ms total test duration |
+| FSEvents file-level delivery in a temporary tree | 41 ms total test duration |
+
+The opt-in `CommandlyUIValidation` scheme also verifies a cold sandbox-local scan through rendered
+SwiftUI, CSV preview population, right-click actions, and a second warm content query. It is an
+interaction regression test rather than a latency benchmark because XCTest window/menu setup adds
+several seconds unrelated to the search engine.
+
+The 10,000-record assertion is intentionally conservative for shared CI. On-device profiling of a
+fully authorized Home-folder index is still required before claiming a whole-disk scan time or a
+universal warm-query percentile. The engine publishes each 400-record name/metadata batch, so useful
+results do not wait for the full scan or OCR/content enrichment.
+
+### Spotlight prototype (historical, replaced)
+
+These earlier measurements are retained only to document why the prototype was replaced. They are
+system Spotlight control-query timings, not current end-to-end UI guarantees. The selected search
+root was the user's home folder.
 
 | Search | First usable result batch |
 |--------|---------------------------|
@@ -32,10 +57,4 @@ user's home folder.
 | Folder name | 89 ms, 20 results including 2 folders |
 | Indexed file contents | 146 ms, 8 content matches |
 
-These are development-machine observations, not universal guarantees. The current development
-install must recreate its saved security-scoped bookmark after adding the app-scoped bookmark
-entitlement before equivalent in-app measurements are valid. Regression targets are under 250 ms
-for the first recent batch and under 500 ms for a selective filename/content query when Spotlight
-and the saved grant are healthy. Commandly consumes `NSMetadataQueryGatheringProgress` only when
-the batch contains an authorized item with a usable path; it no longer publishes an empty UI from
-an incomplete metadata batch.
+The former `NSMetadataQuery` adapter and its per-keystroke gathering lifecycle no longer ship.

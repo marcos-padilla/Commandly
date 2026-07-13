@@ -61,19 +61,6 @@ final class WorkspaceFileActionService: FileActionServicing {
         }
     }
 
-    func sharingServices(for url: URL) async -> [FileActionOption] {
-        let services = NSSharingService.sharingServices(forItems: [url])
-        sharingServicesByID = Dictionary(
-            uniqueKeysWithValues: services.enumerated().map { index, service in
-                ("share.\(index).\(service.title)", service)
-            }
-        )
-        return sharingServicesByID.map { id, service in
-            FileActionOption(id: id, title: service.title)
-        }
-        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-    }
-
     func share(_ url: URL, withService optionID: String) async throws {
         guard let service = sharingServicesByID[optionID], service.canPerform(withItems: [url]) else {
             throw CommandlyError.notFound("Sharing service")
@@ -183,6 +170,25 @@ final class WorkspaceFileActionService: FileActionServicing {
             index += 1
         }
         return destination
+    }
+}
+
+/// `sharingServices(forItems:)` is the only AppKit API that can populate Commandly's
+/// explicitly requested nested sharing card. Apple deprecates custom share lists in favor
+/// of its standard menu item, but the replacement cannot supply rows to custom UI.
+@available(macOS, deprecated: 13)
+extension WorkspaceFileActionService {
+    func sharingServices(for url: URL) async -> [FileActionOption] {
+        let services = NSSharingService.sharingServices(forItems: [url])
+        sharingServicesByID = Dictionary(
+            uniqueKeysWithValues: services.enumerated().map { index, service in
+                ("share.\(index).\(service.title)", service)
+            }
+        )
+        return sharingServicesByID.map { id, service in
+            FileActionOption(id: id, title: service.title)
+        }
+        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 }
 
