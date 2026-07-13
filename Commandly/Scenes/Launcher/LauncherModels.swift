@@ -165,26 +165,6 @@ enum LauncherPlaceholderCatalog {
             action: .placeholder(message: "Calendar commands are not implemented yet.")
         ),
         LauncherItem(
-            id: "snip-link",
-            section: .commands,
-            title: "Create Quick Link",
-            subtitle: "Save a URL for later",
-            systemImage: "link",
-            badge: .command,
-            keywords: ["bookmark", "url"],
-            action: .placeholder(message: "Quick links are not implemented yet.")
-        ),
-        LauncherItem(
-            id: "window-left",
-            section: .commands,
-            title: "Move Window Left",
-            subtitle: "Requires Accessibility later",
-            systemImage: "rectangle.split.2x1",
-            badge: .placeholder,
-            keywords: ["window", "tile"],
-            action: .placeholder(message: "Window management is not implemented yet.")
-        ),
-        LauncherItem(
             id: "quit-commandly",
             section: .commands,
             title: "Quit Commandly",

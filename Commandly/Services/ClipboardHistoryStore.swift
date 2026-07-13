@@ -211,6 +211,52 @@ final class ClipboardHistoryStore {
         suppressRecordingThroughChangeCount = writtenChangeCount
     }
 
+    /// Creates a text history entry and makes it the current clipboard value.
+    ///
+    /// This is an explicit user action. The content remains in memory and is never logged.
+    @discardableResult
+    func createTextEntry(_ text: String) -> UUID? {
+        guard let normalized = normalizedText(text) else { return nil }
+        let entry = makeTextEntry(text: normalized)
+        insertCaptured(entry)
+        writeTextToPasteboard(normalized)
+        return entry.id
+    }
+
+    /// Replaces an existing text entry and makes the edited value current on the clipboard.
+    @discardableResult
+    func updateTextEntry(id: UUID, text: String) -> Bool {
+        guard let normalized = normalizedText(text),
+              let index = entries.firstIndex(where: { $0.id == id }),
+              entries[index].contentType == .text else {
+            return false
+        }
+        let original = entries[index]
+        entries[index] = ClipboardHistoryEntry(
+            id: original.id,
+            createdAt: original.createdAt,
+            contentType: .text,
+            preview: Self.preview(for: normalized),
+            text: normalized,
+            imageTIFFData: nil,
+            fileURLs: [],
+            sourceAppName: original.sourceAppName,
+            sourceBundleIdentifier: original.sourceBundleIdentifier,
+            enrichmentStatus: .notNeeded
+        )
+        writeTextToPasteboard(normalized)
+        return true
+    }
+
+    /// Appends text to the current string clipboard, records the combined value, and copies it.
+    @discardableResult
+    func appendTextToCurrentClipboard(_ text: String) -> UUID? {
+        guard let normalized = normalizedText(text) else { return nil }
+        let current = pasteboard.string(forType: .string) ?? ""
+        let separator = current.isEmpty || current.hasSuffix("\n") ? "" : "\n"
+        return createTextEntry(current + separator + normalized)
+    }
+
     func delete(id: UUID) {
         enrichmentCoordinator.cancel(id: id)
         entries.removeAll { $0.id == id }
@@ -261,6 +307,44 @@ final class ClipboardHistoryStore {
         }
     }
 
+    private func normalizedText(_ text: String) -> String? {
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return nil
+        }
+        return text
+    }
+
+    private func makeTextEntry(text: String) -> ClipboardHistoryEntry {
+        ClipboardHistoryEntry(
+            id: uuidProvider(),
+            createdAt: dateProvider(),
+            contentType: .text,
+            preview: Self.preview(for: text),
+            text: text,
+            imageTIFFData: nil,
+            fileURLs: [],
+            sourceAppName: "Commandly",
+            sourceBundleIdentifier: Bundle.main.bundleIdentifier,
+            enrichmentStatus: .notNeeded
+        )
+    }
+
+    private func writeTextToPasteboard(_ text: String) {
+        suppressRecordingThroughChangeCount = Int.max
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        let writtenChangeCount = pasteboard.changeCount
+        lastChangeCount = writtenChangeCount
+        suppressRecordingThroughChangeCount = writtenChangeCount
+    }
+
+    private static func preview(for text: String) -> String {
+        let flattened = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return flattened.count > 120 ? String(flattened.prefix(117)) + "…" : flattened
+    }
+
     private func captureCurrentPasteboard() -> ClipboardHistoryEntry? {
         let frontApp = NSWorkspace.shared.frontmostApplication
         let sourceName = frontApp?.localizedName
@@ -305,15 +389,11 @@ final class ClipboardHistoryStore {
             .trimmingCharacters(in: .whitespacesAndNewlines),
            string.isEmpty == false
         {
-            let preview = string
-                .replacingOccurrences(of: "\n", with: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let clipped = preview.count > 120 ? String(preview.prefix(117)) + "…" : preview
             return ClipboardHistoryEntry(
                 id: uuidProvider(),
                 createdAt: dateProvider(),
                 contentType: .text,
-                preview: clipped,
+                preview: Self.preview(for: string),
                 text: string,
                 imageTIFFData: nil,
                 fileURLs: [],

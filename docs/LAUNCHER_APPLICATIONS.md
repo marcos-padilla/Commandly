@@ -1,8 +1,37 @@
 # Launcher Applications
 
 Commandly treats each built-in capability as a launcher application. Clipboard History, File Search,
-and action-only entries such as Open Settings all use the same registration boundary without forcing
-their internal screens or domain behavior into a common feature model.
+local productivity tools, system utilities, and action-only entries such as Open Settings all use the
+same registration boundary without forcing their internal screens or domain behavior into a common
+feature model.
+
+## Current built-ins
+
+`LauncherApplicationRegistry.makeBuiltIn()` currently assembles these application surfaces:
+
+- **Clipboard History** — browse, search, copy, create, edit, append, delete, and clear captured
+  pasteboard entries. Text editing writes the result back to the pasteboard without logging content.
+- **File Search** — search authorized folders, preview files, and run native open, sharing, Finder,
+  clipboard, duplicate, copy, move, trash, and shortcut actions.
+- **Recent Downloads** — list the newest top-level files in Downloads and explicitly open, reveal,
+  or copy the selected file through a read-only sandbox entitlement.
+- **Calculation History** — browse, filter, copy, delete, and clear successful results recorded during
+  the current calculator session.
+- **Timers & Focus** — run multiple named timers, including 25-minute focus and 5-minute break
+  presets, with pause, resume, reset, delete, and an optional local completion sound.
+- **Productivity Library** — persistent local snippets, quick notes, Quicklinks, and emoji keywords.
+  Snippets can expand `{{clipboard}}`; Quicklinks validate web, file, folder, and application deep-link
+  targets before opening; native sharing is available for saved items.
+- **System Activity** — inspect aggregate CPU, memory, storage, uptime, and thermal state; switch to,
+  quit, force quit, or safely quit multiple regular GUI applications.
+- **Window Layouts** — apply 58 native presets to the active window or save custom normalized layouts.
+  Accessibility is requested only when the user applies a layout.
+- **Emoji Search**, **Convert Text Case**, **Color Tools**, **Dictionary**, **Search Fonts**, and
+  **Typing Practice** — focused, offline utilities backed by macOS frameworks and local data.
+- **Open Settings** — action-only navigation into Commandly settings.
+
+These names and workflows are Commandly's own. The registry does not load or imitate another
+launcher's source code, assets, branding, or exact interface.
 
 ## Architecture
 

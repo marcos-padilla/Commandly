@@ -217,10 +217,29 @@ final class LauncherApplicationRegistry {
     static func makeBuiltIn(
         clipboardHistoryStore: ClipboardHistoryStore = ClipboardHistoryStore(),
         fileSearchServices: FileSearchApplicationServices = .inMemory,
+        calculatorSessionStore: CalculatorSessionStore = CalculatorSessionStore(),
+        downloadsServices: DownloadsApplicationServices? = nil,
+        timerStore: TimerStore = TimerStore(),
+        productivityLibraryServices: ProductivityLibraryApplicationServices = .inMemory,
+        offlineToolsServices: OfflineToolsServices? = nil,
+        windowLayoutsServices: WindowLayoutsApplicationServices = WindowLayoutsApplicationServices(
+            layoutService: InMemoryWindowLayoutService(),
+            customStore: InMemoryCustomWindowLayoutStore()
+        ),
+        systemActivityService: any SystemActivityServicing = NativeSystemActivityService(),
         preferencesStore: any LauncherApplicationPreferencesStoring =
             InMemoryLauncherApplicationPreferencesStore()
     ) -> LauncherApplicationRegistry {
         let registry = LauncherApplicationRegistry(preferencesStore: preferencesStore)
+        let resolvedOfflineToolsServices = offlineToolsServices ?? OfflineToolsServices(
+            pasteboard: fileSearchServices.pasteboard
+        )
+        let resolvedDownloadsServices = downloadsServices ?? DownloadsApplicationServices(
+            provider: NativeRecentDownloadsService(),
+            urlOpener: fileSearchServices.urlOpener,
+            fileRevealer: fileSearchServices.fileRevealer,
+            pasteboard: fileSearchServices.pasteboard
+        )
         do {
             try registry.register(BuiltInLauncherApplicationGroup.catalog)
             try registry.register(OpenSettingsApplication())
@@ -230,6 +249,24 @@ final class LauncherApplicationRegistry {
             try registry.register(
                 FileSearchApplication(services: fileSearchServices)
             )
+            try registry.register(
+                CalculatorHistoryApplication(
+                    sessionStore: calculatorSessionStore,
+                    pasteboard: fileSearchServices.pasteboard
+                )
+            )
+            try registry.register(DownloadsApplication(services: resolvedDownloadsServices))
+            try registry.register(TimersApplication(store: timerStore))
+            try registry.register(
+                ProductivityLibraryApplication(services: productivityLibraryServices)
+            )
+            try registry.register(SystemActivityApplication(service: systemActivityService))
+            try registry.register(WindowLayoutsApplication(services: windowLayoutsServices))
+            for tool in OfflineToolKind.allCases {
+                try registry.register(
+                    OfflineToolsApplication(tool: tool, services: resolvedOfflineToolsServices)
+                )
+            }
         } catch {
             preconditionFailure("Built-in launcher application definitions must be valid: \(error)")
         }

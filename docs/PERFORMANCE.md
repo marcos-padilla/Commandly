@@ -4,12 +4,12 @@ These are **future targets**, not measured results. Do not claim they are met un
 
 | Metric | Initial target | Notes |
 |--------|----------------|-------|
-| Cold launch to interactive UI | < 400 ms on reference Apple silicon | Placeholder UI only today |
-| Warm launcher open | < 50 ms | Launcher not implemented |
-| Keyboard response | < 16 ms input-to-feedback | No palette yet |
-| Search result first paint | < 50 ms for local providers | Contracts only |
+| Cold launch to interactive UI | < 400 ms on reference Apple silicon | Full app shell exists; end-to-end launch is not benchmarked |
+| Warm launcher open | < 50 ms | Implemented; not benchmarked |
+| Keyboard response | < 16 ms input-to-feedback | Keyboard-first launcher exists; not benchmarked |
+| Search result first paint | < 50 ms for local providers | Local providers ship; only the File Search measurements below are recorded |
 | Memory while idle | < 80 MB resident | Not measured |
-| CPU while idle | ~0% after settling | No background work in foundation |
+| CPU while idle | ~0% after settling | Not measured; clipboard monitoring, auto-quit, and active timers have bounded background work |
 | Search cancellation | Cancel in-flight work immediately on query change | Required by SearchKit design |
 
 ## Engineering guidance

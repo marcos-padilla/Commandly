@@ -109,7 +109,9 @@ struct ClipboardHistoryView: View {
 
     private var detailPane: some View {
         Group {
-            if let entry = viewModel.selectedEntry {
+            if let editorMode = viewModel.editorMode {
+                editorPane(mode: editorMode)
+            } else if let entry = viewModel.selectedEntry {
                 VStack(alignment: .leading, spacing: 0) {
                     ScrollView {
                         preview(for: entry)
@@ -133,6 +135,53 @@ struct ClipboardHistoryView: View {
                 )
             }
         }
+    }
+
+    private func editorPane(mode: ClipboardHistoryEditorMode) -> some View {
+        VStack(alignment: .leading, spacing: density.spacing(.sm)) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: density.spacing(.xxs)) {
+                    Text(mode.title)
+                        .commandlyFont(size: 15, weight: .semibold)
+                    Text(mode.helpText)
+                        .commandlyFont(size: 11)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: density.spacing(.sm))
+                Button("Cancel") {
+                    viewModel.cancelEditor()
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Cancel clipboard editor")
+            }
+
+            TextEditor(text: $viewModel.editorText)
+                .commandlyFont(size: 13, design: .monospaced)
+                .scrollContentBackground(.hidden)
+                .padding(density.spacing(.xs))
+                .background(Color.primary.opacity(0.055))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                        .strokeBorder(LauncherPalette.separator, lineWidth: 1)
+                }
+                .accessibilityLabel(mode.title)
+
+            HStack {
+                Text("⌘↵ Save")
+                    .commandlyFont(size: 10, weight: .medium)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Button("Save") {
+                    viewModel.saveEditor()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.editorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .keyboardShortcut(.return, modifiers: [.command])
+            }
+        }
+        .padding(density.spacing(.md))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -200,9 +249,24 @@ struct ClipboardHistoryView: View {
 
     private func information(for entry: ClipboardHistoryEntry) -> some View {
         VStack(alignment: .leading, spacing: density.spacing(.sm)) {
-            Text("Information")
-                .commandlyFont(size: 11, weight: .semibold)
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Information")
+                    .commandlyFont(size: 11, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if entry.contentType == .text {
+                    Button("Edit") {
+                        viewModel.beginEditingSelected()
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Edit clipboard entry")
+                }
+                Button("Append") {
+                    viewModel.beginAppend()
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Append text to current clipboard")
+            }
 
             infoRow(label: "Source", value: entry.sourceAppName ?? "Unknown")
             infoRow(label: "Content type", value: entry.contentType.title)

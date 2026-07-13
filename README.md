@@ -4,7 +4,10 @@ Commandly is intended to become a fast, keyboard-first productivity launcher for
 
 ## Current status
 
-**Foundation only.** The repository currently provides project structure, modular architecture, documentation, scripts, and a placeholder screen. Launcher features are not implemented.
+**Active native implementation.** The foundation now includes a working launcher, application and
+file search, recent downloads, calculator, clipboard history, application actions, window layouts, timers, local
+productivity items, system activity, and focused offline utilities. Some planned capabilities remain
+unimplemented; the native feature matrix documents the exact boundary without placeholder claims.
 
 ## Technology stack
 
@@ -78,8 +81,8 @@ AGENTS.md                  Rules for future AI agents and contributors
 
 ## Architecture summary
 
-The app target is a thin composition root. Domain and infrastructure contracts live in local Swift packages with one-directional dependencies. Concrete services are assembled in `Commandly/Composition`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The app target is a thin composition root. Domain and infrastructure contracts live in local Swift packages with one-directional dependencies. Concrete services are assembled in `Commandly/Composition`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/NATIVE_FEATURES.md](docs/NATIVE_FEATURES.md).
 
 ## Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md). Phase 1 (project foundation) is the current scope.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for completed and future phases.

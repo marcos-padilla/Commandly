@@ -3,6 +3,39 @@ import Observation
 import AppKit
 import CommandKit
 
+enum ClipboardHistoryEditorMode: Equatable {
+    case newEntry
+    case edit(UUID)
+    case append
+
+    var title: String {
+        switch self {
+        case .newEntry: return "New Clipboard Entry"
+        case .edit: return "Edit Clipboard Entry"
+        case .append: return "Append to Clipboard"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .newEntry:
+            return "Save a reusable text value to history and make it the current clipboard."
+        case .edit:
+            return "Update this history entry and make the edited value current."
+        case .append:
+            return "Add this text after the current string clipboard, separated by a new line."
+        }
+    }
+}
+
+enum ClipboardHistoryActionID {
+    static let newEntry = CommandActionID(rawValue: "clipboard.new-entry")
+    static let editEntry = CommandActionID(rawValue: "clipboard.edit-entry")
+    static let append = CommandActionID(rawValue: "clipboard.append")
+    static let saveEditor = CommandActionID(rawValue: "clipboard.save-editor")
+    static let cancelEditor = CommandActionID(rawValue: "clipboard.cancel-editor")
+}
+
 enum ClipboardHistoryFilter: String, CaseIterable, Identifiable, Sendable {
     case all
     case text
@@ -48,6 +81,8 @@ final class ClipboardHistoryViewModel {
     }
     var selectedID: UUID?
     var showsActionsMenu = false
+    var editorText = ""
+    private(set) var editorMode: ClipboardHistoryEditorMode?
     private(set) var statusMessage: String?
     private(set) var shouldScrollToSelection = false
     private(set) var inputDevice: LauncherInputDevice = .pointer
@@ -115,6 +150,22 @@ final class ClipboardHistoryViewModel {
     }
 
     var footerActions: [CommandActionDescriptor] {
+        if editorMode != nil {
+            return [
+                CommandActionDescriptor(
+                    id: ClipboardHistoryActionID.saveEditor,
+                    title: "Save",
+                    isPrimary: true,
+                    keyHint: .return,
+                    isEnabled: editorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ),
+                CommandActionDescriptor(
+                    id: ClipboardHistoryActionID.cancelEditor,
+                    title: "Cancel",
+                    isEnabled: true
+                )
+            ]
+        }
         let hasSelection = selectedEntry != nil
         return [
             CommandActionDescriptor(
@@ -135,6 +186,21 @@ final class ClipboardHistoryViewModel {
 
     var menuActions: [CommandActionDescriptor] {
         [
+            CommandActionDescriptor(
+                id: ClipboardHistoryActionID.newEntry,
+                title: "New Text Entry",
+                isEnabled: true
+            ),
+            CommandActionDescriptor(
+                id: ClipboardHistoryActionID.append,
+                title: "Append to Clipboard",
+                isEnabled: true
+            ),
+            CommandActionDescriptor(
+                id: ClipboardHistoryActionID.editEntry,
+                title: "Edit Text Entry",
+                isEnabled: selectedEntry?.contentType == .text
+            ),
             CommandActionDescriptor(
                 id: BuiltInCommandActionID.copy,
                 title: "Copy to Clipboard",
@@ -203,6 +269,16 @@ final class ClipboardHistoryViewModel {
 
     func perform(_ actionID: CommandActionID) {
         switch actionID {
+        case ClipboardHistoryActionID.newEntry:
+            beginNewEntry()
+        case ClipboardHistoryActionID.editEntry:
+            beginEditingSelected()
+        case ClipboardHistoryActionID.append:
+            beginAppend()
+        case ClipboardHistoryActionID.saveEditor:
+            saveEditor()
+        case ClipboardHistoryActionID.cancelEditor:
+            cancelEditor()
         case BuiltInCommandActionID.copy:
             copySelected()
         case BuiltInCommandActionID.delete:
@@ -241,12 +317,67 @@ final class ClipboardHistoryViewModel {
         showsActionsMenu = false
     }
 
+    func beginNewEntry() {
+        editorText = ""
+        editorMode = .newEntry
+        showsActionsMenu = false
+        statusMessage = nil
+    }
+
+    func beginEditingSelected() {
+        guard let entry = selectedEntry, entry.contentType == .text else { return }
+        editorText = entry.text ?? entry.preview
+        editorMode = .edit(entry.id)
+        showsActionsMenu = false
+        statusMessage = nil
+    }
+
+    func beginAppend() {
+        editorText = ""
+        editorMode = .append
+        showsActionsMenu = false
+        statusMessage = nil
+    }
+
+    func saveEditor() {
+        guard let editorMode else { return }
+        let savedID: UUID?
+        switch editorMode {
+        case .newEntry:
+            savedID = store.createTextEntry(editorText)
+        case .edit(let id):
+            savedID = store.updateTextEntry(id: id, text: editorText) ? id : nil
+        case .append:
+            savedID = store.appendTextToCurrentClipboard(editorText)
+        }
+        guard let savedID else {
+            statusMessage = "Enter some text before saving."
+            return
+        }
+        self.editorMode = nil
+        editorText = ""
+        query = ""
+        filter = .all
+        selectedID = savedID
+        statusMessage = "Clipboard updated."
+    }
+
+    func cancelEditor() {
+        editorMode = nil
+        editorText = ""
+        statusMessage = nil
+    }
+
     func goBack() {
         onGoBack()
     }
 
     /// Clears in-app search before the shell returns home.
     func handleEscape() -> Bool {
+        if editorMode != nil {
+            cancelEditor()
+            return true
+        }
         if query.isEmpty == false {
             query = ""
             return true

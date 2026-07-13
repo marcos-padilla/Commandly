@@ -50,3 +50,10 @@ so `make verify` remains safe for non-interactive environments.
 - App container bootstrap and router updates
 - Typed launcher-application hierarchy, duplicate/missing-parent rejection, and branch-free dynamic session launch
 - Alias discovery, inherited enablement, schema-driven session defaults, and preferences persistence
+- Clipboard create/edit/append workflows and calculation-history lifecycle
+- Timer drift, pause/resume/reset, focus presets, and shared application-session lifetime
+- Transactional Productivity Library persistence, safe Quicklinks, clipboard templates, and sharing data
+- Offline emoji/text/color/dictionary/font/typing logic with injected native boundaries
+- Window-layout catalog geometry, custom persistence, and application dispatch without real permission prompts
+- System resource/application models, protected quit-all behavior, and confirmation flows without terminating real apps
+- Recent Downloads ordering/filtering and open/reveal/file-copy actions against temporary files and injected adapters

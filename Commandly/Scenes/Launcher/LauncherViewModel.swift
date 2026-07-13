@@ -135,7 +135,8 @@ final class LauncherViewModel {
                 fileActionService: fileActionService,
                 finderInfoPresenter: finderInfoPresenter,
                 pasteboard: pasteboard
-            )
+            ),
+            calculatorSessionStore: calculatorSession
         )
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }

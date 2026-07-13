@@ -33,7 +33,13 @@ final class AppRuntime {
     @ObservationIgnored
     let fileSearchService: PersistentFileSearchService
     @ObservationIgnored
+    let calculatorSessionStore: CalculatorSessionStore
+    @ObservationIgnored
     private let fileSearchApplicationServices: FileSearchApplicationServices
+    @ObservationIgnored
+    private let windowLayoutService: AccessibilityWindowLayoutService
+    @ObservationIgnored
+    private let systemActivityProtectionTracker: SystemActivityProtectionTracker
     @ObservationIgnored
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
@@ -65,18 +71,45 @@ final class AppRuntime {
         )
         #endif
         self.fileSearchService = fileSearchService
+        let calculatorSessionStore = CalculatorSessionStore()
+        self.calculatorSessionStore = calculatorSessionStore
+        let pasteboard = SystemPasteboard()
         let fileSearchApplicationServices = FileSearchApplicationServices(
             searchService: fileSearchService,
             urlOpener: WorkspaceURLOpener(),
             fileRevealer: WorkspaceFileRevealer(),
             fileActionService: WorkspaceFileActionService(),
             finderInfoPresenter: FinderAppleScriptInfoPresenter(),
-            pasteboard: SystemPasteboard()
+            pasteboard: pasteboard
         )
         self.fileSearchApplicationServices = fileSearchApplicationServices
+        let productivityLibraryServices = ProductivityLibraryApplicationServices(
+            persistence: JSONProductivityLibraryStore(),
+            pasteboard: pasteboard,
+            urlOpener: fileSearchApplicationServices.urlOpener
+        )
+        let offlineToolsServices = OfflineToolsServices(pasteboard: pasteboard)
+        let windowLayoutService = AccessibilityWindowLayoutService(
+            permissionService: container.dependencies.permissionService
+        )
+        self.windowLayoutService = windowLayoutService
+        let windowLayoutsServices = WindowLayoutsApplicationServices(
+            layoutService: windowLayoutService,
+            customStore: UserDefaultsCustomWindowLayoutStore()
+        )
+        let systemActivityProtectionTracker = SystemActivityProtectionTracker()
+        self.systemActivityProtectionTracker = systemActivityProtectionTracker
         self.applicationRegistry = .makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: fileSearchApplicationServices,
+            calculatorSessionStore: calculatorSessionStore,
+            timerStore: TimerStore(),
+            productivityLibraryServices: productivityLibraryServices,
+            offlineToolsServices: offlineToolsServices,
+            windowLayoutsServices: windowLayoutsServices,
+            systemActivityService: NativeSystemActivityService(
+                protectionTracker: systemActivityProtectionTracker
+            ),
             preferencesStore: container.dependencies.launcherApplicationPreferencesStore
         )
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
@@ -151,6 +184,7 @@ final class AppRuntime {
             finderInfoPresenter: fileSearchApplicationServices.finderInfoPresenter,
             uninstallDiscoverer: WorkspaceApplicationUninstallDiscoverer(),
             pasteboard: fileSearchApplicationServices.pasteboard,
+            calculatorSession: calculatorSessionStore,
             onDismiss: { [weak self] in
                 self?.hideLauncher()
             },
@@ -180,6 +214,8 @@ final class AppRuntime {
 
     func showLauncher() {
         guard showsOnboarding == false else { return }
+        systemActivityProtectionTracker.captureFrontmostApplication()
+        windowLayoutService.captureTargetApplication()
         let alreadyShowing = showsLauncher
         showsLauncher = true
         openLauncherWindow?()
