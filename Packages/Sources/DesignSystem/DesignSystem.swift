@@ -85,6 +85,12 @@ public enum LayoutConstants {
     public static let onboardingIdealHeight: CGFloat = 720
     /// Floating Shelf board edge length (square).
     public static let shelfBoardSize: CGFloat = 188
+    /// Width of Shelf's integrated item-detail board.
+    public static let shelfDetailWidth: CGFloat = 420
+    /// Height of Shelf's integrated item-detail board.
+    public static let shelfDetailHeight: CGFloat = 360
+    /// Height reserved for the direct-action targets shown during an incoming drag.
+    public static let shelfInstantActionsHeight: CGFloat = 58
     /// Margin from the screen edge when placing Shelf in a preferred corner.
     public static let shelfScreenMargin: CGFloat = 28
     /// Continuous corner radius for the floating Shelf board.

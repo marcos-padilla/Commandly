@@ -371,6 +371,8 @@ public protocol FileSystemAccessing: Sendable {
 public protocol PasteboardAccessing: Sendable {
     /// Reads a string from the pasteboard, if present.
     func readString() async -> String?
+    /// Reads file URLs from the pasteboard in pasteboard order.
+    func readFileURLs() async -> [URL]
     /// Writes a string to the pasteboard.
     func writeString(_ string: String) async
     /// Writes file URLs so Finder and other apps can paste the files themselves.
@@ -378,6 +380,11 @@ public protocol PasteboardAccessing: Sendable {
 }
 
 extension PasteboardAccessing {
+    /// Default for pasteboards that do not expose file URL reads.
+    public func readFileURLs() async -> [URL] {
+        []
+    }
+
     public func writeFileURLs(_ urls: [URL]) async {
         if let first = urls.first {
             await writeString(first.path)

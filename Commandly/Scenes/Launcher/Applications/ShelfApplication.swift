@@ -7,7 +7,7 @@ struct ShelfApplication: LauncherApplication {
     static let manifest = CommandManifest(
         id: applicationID,
         title: "Shelf",
-        subtitle: "Stage files and snippets on a temporary local board",
+        subtitle: "Stage files and folders on a temporary local board",
         systemImage: "square.stack.3d.up",
         category: .productivity,
         mode: .action,
@@ -44,7 +44,7 @@ struct ShelfApplication: LauncherApplication {
             id: "clear-when-empty",
             variable: "clearWhenEmpty",
             title: "Close when empty",
-            description: "Dismiss the shelf automatically after the last staged item leaves. Applies when staging ships.",
+            description: "Dismiss the shelf automatically after its final staged item is removed.",
             kind: .toggle,
             defaultValue: .boolean(false)
         ),
@@ -67,7 +67,7 @@ struct ShelfApplication: LauncherApplication {
             id: "drop-sound",
             variable: "playDropSound",
             title: "Play drop sound",
-            description: "Play a local macOS sound when an item is staged. Sound playback lands with staging.",
+            description: "Play a local macOS sound after a file or folder is staged.",
             kind: .toggle,
             defaultValue: .boolean(false)
         )

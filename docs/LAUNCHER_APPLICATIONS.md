@@ -19,9 +19,10 @@ feature model.
   the current calculator session.
 - **Timers & Focus** — run multiple named timers, including 25-minute focus and 5-minute break
   presets, with pause, resume, reset, delete, and an optional local completion sound.
-- **Shelf** — floating staging board opened from the menu bar or launcher, with Applications settings
-  for corner placement and future staging preferences. Drag-and-drop item staging is not
-  implemented yet.
+- **Shelf** — one temporary floating board for file/folder URL references, opened from the menu bar
+  or launcher. It supports drag-in and multi-item drag-out, clipboard file URLs, native previews and
+  file actions, direct AirDrop/Messages/Mail drop targets, and schema-driven visibility, empty-close,
+  placement, and sound settings. Boards are not persisted or restored.
 - **Productivity Library** — persistent local snippets, quick notes, Quicklinks, and emoji keywords.
   Snippets can expand `{{clipboard}}`; Quicklinks validate web, file, folder, and application deep-link
   targets before opening; native sharing is available for saved items.

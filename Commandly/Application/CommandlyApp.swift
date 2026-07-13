@@ -283,30 +283,64 @@ private struct ShelfWindowHost: View {
         }
         .shelfWindowChrome(
             preferredCorner: runtime.shelfPreferredCorner,
+            keepVisibleWhenInactive: runtime.shelfConfiguration.keepVisibleWhenInactive,
             interaction: interaction,
             onEscape: {
                 runtime.hideShelf()
                 return true
-            }
+            },
+            onKeyDown: handleKeyDown
         )
         .onAppear {
             runtime.showsShelf = true
-            boardModel = ShelfBoardModel(
-                entryMode: runtime.shelfEntryMode,
-                onClose: { runtime.hideShelf() }
-            )
+            boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
         }
         .onChange(of: runtime.shelfEntryMode) { _, mode in
-            boardModel = ShelfBoardModel(
-                entryMode: mode,
-                onClose: { runtime.hideShelf() }
-            )
+            _ = mode
+            boardModel?.tearDown()
+            boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
         }
         .onDisappear {
+            boardModel?.tearDown()
             if runtime.showsShelf {
                 runtime.showsShelf = false
             }
         }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard let boardModel else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+        if event.keyCode == 49, modifiers.isEmpty {
+            boardModel.previewSelected()
+            return true
+        }
+        if [51, 117].contains(event.keyCode), modifiers.isEmpty {
+            boardModel.clear()
+            return true
+        }
+        if event.keyCode == 48, modifiers.isEmpty, boardModel.items.isEmpty == false {
+            boardModel.isShowingDetails.toggle()
+            return true
+        }
+        if event.keyCode == 8, modifiers == .command {
+            Task {
+                await boardModel.copyItemsToClipboard()
+            }
+            return true
+        }
+        if event.keyCode == 9, modifiers == .command {
+            Task {
+                await boardModel.addFromClipboard()
+            }
+            return true
+        }
+        if event.keyCode == 13, modifiers == .command {
+            runtime.hideShelf()
+            return true
+        }
+        return false
     }
 }
 

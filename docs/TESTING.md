@@ -57,6 +57,12 @@ so `make verify` remains safe for non-interactive environments.
 - Window-layout catalog geometry, custom persistence, and application dispatch without real permission prompts
 - System resource/application models, protected quit-all behavior, and confirmation flows without terminating real apps
 - Recent Downloads ordering/filtering and open/reveal/file-copy actions against temporary files and injected adapters
+- Shelf URL staging and metadata enrichment, duplicate suppression, selection and copy-only drag-out
+  retention, clipboard seeding, direct native-share routing, empty-close/drop-sound settings,
+  non-destructive reference removal, preview dispatch, semantic homogeneous/mixed item labels,
+  resilient incoming-drop counts, outgoing/incoming drag isolation, explicit-handle window movement,
+  rounded AppKit hosting-layer masking, custom shadow ownership, and file-action routing through
+  in-memory adapters
 - Documentation registration coverage, structured-content validation, automatic catalog inclusion,
   disabled-app discoverability, live alias/hotkey metadata, full-text search, selection repair, and
   launcher-menu routing

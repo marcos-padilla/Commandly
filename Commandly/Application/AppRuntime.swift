@@ -54,6 +54,8 @@ final class AppRuntime {
     private let autoQuitService: AutoQuitService
     @ObservationIgnored
     private let shelfLaunchController: ShelfLaunchController
+    @ObservationIgnored
+    private let shelfApplicationServices: ShelfApplicationServices
 
     init(container: AppContainer = .bootstrap()) {
         self.container = container
@@ -93,6 +95,15 @@ final class AppRuntime {
             pasteboard: pasteboard
         )
         self.fileSearchApplicationServices = fileSearchApplicationServices
+        self.shelfApplicationServices = ShelfApplicationServices(
+            metadataReader: WorkspaceFileResourceMetadataReader(),
+            fileActions: WorkspaceShelfFileActionService(),
+            fileRevealer: fileSearchApplicationServices.fileRevealer,
+            urlOpener: fileSearchApplicationServices.urlOpener,
+            pasteboard: pasteboard,
+            previewPresenter: WorkspaceQuickLookPresenter(),
+            dropFeedback: NativeShelfDropFeedbackPlayer()
+        )
         let productivityLibraryServices = ProductivityLibraryApplicationServices(
             persistence: JSONProductivityLibraryStore(),
             pasteboard: pasteboard,
@@ -276,11 +287,35 @@ final class AppRuntime {
 
     /// Preferred corner configured for Shelf in Settings → Applications.
     var shelfPreferredCorner: ShelfPreferredCorner {
-        let rawValue = applicationRegistry
-            .resolvedSettings(for: ShelfApplication.applicationID)?
-            .value(for: "preferredCorner")?
-            .textValue
-        return ShelfPreferredCorner.resolve(rawValue)
+        shelfConfiguration.preferredCorner
+    }
+
+    /// Resolved, non-secret behavior for a newly opened temporary Shelf board.
+    var shelfConfiguration: ShelfConfiguration {
+        let settings = applicationRegistry.resolvedSettings(for: ShelfApplication.applicationID)
+        return ShelfConfiguration(
+            keepVisibleWhenInactive: settings?
+                .value(for: "keepVisibleWhenInactive")?
+                .booleanValue ?? ShelfConfiguration.default.keepVisibleWhenInactive,
+            clearWhenEmpty: settings?
+                .value(for: "clearWhenEmpty")?
+                .booleanValue ?? ShelfConfiguration.default.clearWhenEmpty,
+            preferredCorner: ShelfPreferredCorner.resolve(
+                settings?.value(for: "preferredCorner")?.textValue
+            ),
+            playDropSound: settings?
+                .value(for: "playDropSound")?
+                .booleanValue ?? ShelfConfiguration.default.playDropSound
+        )
+    }
+
+    func makeShelfBoardModel(onClose: @escaping () -> Void) -> ShelfBoardModel {
+        ShelfBoardModel(
+            entryMode: shelfEntryMode,
+            configuration: shelfConfiguration,
+            services: shelfApplicationServices,
+            onClose: onClose
+        )
     }
 
     func showFloatingShelf(entryMode: ShelfEntryMode) {

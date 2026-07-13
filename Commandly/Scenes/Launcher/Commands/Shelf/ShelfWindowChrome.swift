@@ -5,14 +5,18 @@ import SwiftUI
 /// Configures Shelf as a small floating, draggable board without traffic lights.
 struct ShelfWindowConfigurator: NSViewRepresentable {
     var preferredCorner: ShelfPreferredCorner
+    var keepVisibleWhenInactive: Bool
     var interaction: ShelfBoardInteractionState
     var onEscape: () -> Bool
+    var onKeyDown: (NSEvent) -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             preferredCorner: preferredCorner,
+            keepVisibleWhenInactive: keepVisibleWhenInactive,
             interaction: interaction,
-            onEscape: onEscape
+            onEscape: onEscape,
+            onKeyDown: onKeyDown
         )
     }
 
@@ -20,16 +24,20 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         let view = NSView(frame: .zero)
         view.isHidden = true
         context.coordinator.preferredCorner = preferredCorner
+        context.coordinator.keepVisibleWhenInactive = keepVisibleWhenInactive
         context.coordinator.interaction = interaction
         context.coordinator.onEscape = onEscape
+        context.coordinator.onKeyDown = onKeyDown
         scheduleConfigure(for: view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.preferredCorner = preferredCorner
+        context.coordinator.keepVisibleWhenInactive = keepVisibleWhenInactive
         context.coordinator.interaction = interaction
         context.coordinator.onEscape = onEscape
+        context.coordinator.onKeyDown = onKeyDown
         scheduleConfigure(for: nsView, coordinator: context.coordinator)
     }
 
@@ -47,6 +55,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
     static func applyChrome(
         to window: NSWindow,
         preferredCorner: ShelfPreferredCorner,
+        keepVisibleWhenInactive: Bool,
         placeIfNeeded: inout Bool
     ) {
         window.identifier = CommandlyWindowIdentifier.shelf
@@ -54,12 +63,13 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.isMovableByWindowBackground = true
+        window.isMovable = true
+        window.isMovableByWindowBackground = false
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.hasShadow = true
+        window.hasShadow = false
         window.level = .floating
-        window.hidesOnDeactivate = false
+        window.hidesOnDeactivate = keepVisibleWhenInactive == false
         window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
         window.animationBehavior = .utilityWindow
         window.toolbar = nil
@@ -78,6 +88,10 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         }
     }
 
+    /// Clips the private SwiftUI hosting and vibrancy layers to Shelf's visible shape.
+    ///
+    /// A SwiftUI `clipShape` alone does not mask every AppKit-owned layer. Keeping the host layer
+    /// rounded prevents rectangular pixels from appearing outside Shelf's continuous corners.
     @MainActor
     static func applyRoundedContentMask(to window: NSWindow) {
         guard let contentView = window.contentView else { return }
@@ -124,30 +138,33 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         window.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 
+    /// AppKit owns these monitor callbacks. Every mutation is explicitly marshalled to MainActor.
     final class Coordinator: @unchecked Sendable {
         var preferredCorner: ShelfPreferredCorner
+        var keepVisibleWhenInactive: Bool
         var interaction: ShelfBoardInteractionState
         var onEscape: () -> Bool
+        var onKeyDown: (NSEvent) -> Bool
         private weak var window: NSWindow?
         private var escapeKeyMonitor: Any?
-        private var mouseDownMonitor: Any?
-        private var mouseDraggedMonitor: Any?
-        private var mouseUpMonitor: Any?
         private var becomeKeyObserver: NSObjectProtocol?
         private var resignKeyObserver: NSObjectProtocol?
         private var becomeActiveObserver: NSObjectProtocol?
         private var resignActiveObserver: NSObjectProtocol?
         private var needsPlacement = true
-        private var isTrackingDrag = false
 
         init(
             preferredCorner: ShelfPreferredCorner,
+            keepVisibleWhenInactive: Bool,
             interaction: ShelfBoardInteractionState,
-            onEscape: @escaping () -> Bool
+            onEscape: @escaping () -> Bool,
+            onKeyDown: @escaping (NSEvent) -> Bool
         ) {
             self.preferredCorner = preferredCorner
+            self.keepVisibleWhenInactive = keepVisibleWhenInactive
             self.interaction = interaction
             self.onEscape = onEscape
+            self.onKeyDown = onKeyDown
         }
 
         @MainActor
@@ -157,6 +174,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             ShelfWindowConfigurator.applyChrome(
                 to: window,
                 preferredCorner: preferredCorner,
+                keepVisibleWhenInactive: keepVisibleWhenInactive,
                 placeIfNeeded: &needsPlacement
             )
             refreshFocusState()
@@ -168,7 +186,6 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             removeMonitors()
             window = nil
             needsPlacement = true
-            isTrackingDrag = false
         }
 
         @MainActor
@@ -176,43 +193,16 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             guard escapeKeyMonitor == nil else { return }
 
             escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, event.keyCode == 53 else { return event }
-                guard event.modifierFlags
-                    .intersection([.command, .option, .control, .shift])
-                    .isEmpty
-                else {
-                    return event
-                }
+                guard let self else { return event }
                 var consumed = false
                 if Thread.isMainThread {
-                    consumed = self.handleEscapeOnMain()
+                    consumed = self.handleKeyDownOnMain(event)
                 } else {
                     DispatchQueue.main.sync {
-                        consumed = self.handleEscapeOnMain()
+                        consumed = self.handleKeyDownOnMain(event)
                     }
                 }
                 return consumed ? nil : event
-            }
-
-            mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                DispatchQueue.main.async {
-                    self?.handleMouseDownOnMain(event)
-                }
-                return event
-            }
-
-            mouseDraggedMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
-                DispatchQueue.main.async {
-                    self?.handleMouseDraggedOnMain(event)
-                }
-                return event
-            }
-
-            mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-                DispatchQueue.main.async {
-                    self?.endDragTracking()
-                }
-                return event
             }
 
             becomeKeyObserver = NotificationCenter.default.addObserver(
@@ -232,7 +222,6 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             ) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.refreshFocusState()
-                    self?.endDragTracking()
                 }
             }
 
@@ -253,47 +242,20 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             ) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.refreshFocusState()
-                    self?.endDragTracking()
                 }
             }
         }
 
         @MainActor
-        private func handleEscapeOnMain() -> Bool {
+        private func handleKeyDownOnMain(_ event: NSEvent) -> Bool {
             guard let window, window.isKeyWindow, window.isVisible else {
                 return false
             }
-            return onEscape()
-        }
-
-        @MainActor
-        private func handleMouseDownOnMain(_ event: NSEvent) {
-            guard let window, event.window == window else {
-                isTrackingDrag = false
-                return
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if event.keyCode == 53, modifiers.isEmpty {
+                return onEscape()
             }
-            isTrackingDrag = true
-        }
-
-        @MainActor
-        private func handleMouseDraggedOnMain(_ event: NSEvent) {
-            guard isTrackingDrag else { return }
-            guard let window else { return }
-            // Background-driven window moves may report nil or another event window.
-            if let eventWindow = event.window, eventWindow != window {
-                return
-            }
-            if interaction.isDragging == false {
-                interaction.isDragging = true
-            }
-        }
-
-        @MainActor
-        private func endDragTracking() {
-            isTrackingDrag = false
-            if interaction.isDragging {
-                interaction.isDragging = false
-            }
+            return onKeyDown(event)
         }
 
         @MainActor
@@ -314,18 +276,6 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             if let escapeKeyMonitor {
                 NSEvent.removeMonitor(escapeKeyMonitor)
                 self.escapeKeyMonitor = nil
-            }
-            if let mouseDownMonitor {
-                NSEvent.removeMonitor(mouseDownMonitor)
-                self.mouseDownMonitor = nil
-            }
-            if let mouseDraggedMonitor {
-                NSEvent.removeMonitor(mouseDraggedMonitor)
-                self.mouseDraggedMonitor = nil
-            }
-            if let mouseUpMonitor {
-                NSEvent.removeMonitor(mouseUpMonitor)
-                self.mouseUpMonitor = nil
             }
             if let becomeKeyObserver {
                 NotificationCenter.default.removeObserver(becomeKeyObserver)
@@ -350,14 +300,18 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
 extension View {
     func shelfWindowChrome(
         preferredCorner: ShelfPreferredCorner,
+        keepVisibleWhenInactive: Bool,
         interaction: ShelfBoardInteractionState,
-        onEscape: @escaping () -> Bool
+        onEscape: @escaping () -> Bool,
+        onKeyDown: @escaping (NSEvent) -> Bool = { _ in false }
     ) -> some View {
         background(
             ShelfWindowConfigurator(
                 preferredCorner: preferredCorner,
+                keepVisibleWhenInactive: keepVisibleWhenInactive,
                 interaction: interaction,
-                onEscape: onEscape
+                onEscape: onEscape,
+                onKeyDown: onKeyDown
             )
         )
     }

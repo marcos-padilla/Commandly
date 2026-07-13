@@ -266,16 +266,24 @@ extension RegisteredApplicationDocumentation {
 
     static let shelf = LauncherApplicationDocumentation(
         category: .productivity,
-        overview: "Open a small floating Shelf board from the launcher or the menu bar. Drag it anywhere on screen. File staging is not available yet.",
+        overview: "Keep temporary references to files and folders on one floating local board, then preview, share, manage, copy, move, or drag them into another macOS application.",
         sections: [
             DocumentationSection(
                 id: "shelf.open",
-                title: "Open Shelf",
+                title: "Open, Stage, and Use Items",
                 blocks: [
                     .steps("shelf.open.steps", [
                         "Choose New Shelf or New Shelf From Clipboard from Commandly's menu bar item, or search for Shelf in the launcher and press Return.",
-                        "A small floating board appears with Drop files here. Drag the board to reposition it.",
-                        "Choose the close control or press Escape to dismiss the board."
+                        "Drop one or more files or folders on the board. A blue outline and an incoming-item prompt confirm the target without relying on color alone. New Shelf From Clipboard seeds concrete file URLs from the pasteboard.",
+                        "Choose the semantic item count, such as 2 images or 3 PDFs, to inspect the grid, toggle a multi-item selection, and drag the active items into Finder or another compatible app. Drag-out is copy-only, so originals are never moved or deleted and the Shelf references remain.",
+                        "When a drag enters Shelf, drop directly on the native AirDrop, Messages, or Mail targets below the board to open that sharing service without first staging the files."
+                    ]),
+                    .bullets("shelf.open.actions", [
+                        "Open, Open With, Show in Finder, and Quick Look use native macOS services.",
+                        "AirDrop, Messages, Mail, and More Sharing apply to the explicit selection, or to all staged items when nothing is selected.",
+                        "Add From Clipboard and Copy Items exchange file and folder URLs with the pasteboard. Copy Paths writes their newline-separated paths as text.",
+                        "Duplicate, Copy To, Move To, and Rename change the real items on disk. Remove From Shelf and Clear Shelf remove references only.",
+                        "Move to Trash changes the real items and requires confirmation from the detail view."
                     ]),
                     .shortcuts("shelf.open.shortcuts", [
                         DocumentationShortcut(
@@ -290,10 +298,16 @@ extension RegisteredApplicationDocumentation {
                             keys: ["⌥", "⇧", "A"],
                             detail: "Shown as a menu-bar key equivalent beside New Shelf From Clipboard."
                         ),
+                        DocumentationShortcut(id: "shelf.open.preview", title: "Quick Look active items", keys: ["Space"]),
+                        DocumentationShortcut(id: "shelf.open.details", title: "Toggle compact and detail views", keys: ["Tab"]),
+                        DocumentationShortcut(id: "shelf.open.copy", title: "Copy active file URLs", keys: ["⌘", "C"]),
+                        DocumentationShortcut(id: "shelf.open.paste", title: "Add clipboard file URLs", keys: ["⌘", "V"]),
+                        DocumentationShortcut(id: "shelf.open.clear", title: "Clear the board", keys: ["Delete"]),
                         DocumentationShortcut(
                             id: "shelf.open.escape",
                             title: "Close Shelf",
-                            keys: ["Esc"]
+                            keys: ["Esc"],
+                            detail: "Command-W also closes the board."
                         )
                     ])
                 ]
@@ -304,16 +318,16 @@ extension RegisteredApplicationDocumentation {
                 blocks: [
                     .bullets("shelf.settings.items", [
                         "Keep shelf visible when inactive leaves the board on screen after Commandly loses focus.",
-                        "Close when empty will dismiss the board after the last staged item leaves once staging ships.",
+                        "Close when empty dismisses the board after its final staged reference is explicitly removed or trashed. Copy-only drag-out keeps references, and a new empty board remains open.",
                         "Preferred corner chooses Bottom right, Bottom left, Top right, or Top left for newly opened boards.",
-                        "Play drop sound records whether staging should play a local macOS sound."
+                        "Play drop sound plays a local macOS sound after new file or folder references are accepted."
                     ]),
                     .callout(
                         "shelf.settings.scope",
                         DocumentationCallout(
                             kind: .important,
                             title: "Corner placement applies on open",
-                            text: "Preferred corner positions a newly opened board. Dragging the board afterward moves it freely until you close it."
+                            text: "Preferred corner positions a newly opened board. Drag the top grab handle to move the board afterward; dragging an item leaves the board in place."
                         )
                     )
                 ]
@@ -326,16 +340,24 @@ extension RegisteredApplicationDocumentation {
                         "shelf.limits.preview",
                         DocumentationCallout(
                             kind: .limitation,
-                            title: "Empty board only",
-                            text: "Shelf does not stage files, read the clipboard into the board, accept drag-and-drop, or play sounds yet. New Shelf From Clipboard opens the same empty floating board until clipboard seeding ships."
+                            title: "One temporary file-URL board",
+                            text: "Shelf does not persist or restore boards, open simultaneous or recent/pinned shelves, reorder items, materialize promised files, or stage plain text, standalone clipboard images, or snippets. It accepts concrete file and folder URLs only."
+                        )
+                    ),
+                    .callout(
+                        "shelf.limits.activation",
+                        DocumentationCallout(
+                            kind: .limitation,
+                            title: "No hidden activation or processing system",
+                            text: "Shelf has no notch/menu-bar drop zone, shake gesture, modifier-key drag activation, folder monitoring, hosted/cloud-provider links, file transformations, custom scripts, or shell execution. Open it through Commandly's launcher, menu-bar commands, or a configured application shortcut."
                         )
                     ),
                     .callout(
                         "shelf.limits.privacy",
                         DocumentationCallout(
                             kind: .privacy,
-                            title: "Nothing leaves this Mac",
-                            text: "The board does not log, upload, or persist clipboard contents, file paths, or staged items. Future staging will stay local and must follow Commandly's permission and logging rules."
+                            title: "Temporary local references",
+                            text: "The board keeps security-scoped URL references in memory only and releases access when an item leaves or Shelf closes. It does not log or persist paths, previews, clipboard values, or contents. Native sharing occurs only after your action; the selected macOS service controls recipients, sign-in, and transfer."
                         )
                     )
                 ]
@@ -350,7 +372,13 @@ extension RegisteredApplicationDocumentation {
             "board",
             "menu bar",
             "New Shelf",
-            "Drop files here"
+            "Drop files here",
+            "AirDrop",
+            "Messages",
+            "Mail",
+            "Quick Look",
+            "drag out",
+            "file actions"
         ]
     )
 }

@@ -1,5 +1,8 @@
+import AppKit
 import CommandKit
+import DesignSystem
 import Foundation
+import Infrastructure
 import Testing
 @testable import Commandly
 
@@ -53,8 +56,16 @@ struct ShelfApplicationTests {
     }
 
     @Test @MainActor func boardModelReportsAccessibilityLabelsPerEntryMode() {
-        let empty = ShelfBoardModel(entryMode: .empty, onClose: {})
-        let clipboard = ShelfBoardModel(entryMode: .fromClipboard, onClose: {})
+        let empty = ShelfBoardModel(
+            entryMode: .empty,
+            services: makeShelfTestServices(),
+            onClose: {}
+        )
+        let clipboard = ShelfBoardModel(
+            entryMode: .fromClipboard,
+            services: makeShelfTestServices(),
+            onClose: {}
+        )
         #expect(empty.accessibilityLabel == "Shelf")
         #expect(clipboard.accessibilityLabel == "Shelf from Clipboard")
     }
@@ -63,6 +74,64 @@ struct ShelfApplicationTests {
         #expect(ShelfPreferredCorner.resolve("topLeft") == .topLeft)
         #expect(ShelfPreferredCorner.resolve("unknown") == .bottomRight)
         #expect(ShelfPreferredCorner.resolve(nil) == .bottomRight)
+    }
+
+    @Test @MainActor func shelfWindowUsesOnlyItsExplicitDragHandleAndCustomShadow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 188, height: 188),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        var placeIfNeeded = false
+
+        ShelfWindowConfigurator.applyChrome(
+            to: window,
+            preferredCorner: .bottomRight,
+            keepVisibleWhenInactive: true,
+            placeIfNeeded: &placeIfNeeded
+        )
+
+        #expect(window.isMovable)
+        #expect(window.isMovableByWindowBackground == false)
+        #expect(window.hasShadow == false)
+        #expect(window.contentView?.wantsLayer == true)
+        #expect(
+            window.contentView?.layer?.cornerRadius
+                == LayoutConstants.shelfCornerRadius
+        )
+        #expect(window.contentView?.layer?.cornerCurve == .continuous)
+        #expect(window.contentView?.layer?.masksToBounds == true)
+
+        let dragRegion = ShelfWindowDragRegionView(frame: .zero)
+        #expect(dragRegion.acceptsFirstMouse(for: nil))
+        #expect(dragRegion.mouseDownCanMoveWindow == false)
+    }
+
+    @Test @MainActor func shelfDragHandleDelegatesMovementToItsWindow() throws {
+        let window = RecordingShelfDragWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 188, height: 188),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let dragRegion = ShelfWindowDragRegionView(frame: window.contentLayoutRect)
+        window.contentView = dragRegion
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 36, y: 13),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        dragRegion.mouseDown(with: event)
+
+        #expect(window.didPerformDrag)
     }
 
     @Test @MainActor func documentationCoversOpenSettingsAndCurrentLimits() throws {
@@ -82,4 +151,26 @@ struct ShelfApplicationTests {
             return false
         })
     }
+}
+
+@MainActor
+private final class RecordingShelfDragWindow: NSWindow {
+    private(set) var didPerformDrag = false
+
+    override func performDrag(with event: NSEvent) {
+        didPerformDrag = true
+    }
+}
+
+@MainActor
+private func makeShelfTestServices() -> ShelfApplicationServices {
+    ShelfApplicationServices(
+        metadataReader: InMemoryFileResourceMetadataReader(),
+        fileActions: InMemoryFileCollectionActionService(),
+        fileRevealer: InMemoryFileRevealer(),
+        urlOpener: NoOpURLOpener(),
+        pasteboard: InMemoryPasteboard(),
+        previewPresenter: InMemoryFilePreviewPresenter(),
+        dropFeedback: NoOpShelfDropFeedbackPlayer()
+    )
 }
