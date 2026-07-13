@@ -62,6 +62,8 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         window.animationBehavior = .utilityWindow
         window.toolbar = nil
 
+        applyRoundedContentMask(to: window)
+
         window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true
@@ -73,6 +75,22 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         }
         center(window)
         centerIfNeeded = false
+    }
+
+    /// Clips the AppKit hosting surface, not only the SwiftUI content.
+    ///
+    /// SwiftUI shape clips do not necessarily mask the private hosting and vibrancy
+    /// layers installed by `Window`. Without this layer mask, those layers can leave
+    /// dark rectangular pixels visible behind the launcher's rounded corners.
+    @MainActor
+    static func applyRoundedContentMask(to window: NSWindow) {
+        guard let contentView = window.contentView else { return }
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        contentView.layer?.cornerRadius = CornerRadius.xl.rawValue
+        contentView.layer?.cornerCurve = .continuous
+        contentView.layer?.masksToBounds = true
+        window.invalidateShadow()
     }
 
     /// Makes a borderless launcher window keyable via identifier-aware method patches.

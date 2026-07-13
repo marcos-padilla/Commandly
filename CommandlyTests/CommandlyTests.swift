@@ -1469,6 +1469,12 @@ struct CommandlyTests {
         #expect(window.styleMask.contains(.titled) == false)
         #expect(window.canBecomeKey)
         #expect(needsCentering == false)
+        #expect(window.isOpaque == false)
+        #expect(window.backgroundColor == .clear)
+        #expect(window.contentView?.wantsLayer == true)
+        #expect(window.contentView?.layer?.cornerRadius == CornerRadius.xl.rawValue)
+        #expect(window.contentView?.layer?.cornerCurve == .continuous)
+        #expect(window.contentView?.layer?.masksToBounds == true)
 
         // Second apply must not re-center, but must keep keyability + borderless chrome.
         LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
