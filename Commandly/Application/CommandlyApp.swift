@@ -12,13 +12,22 @@ struct CommandlyApp: App {
     var body: some Scene {
         @Bindable var runtime = runtime
 
-        MenuBarExtra("Commandly", systemImage: "command", isInserted: $runtime.showMenuBarIcon) {
+        MenuBarExtra(isInserted: $runtime.showMenuBarIcon) {
             StatusBarMenu(runtime: runtime)
                 .commandlyContentSize(runtime.textSize)
                 .commandlyViewMode(runtime.viewMode)
-                .background(LauncherPresentationBridge(runtime: runtime))
+        } label: {
+            Label("Commandly", systemImage: "command")
         }
         .menuBarExtraStyle(.menu)
+
+        Window("", id: AppWindowID.presentationHost) {
+            WindowPresentationHost(runtime: runtime)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 1, height: 1)
+        .defaultLaunchBehavior(.presented)
 
         Window("Commandly", id: AppWindowID.launcher) {
             LauncherWindowHost(runtime: runtime)
@@ -88,7 +97,6 @@ struct CommandlyApp: App {
             SettingsRootView(viewModel: runtime.makeSettingsViewModel())
                 .commandlyContentSize(runtime.textSize)
                 .commandlyViewMode(runtime.viewMode)
-                .background(LauncherPresentationBridge(runtime: runtime))
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(
@@ -129,6 +137,7 @@ enum CommandlyDebugLaunchOptions {
 }
 
 enum AppWindowID {
+    static let presentationHost = "window-presentation-host"
     static let onboarding = "onboarding"
     static let launcher = "launcher"
     static let documentation = "documentation"
@@ -155,53 +164,106 @@ private struct DocumentationCommands: Commands {
     }
 }
 
-/// Opens / dismisses the launcher window when `AppRuntime.showsLauncher` changes.
+/// Keeps scene actions available for global shortcuts even when the menu-bar icon is hidden.
+private struct WindowPresentationHost: View {
+    @Bindable var runtime: AppRuntime
+    @State private var hasInstalledActions = false
+
+    var body: some View {
+        ZStack {
+            LauncherPresentationBridge(
+                runtime: runtime,
+                onInstalled: {
+                    hasInstalledActions = true
+                }
+            )
+
+            if hasInstalledActions {
+                PresentationHostWindowHider()
+            }
+        }
+        .frame(width: 1, height: 1)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Opens / dismisses the launcher and Shelf windows for runtime presentation requests.
 private struct LauncherPresentationBridge: View {
     @Bindable var runtime: AppRuntime
+    var onInstalled: () -> Void = {}
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
+    @State private var owner = UUID()
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .onAppear {
-                runtime.openLauncherWindow = {
-                    openWindow(id: AppWindowID.launcher)
-                }
-                runtime.dismissLauncherWindow = {
-                    dismissWindow(id: AppWindowID.launcher)
-                }
-                runtime.openShelfWindow = {
-                    openWindow(id: AppWindowID.shelf)
-                }
-                runtime.dismissShelfWindow = {
-                    dismissWindow(id: AppWindowID.shelf)
-                }
-            }
-            .onChange(of: runtime.showsLauncher) { _, isShowing in
-                if isShowing {
-                    openWindow(id: AppWindowID.launcher)
-                    NSApp.activate(ignoringOtherApps: true)
-                    // Defer raise until SwiftUI has materialised / reused the window.
-                    DispatchQueue.main.async {
-                        BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.launcher)
+                runtime.installWindowPresentationActions(
+                    owner: owner,
+                    openLauncher: {
+                        openWindow(id: AppWindowID.launcher)
+                    },
+                    dismissLauncher: {
+                        dismissWindow(id: AppWindowID.launcher)
+                    },
+                    openShelf: {
+                        openWindow(id: AppWindowID.shelf)
+                    },
+                    dismissShelf: {
+                        dismissWindow(id: AppWindowID.shelf)
                     }
-                } else {
-                    dismissWindow(id: AppWindowID.launcher)
-                }
+                )
+                onInstalled()
             }
-            .onChange(of: runtime.showsShelf) { _, isShowing in
-                if isShowing {
-                    openWindow(id: AppWindowID.shelf)
-                    NSApp.activate(ignoringOtherApps: true)
-                    DispatchQueue.main.async {
-                        BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.shelf)
-                    }
-                } else {
-                    dismissWindow(id: AppWindowID.shelf)
-                }
+            .onDisappear {
+                runtime.uninstallWindowPresentationActions(owner: owner)
             }
+    }
+}
+
+/// Makes the app-lifetime action host nonvisual and removes it from normal window behavior.
+private struct PresentationHostWindowHider: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowAttachmentProbeView {
+        let view = WindowAttachmentProbeView(frame: .zero)
+        view.isHidden = true
+        view.onWindowAttached = configure
+        view.attachIfPossible()
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowAttachmentProbeView, context: Context) {
+        nsView.onWindowAttached = configure
+        nsView.attachIfPossible()
+    }
+
+    static func dismantleNSView(
+        _ nsView: WindowAttachmentProbeView,
+        coordinator: Void
+    ) {
+        nsView.onWindowAttached = nil
+    }
+
+    @MainActor
+    private func configure(_ window: NSWindow) {
+        window.identifier = CommandlyWindowIdentifier.presentationHost
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.alphaValue = 0
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.isExcludedFromWindowsMenu = true
+        window.collectionBehavior = [.ignoresCycle]
+        window.setFrame(
+            NSRect(x: -10_000, y: -10_000, width: 1, height: 1),
+            display: false
+        )
+        // Leave the attachment transaction before ordering out. The host is already transparent,
+        // offscreen, noninteractive, and excluded from normal window behavior during this turn.
+        DispatchQueue.main.async { [weak window] in
+            window?.orderOut(nil)
+        }
     }
 }
 
@@ -217,7 +279,10 @@ private struct LauncherWindowHost: View {
             onOpenSettings: presentSettings,
             onOpenDocumentation: presentDocumentation
         )
-        LauncherRootView(viewModel: viewModel)
+        LauncherRootView(
+            viewModel: viewModel,
+            presentationRequest: runtime.launcherPresentationRequest
+        )
         .onAppear {
             runtime.showsLauncher = true
             runtime.consumePendingApplicationLaunch(using: viewModel)
@@ -228,7 +293,7 @@ private struct LauncherWindowHost: View {
             }
         }
         .onDisappear {
-            // Window was dismissed (Esc, outside click, or programmatic close).
+            // Window was dismissed explicitly (Escape, hotkey toggle, or programmatic close).
             if runtime.showsLauncher {
                 runtime.showsLauncher = false
             }
@@ -272,6 +337,7 @@ private struct ShelfWindowHost: View {
         Group {
             if let boardModel {
                 ShelfBoardView(model: boardModel, interaction: interaction)
+                    .id(runtime.shelfPresentationRequest.generation)
             } else {
                 Color.clear
                     .frame(
@@ -283,7 +349,7 @@ private struct ShelfWindowHost: View {
         }
         .shelfWindowChrome(
             preferredCorner: runtime.shelfPreferredCorner,
-            keepVisibleWhenInactive: runtime.shelfConfiguration.keepVisibleWhenInactive,
+            presentationRequest: runtime.shelfPresentationRequest,
             interaction: interaction,
             onEscape: {
                 runtime.hideShelf()
@@ -295,9 +361,10 @@ private struct ShelfWindowHost: View {
             runtime.showsShelf = true
             boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
         }
-        .onChange(of: runtime.shelfEntryMode) { _, mode in
-            _ = mode
+        .onChange(of: runtime.shelfPresentationRequest.generation) { _, generation in
+            _ = generation
             boardModel?.tearDown()
+            interaction.endShelfItemDrag()
             boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
         }
         .onDisappear {

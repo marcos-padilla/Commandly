@@ -15,16 +15,19 @@ final class AppRuntime {
     var textSize: AppTextSizePreference
     var viewMode: AppViewModePreference
     var showsLauncher: Bool = false
+    /// Every explicit launcher open request captures the user's active display before activation.
+    private(set) var launcherPresentationRequest: WindowPresentationRequest = .initial
     /// Whether the floating Shelf board is presented.
     var showsShelf: Bool = false
-    /// Entry mode shown by the currently presented Shelf board.
-    private(set) var shelfEntryMode: ShelfEntryMode = .empty
+    /// Every explicit open request gets a new generation, even when its entry mode is unchanged.
+    private(set) var shelfPresentationRequest: ShelfPresentationRequest = .initial
     /// Registered by a live SwiftUI scene so hotkeys can open the launcher window.
     var openLauncherWindow: (() -> Void)?
     var dismissLauncherWindow: (() -> Void)?
     /// Registered by a live SwiftUI scene so Shelf can open its floating board.
     var openShelfWindow: (() -> Void)?
     var dismissShelfWindow: (() -> Void)?
+    private var windowPresentationActionOwner: UUID?
     private var cachedSettingsViewModel: SettingsViewModel?
     private var cachedDocumentationViewModel: DocumentationViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
@@ -56,9 +59,17 @@ final class AppRuntime {
     private let shelfLaunchController: ShelfLaunchController
     @ObservationIgnored
     private let shelfApplicationServices: ShelfApplicationServices
+    @ObservationIgnored
+    private let windowPresentationTargetProvider: @MainActor () -> WindowPresentationTarget?
 
-    init(container: AppContainer = .bootstrap()) {
+    init(
+        container: AppContainer = .bootstrap(),
+        windowPresentationTargetProvider: @escaping @MainActor () -> WindowPresentationTarget? = {
+            WindowPresentationTargetResolver.activeTarget()
+        }
+    ) {
         self.container = container
+        self.windowPresentationTargetProvider = windowPresentationTargetProvider
         let settings = container.dependencies.appSettingsStore.load()
         self.showsOnboarding = CommandlyDebugLaunchOptions.skipsOnboarding
             ? false
@@ -102,7 +113,10 @@ final class AppRuntime {
             urlOpener: fileSearchApplicationServices.urlOpener,
             pasteboard: pasteboard,
             previewPresenter: WorkspaceQuickLookPresenter(),
-            dropFeedback: NativeShelfDropFeedbackPlayer()
+            dropFeedback: NativeShelfDropFeedbackPlayer(),
+            makeTemporaryContentStore: {
+                LocalShelfTemporaryContentStore()
+            }
         )
         let productivityLibraryServices = ProductivityLibraryApplicationServices(
             persistence: JSONProductivityLibraryStore(),
@@ -255,22 +269,18 @@ final class AppRuntime {
         guard showsOnboarding == false else { return }
         systemActivityProtectionTracker.captureFrontmostApplication()
         windowLayoutService.captureTargetApplication()
-        let alreadyShowing = showsLauncher
+        // Capture before Commandly becomes active so reused windows can move to the user's
+        // current display and full-screen Space instead of Commandly's previous desktop.
+        launcherPresentationRequest = launcherPresentationRequest.next(
+            screenTarget: windowPresentationTargetProvider()
+        )
         showsLauncher = true
         openLauncherWindow?()
-        NSApp.activate(ignoringOtherApps: true)
-        // Always re-raise after the next runloop turn so reopen works when SwiftUI
-        // reuses an existing NSWindow that was previously ordered out.
+        // The window chrome coordinator presents only after it has installed the active-Space
+        // behavior and applied this request's captured geometry.
         DispatchQueue.main.async {
-            BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.launcher)
-            // If the window was already "showing" but invisible, force another open.
-            if alreadyShowing {
-                self.openLauncherWindow?()
-                BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.launcher)
-            }
-            // `onAppear` may not fire when SwiftUI reuses an ordered-out window.
-            // Bump search focus after the window has been raised so the field can
-            // reclaim first responder on every presentation.
+            // `onAppear` may not fire when SwiftUI reuses an ordered-out window. The
+            // coordinator presents during this runloop turn; bump focus alongside it.
             self.cachedLauncherViewModel?.requestSearchFocus()
         }
     }
@@ -294,9 +304,6 @@ final class AppRuntime {
     var shelfConfiguration: ShelfConfiguration {
         let settings = applicationRegistry.resolvedSettings(for: ShelfApplication.applicationID)
         return ShelfConfiguration(
-            keepVisibleWhenInactive: settings?
-                .value(for: "keepVisibleWhenInactive")?
-                .booleanValue ?? ShelfConfiguration.default.keepVisibleWhenInactive,
             clearWhenEmpty: settings?
                 .value(for: "clearWhenEmpty")?
                 .booleanValue ?? ShelfConfiguration.default.clearWhenEmpty,
@@ -311,7 +318,7 @@ final class AppRuntime {
 
     func makeShelfBoardModel(onClose: @escaping () -> Void) -> ShelfBoardModel {
         ShelfBoardModel(
-            entryMode: shelfEntryMode,
+            entryMode: shelfPresentationRequest.entryMode,
             configuration: shelfConfiguration,
             services: shelfApplicationServices,
             onClose: onClose
@@ -323,18 +330,51 @@ final class AppRuntime {
               applicationRegistry.isEffectivelyEnabled(ShelfApplication.applicationID) else {
             return
         }
-        shelfEntryMode = entryMode
-        let alreadyShowing = showsShelf
+        // Capture the user's active display before activating Commandly changes keyboard focus.
+        shelfPresentationRequest = shelfPresentationRequest.next(
+            entryMode: entryMode,
+            screenTarget: windowPresentationTargetProvider()
+        )
         showsShelf = true
         openShelfWindow?()
-        NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async {
-            BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.shelf)
-            if alreadyShowing {
-                self.openShelfWindow?()
-                BringHostingWindowToFront.raiseWindows(with: CommandlyWindowIdentifier.shelf)
-            }
+    }
+
+    /// Installs the SwiftUI scene actions and replays a request made before the bridge mounted.
+    ///
+    /// This keeps global shortcuts and the first menu command single-shot: a pending request is
+    /// opened once when its action becomes available without advancing its presentation generation.
+    func installWindowPresentationActions(
+        owner: UUID,
+        openLauncher: @escaping () -> Void,
+        dismissLauncher: @escaping () -> Void,
+        openShelf: @escaping () -> Void,
+        dismissShelf: @escaping () -> Void
+    ) {
+        let shouldReplayLauncher = openLauncherWindow == nil && showsLauncher
+        let shouldReplayShelf = openShelfWindow == nil && showsShelf
+
+        windowPresentationActionOwner = owner
+        openLauncherWindow = openLauncher
+        dismissLauncherWindow = dismissLauncher
+        openShelfWindow = openShelf
+        dismissShelfWindow = dismissShelf
+
+        if shouldReplayLauncher {
+            openLauncher()
         }
+        if shouldReplayShelf {
+            openShelf()
+        }
+    }
+
+    /// Clears scene actions only when the disappearing bridge still owns the registration.
+    func uninstallWindowPresentationActions(owner: UUID) {
+        guard windowPresentationActionOwner == owner else { return }
+        windowPresentationActionOwner = nil
+        openLauncherWindow = nil
+        dismissLauncherWindow = nil
+        openShelfWindow = nil
+        dismissShelfWindow = nil
     }
 
     func hideShelf() {
@@ -407,7 +447,10 @@ final class AppRuntime {
     }
 
     private func refreshApplicationHotkeys() {
-        let hotKeys: [(CommandID, LauncherHotKey)] = applicationRegistry
+        let fixedShelfHotKeys = ShelfGlobalShortcut.allCases.map {
+            ($0.commandID, $0.hotKey)
+        }
+        let applicationHotKeys: [(CommandID, LauncherHotKey)] = applicationRegistry
             .allDefinitions()
             .compactMap { definition -> (CommandID, LauncherHotKey)? in
                 guard applicationRegistry.isEffectivelyEnabled(definition.id),
@@ -417,13 +460,23 @@ final class AppRuntime {
                 }
                 return (definition.id, hotKey)
             }
+        let hotKeys = fixedShelfHotKeys + applicationHotKeys
         applicationHotkeyIssues = applicationHotkeyMonitor.replace(hotKeys) { [weak self] id in
-            self?.openApplicationFromHotKey(id)
+            guard let self else { return }
+            if let shortcut = ShelfGlobalShortcut.resolve(id) {
+                self.showFloatingShelf(entryMode: shortcut.entryMode)
+            } else {
+                self.openApplicationFromHotKey(id)
+            }
         }
     }
 
     private func openApplicationFromHotKey(_ id: CommandID) {
         guard applicationRegistry.isEffectivelyEnabled(id) else { return }
+        if id == ShelfApplication.applicationID {
+            showFloatingShelf(entryMode: .empty)
+            return
+        }
         pendingApplicationID = id
         showLauncher()
         DispatchQueue.main.async { [weak self] in

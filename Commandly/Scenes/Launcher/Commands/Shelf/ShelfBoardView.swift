@@ -1,7 +1,7 @@
 import DesignSystem
 import SwiftUI
 
-/// Floating Shelf board with native file/folder staging and an integrated detail surface.
+/// Floating Shelf board with native content staging and an integrated detail surface.
 struct ShelfBoardView: View {
     @Bindable var model: ShelfBoardModel
     @Bindable var interaction: ShelfBoardInteractionState
@@ -9,6 +9,7 @@ struct ShelfBoardView: View {
 
     @State private var isCloseHovered = false
     @State private var isDragHandleHovered = false
+    @State private var hasRevealedInitialContent = false
 
     private let restingHandleWidth: CGFloat = 34
     private let hoveredHandleWidth: CGFloat = 42
@@ -30,8 +31,17 @@ struct ShelfBoardView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(model.accessibilityLabel)
         .accessibilityValue(boardAccessibilityValue)
-        .task {
+        .task(id: ObjectIdentifier(model)) {
+            hasRevealedInitialContent = false
             await model.loadInitialContent()
+            guard Task.isCancelled == false else { return }
+            if reduceMotion {
+                hasRevealedInitialContent = true
+            } else {
+                withAnimation(.easeOut(duration: MotionDuration.normal.rawValue)) {
+                    hasRevealedInitialContent = true
+                }
+            }
         }
         .onDisappear {
             model.tearDown()
@@ -65,6 +75,9 @@ struct ShelfBoardView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
                 ShelfCompactContentView(model: model, interaction: interaction)
+                    .opacity(hasRevealedInitialContent ? 1 : 0)
+                    .scaleEffect(hasRevealedInitialContent || reduceMotion ? 1 : 0.95)
+                    .accessibilityHidden(hasRevealedInitialContent == false)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
 
@@ -80,6 +93,11 @@ struct ShelfBoardView: View {
                 style: .continuous
             )
         )
+        .gesture(
+            WindowDragGesture(),
+            isEnabled: interaction.allowsWindowDragging
+        )
+        .allowsWindowActivationEvents()
         .dropDestination(for: URL.self) { urls, _ in
             guard interaction.isDraggingShelfItems == false else { return }
             _ = model.stage(urls)

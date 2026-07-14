@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Infrastructure
 import Testing
@@ -120,12 +121,14 @@ struct ShelfBoardModelTests {
     func outgoingShelfItemDragCannotActivateIncomingDropChrome() {
         let interaction = ShelfBoardInteractionState()
 
+        #expect(interaction.allowsWindowDragging)
         interaction.beginShelfItemDrag()
         interaction.beginDropSession(itemCount: 2)
         interaction.updateBoardDropTarget(isTargeted: true)
         interaction.updateActionDropTarget(.airDrop, isTargeted: true)
 
         #expect(interaction.isDraggingShelfItems)
+        #expect(interaction.allowsWindowDragging == false)
         #expect(interaction.showsInstantActions == false)
         #expect(interaction.isBoardDropTargeted == false)
         #expect(interaction.targetedAction == nil)
@@ -136,6 +139,7 @@ struct ShelfBoardModelTests {
         interaction.updateBoardDropTarget(isTargeted: true)
 
         #expect(interaction.isDraggingShelfItems == false)
+        #expect(interaction.allowsWindowDragging)
         #expect(interaction.showsInstantActions)
         #expect(interaction.isBoardDropTargeted)
         #expect(interaction.incomingItemCount == 2)
@@ -219,20 +223,239 @@ struct ShelfBoardModelTests {
         let fixture = try ShelfTemporaryFixture()
         defer { fixture.remove() }
         let pasteboard = InMemoryPasteboard(initialFileURLs: [fixture.file, fixture.folder])
+        let temporaryContentStore = InMemoryShelfTemporaryContentStore()
         let model = makeShelfModel(
             entryMode: .fromClipboard,
-            pasteboard: pasteboard
+            pasteboard: pasteboard,
+            temporaryContentStore: temporaryContentStore
         )
 
         await model.loadInitialContent()
         await model.loadInitialContent()
         #expect(model.items.map(\.url) == [fixture.file, fixture.folder])
+        #expect(model.items.allSatisfy { $0.ownership == .externalReference })
+        let storeSnapshot = await temporaryContentStore.snapshot()
+        #expect(storeSnapshot.textValues.isEmpty)
+        #expect(storeSnapshot.imageValues.isEmpty)
 
         let folderID = try #require(model.items.last?.id)
         model.selectOnly(folderID)
         await model.copyItemsToClipboard()
         #expect(pasteboard.currentFileURLs == [fixture.folder])
         #expect(model.statusMessage == "Item copied.")
+    }
+
+    @Test @MainActor
+    func clipboardEntryModeMaterializesTextExactlyOnceAsTemporaryContent() async throws {
+        let fixture = try ShelfTemporaryFixture()
+        defer { fixture.remove() }
+        let text = "  Draft idea\nSecond line  "
+        let materializedURL = fixture.root.appendingPathComponent("Clipboard Text.txt")
+        let pasteboard = InMemoryPasteboard(initial: text)
+        let temporaryContentStore = InMemoryShelfTemporaryContentStore(
+            textFileURL: materializedURL
+        )
+        let model = makeShelfModel(
+            entryMode: .fromClipboard,
+            pasteboard: pasteboard,
+            temporaryContentStore: temporaryContentStore
+        )
+
+        await model.loadInitialContent()
+        await model.loadInitialContent()
+
+        let item = try #require(model.items.first)
+        #expect(model.items.count == 1)
+        #expect(item.url == materializedURL)
+        #expect(item.ownership == .shelfTemporary)
+        #expect(item.kind == .document)
+        let snapshot = await temporaryContentStore.snapshot()
+        #expect(snapshot.textValues == [text])
+        #expect(snapshot.imageValues.isEmpty)
+    }
+
+    @Test @MainActor
+    func clipboardEntryModeMaterializesStandaloneImageWithItsOriginalBytes() async throws {
+        let fixture = try ShelfTemporaryFixture()
+        defer { fixture.remove() }
+        let image = PasteboardImageContent(
+            data: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+            typeIdentifier: "public.png"
+        )
+        let materializedURL = fixture.root.appendingPathComponent("Clipboard Image.png")
+        let pasteboard = InMemoryPasteboard(initialImage: image)
+        let temporaryContentStore = InMemoryShelfTemporaryContentStore(
+            imageFileURL: materializedURL
+        )
+        let model = makeShelfModel(
+            entryMode: .fromClipboard,
+            pasteboard: pasteboard,
+            temporaryContentStore: temporaryContentStore
+        )
+
+        await model.loadInitialContent()
+
+        let item = try #require(model.items.first)
+        #expect(model.items.count == 1)
+        #expect(item.url == materializedURL)
+        #expect(item.ownership == .shelfTemporary)
+        #expect(item.kind == .image)
+        let snapshot = await temporaryContentStore.snapshot()
+        #expect(snapshot.imageValues == [image])
+        #expect(snapshot.textValues.isEmpty)
+    }
+
+    @Test @MainActor
+    func removingTemporaryClipboardContentAndTearingDownCleansOnlyBoardOwnedFiles() async throws {
+        let fixture = try ShelfTemporaryFixture()
+        defer { fixture.remove() }
+        let materializedURL = fixture.root.appendingPathComponent("Clipboard Text.txt")
+        let temporaryContentStore = InMemoryShelfTemporaryContentStore(
+            textFileURL: materializedURL
+        )
+        let model = makeShelfModel(
+            entryMode: .fromClipboard,
+            pasteboard: InMemoryPasteboard(initial: "Temporary note"),
+            temporaryContentStore: temporaryContentStore
+        )
+
+        await model.loadInitialContent()
+        #expect(model.stage([fixture.file, fixture.folder]) == 2)
+        let temporaryItem = try #require(
+            model.items.first { $0.ownership == .shelfTemporary }
+        )
+
+        model.remove(temporaryItem.id)
+        let removalSnapshot = await yieldUntilStoreSnapshot(temporaryContentStore) {
+            $0.discardedURLs == [materializedURL]
+        }
+        #expect(removalSnapshot.discardedURLs == [materializedURL])
+        #expect(model.items.map(\.url) == [fixture.file, fixture.folder])
+        #expect(model.items.allSatisfy { $0.ownership == .externalReference })
+        #expect(FileManager.default.fileExists(atPath: fixture.file.path))
+        #expect(FileManager.default.fileExists(atPath: fixture.folder.path))
+
+        await model.addFromClipboard()
+        #expect(model.items.contains { $0.ownership == .shelfTemporary })
+        model.tearDown()
+        model.tearDown()
+        let teardownSnapshot = await yieldUntilStoreSnapshot(temporaryContentStore) {
+            $0.discardAllCount == 1
+        }
+        #expect(teardownSnapshot.discardAllCount == 1)
+        #expect(FileManager.default.fileExists(atPath: fixture.file.path))
+        #expect(FileManager.default.fileExists(atPath: fixture.folder.path))
+    }
+
+    @Test @MainActor
+    func localTemporaryContentStoresWriteExactDataRemainIsolatedAndCleanUp() async throws {
+        let fixture = try ShelfTemporaryFixture()
+        defer { fixture.remove() }
+        let firstIdentifier = try #require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        )
+        let secondIdentifier = try #require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000002")
+        )
+        let firstStore = LocalShelfTemporaryContentStore(
+            temporaryDirectory: fixture.root,
+            identifier: firstIdentifier
+        )
+        let secondStore = LocalShelfTemporaryContentStore(
+            temporaryDirectory: fixture.root,
+            identifier: secondIdentifier
+        )
+        let text = "Text with leading space, emoji 🫙, and newline\n"
+        let image = PasteboardImageContent(
+            data: Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0x01, 0x02]),
+            typeIdentifier: "public.png"
+        )
+
+        let firstTextURL = try await firstStore.createTextFile(containing: text)
+        let firstImageURL = try await firstStore.createImageFile(image)
+        let secondTextURL = try await secondStore.createTextFile(containing: "Second board")
+        let firstRoot = firstTextURL.deletingLastPathComponent()
+        let secondRoot = secondTextURL.deletingLastPathComponent()
+
+        #expect(firstRoot.lastPathComponent == "Shelf-\(firstIdentifier.uuidString)")
+        #expect(secondRoot.lastPathComponent == "Shelf-\(secondIdentifier.uuidString)")
+        #expect(firstRoot != secondRoot)
+        #expect(firstTextURL.lastPathComponent == "Clipboard Text.txt")
+        #expect(firstImageURL.lastPathComponent == "Clipboard Image.png")
+        #expect(try Data(contentsOf: firstTextURL) == Data(text.utf8))
+        #expect(try Data(contentsOf: firstImageURL) == image.data)
+        let attributes = try FileManager.default.attributesOfItem(atPath: firstRoot.path)
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
+        #expect(permissions == 0o700)
+
+        await firstStore.discard([firstTextURL])
+        #expect(FileManager.default.fileExists(atPath: firstTextURL.path) == false)
+        #expect(FileManager.default.fileExists(atPath: firstImageURL.path))
+        #expect(FileManager.default.fileExists(atPath: secondTextURL.path))
+
+        await firstStore.discardAll()
+        #expect(FileManager.default.fileExists(atPath: firstRoot.path) == false)
+        #expect(FileManager.default.fileExists(atPath: secondTextURL.path))
+
+        await secondStore.discardAll()
+        #expect(FileManager.default.fileExists(atPath: secondRoot.path) == false)
+    }
+
+    @Test @MainActor
+    func nativePasteboardReaderSupportsFilesFoldersImagesAndExactText() throws {
+        let pasteboard = NSPasteboard(
+            name: .init("CommandlyTests.ShelfPasteboard.\(UUID().uuidString)")
+        )
+        defer { pasteboard.clearContents() }
+
+        let text = "  Clipboard note with intentional spacing\n"
+        pasteboard.clearContents()
+        #expect(pasteboard.setString(text, forType: .string))
+        #expect(NativePasteboardContentReader.read(from: pasteboard) == .text(text))
+
+        let pngData = Data([0x89, 0x50, 0x4E, 0x47, 0x01])
+        pasteboard.clearContents()
+        #expect(pasteboard.setData(pngData, forType: .png))
+        #expect(
+            NativePasteboardContentReader.read(from: pasteboard)
+                == .image(
+                    PasteboardImageContent(
+                        data: pngData,
+                        typeIdentifier: "public.png"
+                    )
+                )
+        )
+
+        let tiffData = Data([0x49, 0x49, 0x2A, 0x00, 0x01])
+        pasteboard.clearContents()
+        #expect(pasteboard.setData(tiffData, forType: .tiff))
+        #expect(
+            NativePasteboardContentReader.read(from: pasteboard)
+                == .image(
+                    PasteboardImageContent(
+                        data: tiffData,
+                        typeIdentifier: "public.tiff"
+                    )
+                )
+        )
+
+        let fixture = try ShelfTemporaryFixture()
+        defer { fixture.remove() }
+        let fileItem = NSPasteboardItem()
+        fileItem.setString(fixture.file.absoluteString, forType: .fileURL)
+        fileItem.setString("secondary text", forType: .string)
+        let folderItem = NSPasteboardItem()
+        folderItem.setString(fixture.folder.absoluteString, forType: .fileURL)
+        pasteboard.clearContents()
+        #expect(pasteboard.writeObjects([fileItem, folderItem]))
+        #expect(
+            NativePasteboardContentReader.read(from: pasteboard)
+                == .fileURLs([fixture.file, fixture.folder])
+        )
+
+        pasteboard.clearContents()
+        #expect(pasteboard.setString(" \n\t", forType: .string))
+        #expect(NativePasteboardContentReader.read(from: pasteboard) == nil)
     }
 
     @Test @MainActor
@@ -269,7 +492,6 @@ struct ShelfBoardModelTests {
         var closeCount = 0
         let model = makeShelfModel(
             configuration: ShelfConfiguration(
-                keepVisibleWhenInactive: true,
                 clearWhenEmpty: true,
                 preferredCorner: .bottomRight,
                 playDropSound: false
@@ -293,7 +515,6 @@ struct ShelfBoardModelTests {
         let enabledFeedback = RecordingShelfDropFeedbackPlayer()
         let enabled = makeShelfModel(
             configuration: ShelfConfiguration(
-                keepVisibleWhenInactive: true,
                 clearWhenEmpty: false,
                 preferredCorner: .bottomRight,
                 playDropSound: true
@@ -433,6 +654,7 @@ private func makeShelfModel(
     pasteboard: InMemoryPasteboard = InMemoryPasteboard(),
     previewPresenter: InMemoryFilePreviewPresenter = InMemoryFilePreviewPresenter(),
     dropFeedback: any ShelfDropFeedbackPlaying = NoOpShelfDropFeedbackPlayer(),
+    temporaryContentStore: any ShelfTemporaryContentStoring = InMemoryShelfTemporaryContentStore(),
     onClose: @escaping () -> Void = {}
 ) -> ShelfBoardModel {
     ShelfBoardModel(
@@ -445,7 +667,10 @@ private func makeShelfModel(
             urlOpener: urlOpener,
             pasteboard: pasteboard,
             previewPresenter: previewPresenter,
-            dropFeedback: dropFeedback
+            dropFeedback: dropFeedback,
+            makeTemporaryContentStore: {
+                temporaryContentStore
+            }
         ),
         onClose: onClose
     )
@@ -460,6 +685,20 @@ private func yieldUntil(
         if condition() { return }
         await Task.yield()
     }
+}
+
+@MainActor
+private func yieldUntilStoreSnapshot(
+    _ store: InMemoryShelfTemporaryContentStore,
+    maxYields: Int = 100,
+    condition: (InMemoryShelfTemporaryContentStore.Snapshot) -> Bool
+) async -> InMemoryShelfTemporaryContentStore.Snapshot {
+    var snapshot = await store.snapshot()
+    for _ in 0..<maxYields where condition(snapshot) == false {
+        await Task.yield()
+        snapshot = await store.snapshot()
+    }
+    return snapshot
 }
 
 @MainActor

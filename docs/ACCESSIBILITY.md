@@ -24,11 +24,15 @@ Shelf's implemented accessibility surface includes:
   Selection also has Select All and Clear Selection controls.
 - AirDrop, Messages, and Mail targets retain explicit names and hints while displaying their native
   macOS service artwork.
-- Board and direct-action animations honor Reduce Motion.
+- The initial content reveal uses a subtle fade/scale only when Reduce Motion is off; reduced-motion
+  presentations reveal immediately. Board and direct-action transitions follow the same preference.
+- The board can be repositioned from any unoccupied surface area without taking precedence over its
+  buttons, menus, or staged-item drag sources. An outgoing item drag also keeps the window fixed.
+- `⌥⇧Space` and `⌥⇧A` provide system-wide keyboard routes to a new empty or clipboard-seeded Shelf.
 - `Space` opens Quick Look, `Tab` switches compact/detail presentation, `⌘C` and `⌘V` export/import
-  file URLs, Delete clears, and Escape/`⌘W` closes. Menus and buttons provide non-drag routes to the
-  remaining actions.
+  content, Delete clears, and Escape/`⌘W` closes. Clipboard import accepts file/folder URLs, an image,
+  or text. Menus and buttons provide non-drag routes to the remaining actions.
 
-Native drag-and-drop is still pointer-oriented. Clipboard file-URL import/export and action menus are
-the keyboard/assistive alternatives; this review does not claim that promised-file drags from every
-third-party application are supported.
+Native drag-and-drop and board repositioning are still pointer-oriented. Clipboard import/export and
+action menus are the keyboard/assistive alternatives; this review does not claim that promised-file
+drags from every third-party application are supported.

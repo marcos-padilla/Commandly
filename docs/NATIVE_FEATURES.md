@@ -67,22 +67,29 @@ Pomodoro cycles.
 
 ### Shelf
 
-Open **Shelf** from the launcher, or choose **New Shelf** / **New Shelf From Clipboard** in the
-menu bar (`⌥⇧Space` / `⌥⇧A`). Drop concrete file or folder URLs on the floating board; a blue
-outline plus an item-count prompt confirms targeting, and AirDrop, Messages, and Mail targets appear
-below it for direct native sharing. Shelf keeps temporary references rather than copying the items.
+Open **Shelf** from the launcher, menu-bar commands, or system-wide **New Shelf** / **New Shelf From
+Clipboard** shortcuts (`⌥⇧Space` / `⌥⇧A`). Each request opens in the preferred corner of the active
+display and macOS Space. Drop concrete file or folder URLs on the floating board; a blue outline plus
+an item-count prompt confirms targeting, and AirDrop, Messages, and Mail targets appear below it for
+direct native sharing. Shelf keeps external references rather than copying those originals.
+
+The clipboard command accepts file/folder URLs, a standalone image, or plain text. Shelf keeps URLs
+as external references and materializes image/text data into private per-board temporary files that
+are removed with their items or when the board closes. The board can be repositioned from any
+unoccupied surface area, stays fixed during item drag-out, and reveals new content with a subtle
+fade/scale that becomes immediate under Reduce Motion.
 
 Open the detail grid to select items, inspect native previews and metadata, drag a multi-item
 selection out, or use Open/Open With, Quick Look, Finder, native sharing, clipboard URL/path,
 duplicate/copy/move/rename, remove, clear, and confirmed Trash actions. Drag-out is copy-only, so it
-never moves/deletes originals and always retains the Shelf references. Settings → Applications
-controls inactive visibility, closing after the last reference is explicitly removed, initial corner,
+never moves/deletes originals and always retains the staged items. Settings → Applications controls
+inactive visibility, closing after the last item is explicitly removed, initial corner,
 and optional local drop sound.
 
-The board is in-memory, single-instance, and file-URL-only. It does not persist or restore shelves,
-materialize promised files/text/images, provide cloud-provider uploads or links, transform files, run
-scripts, monitor folders, or activate from the notch, menu-bar drag zone, or a shake gesture. See
-`docs/SHELF.md`.
+The board is transient and single-instance. It does not persist or restore shelves, materialize
+promised files, preserve rich-text formatting, provide cloud-provider uploads or links, transform
+files, run scripts, monitor folders, or activate from the notch, menu-bar drag zone, or a shake
+gesture. See `docs/SHELF.md`.
 
 ### Productivity Library
 
@@ -333,7 +340,7 @@ workspace-aware placement system.
 | Calculator | Native deterministic parsers and Foundation measurements/calendars | Queries/results are not logged or persisted. Currency is the one documented pre-existing no-key network provider and was not expanded by this pass. |
 | Productivity Library | Versioned JSON, native pasteboard/workspace, and `ShareLink` | Local Application Support storage; no content/path logging. Quicklinks open only after explicit action and unsafe schemes are rejected. |
 | Timers & Focus | Foundation dates/timer and optional `NSSound` | In-process only. No Notifications entitlement/prompt and no attempt to survive app termination. |
-| Shelf | SwiftUI/AppKit drag-and-drop, Quick Look, `NSWorkspace`, `NSSharingService`, `NSPasteboard`, `FileManager`, and optional `NSSound` | One in-memory board of security-scoped file/folder URL references. No path/content logging, upload, persistence, or new automatic TCC prompt. File mutations and native sharing are explicit; the receiving service controls any transfer or sign-in. |
+| Shelf | SwiftUI/AppKit drag-and-drop and screen geometry, Carbon hot keys, Quick Look, `NSWorkspace`, `NSSharingService`, `NSPasteboard`, `FileManager`, and optional `NSSound` | One transient board of security-scoped file/folder URL references plus owner-only temporary files for explicit clipboard text/image imports. Owned files are removed with their item or board. No path/content logging, upload, persistence, Screen Recording/Accessibility requirement, or new automatic TCC prompt. File mutations and native sharing are explicit; the receiving service controls any transfer or sign-in. |
 | System Activity | Mach host statistics, `ProcessInfo`, `FileManager`, and `NSRunningApplication` | No new permission prompt. Quit/force/bulk actions require explicit user action; destructive actions have confirmation/protection where appropriate. |
 | Window Layouts | Accessibility API and native screen/window geometry | Accessibility is requested contextually when applying a layout. Denial is recoverable in System Settings. Only the previously focused external target is acted on. |
 | Offline tools | Unicode metadata, Dictionary Services, `NSFontManager`, `NSColorSampler`, local transforms | No network or account. The color sampler is a system-controlled explicit picker, not general screen capture. |

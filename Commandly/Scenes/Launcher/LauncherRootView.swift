@@ -4,11 +4,15 @@ import SwiftUI
 
 struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
-    @Environment(\.dismissWindow) private var dismissWindow
+    private let presentationRequest: WindowPresentationRequest
     @Environment(\.commandlyLayoutDensity) private var density
 
-    init(viewModel: LauncherViewModel) {
+    init(
+        viewModel: LauncherViewModel,
+        presentationRequest: WindowPresentationRequest = .initial
+    ) {
         _viewModel = State(initialValue: viewModel)
+        self.presentationRequest = presentationRequest
     }
 
     var body: some View {
@@ -128,6 +132,7 @@ struct LauncherRootView: View {
             value: viewModel.showsApplicationActionsPanel
         )
         .launcherWindowChrome(
+            presentationRequest: presentationRequest,
             onRequestClose: { closeLauncher() },
             onEscape: {
                 if viewModel.handleEscape() == false {
@@ -172,7 +177,6 @@ struct LauncherRootView: View {
 
     private func closeLauncher() {
         viewModel.dismiss()
-        dismissWindow(id: AppWindowID.launcher)
     }
 }
 

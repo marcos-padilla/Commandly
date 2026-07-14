@@ -1465,7 +1465,11 @@ struct CommandlyTests {
         #expect(window.canBecomeKey == false)
 
         var needsCentering = true
-        LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
+        LauncherWindowConfigurator.applyChrome(
+            to: window,
+            screenTarget: nil,
+            centerIfNeeded: &needsCentering
+        )
         #expect(window.styleMask.contains(.borderless))
         #expect(window.styleMask.contains(.titled) == false)
         #expect(window.canBecomeKey)
@@ -1476,12 +1480,55 @@ struct CommandlyTests {
         #expect(window.contentView?.layer?.cornerRadius == CornerRadius.xl.rawValue)
         #expect(window.contentView?.layer?.cornerCurve == .continuous)
         #expect(window.contentView?.layer?.masksToBounds == true)
+        #expect(
+            window.collectionBehavior
+                == ActiveSpaceWindowPresenter.overlayCollectionBehavior
+        )
+        #expect(window.collectionBehavior.contains(.moveToActiveSpace) == false)
+        #expect(window.collectionBehavior.contains(.canJoinAllApplications))
+        #expect(window.collectionBehavior.contains(.canJoinAllSpaces))
+        #expect(window.collectionBehavior.contains(.fullScreenPrimary) == false)
+        #expect(window.collectionBehavior.contains(.primary) == false)
 
         // Second apply must not re-center, but must keep keyability + borderless chrome.
-        LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
+        LauncherWindowConfigurator.applyChrome(
+            to: window,
+            screenTarget: nil,
+            centerIfNeeded: &needsCentering
+        )
         #expect(needsCentering == false)
         #expect(window.canBecomeKey)
         #expect(window.styleMask.contains(.borderless))
+    }
+
+    @Test @MainActor func launcherWindowCentersWithinCapturedNegativeOriginScreen() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let visibleFrame = NSRect(x: -1_800, y: 40, width: 1_800, height: 1_000)
+        let target = WindowPresentationTarget(visibleFrame: visibleFrame)
+        var needsCentering = true
+
+        LauncherWindowConfigurator.applyChrome(
+            to: window,
+            screenTarget: target,
+            centerIfNeeded: &needsCentering
+        )
+
+        let expectedSize = NSSize(
+            width: LayoutConstants.launcherIdealWidth,
+            height: LayoutConstants.launcherIdealHeight
+        )
+        let expectedOrigin = NSPoint(
+            x: visibleFrame.midX - expectedSize.width / 2,
+            y: visibleFrame.midY - expectedSize.height / 2
+        )
+        #expect(window.frame == NSRect(origin: expectedOrigin, size: expectedSize))
+        #expect(visibleFrame.contains(window.frame))
+        #expect(needsCentering == false)
     }
 
     @Test @MainActor func launcherWindowEnsureKeyablePromotesBorderlessWindow() {
@@ -1499,6 +1546,135 @@ struct CommandlyTests {
         #expect(window.canBecomeKey)
     }
 
+    @Test @MainActor func windowAttachmentProbeReportsColdWindowAttachment() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = try #require(window.contentView)
+        let probe = WindowAttachmentProbeView(frame: .zero)
+        var attachedWindows: [NSWindow] = []
+        probe.onWindowAttached = { attachedWindows.append($0) }
+
+        probe.attachIfPossible()
+        #expect(attachedWindows.isEmpty)
+
+        contentView.addSubview(probe)
+
+        #expect(probe.window === window)
+        #expect(attachedWindows.count == 1)
+        #expect(attachedWindows.first === window)
+    }
+
+    @Test @MainActor func launcherCoordinatorSurvivesReentrantStyleMaskAttachment() throws {
+        let target = WindowPresentationTarget(
+            visibleFrame: CGRect(x: -1_600, y: 40, width: 1_600, height: 960)
+        )
+        let request = WindowPresentationRequest.initial.next(screenTarget: target)
+        let newerTarget = WindowPresentationTarget(
+            visibleFrame: CGRect(x: 1_800, y: 50, width: 1_400, height: 900)
+        )
+        let newerRequest = request.next(screenTarget: newerTarget)
+        let coordinator = LauncherWindowConfigurator.Coordinator(
+            presentationRequest: request,
+            onRequestClose: {},
+            onEscape: { false }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let contentView = try #require(window.contentView)
+        let probe = WindowAttachmentProbeView(frame: .zero)
+        var attachmentCount = 0
+        var attachmentDepth = 0
+        var maximumAttachmentDepth = 0
+        probe.onWindowAttached = { attachedWindow in
+            attachmentCount += 1
+            attachmentDepth += 1
+            maximumAttachmentDepth = max(maximumAttachmentDepth, attachmentDepth)
+            if attachmentCount == 2 {
+                coordinator.updatePresentationRequest(newerRequest)
+            }
+            coordinator.attach(to: attachedWindow)
+            attachmentDepth -= 1
+        }
+        defer {
+            probe.onWindowAttached = nil
+            coordinator.tearDown()
+            probe.removeFromSuperview()
+            window.orderOut(nil)
+        }
+
+        contentView.addSubview(probe)
+
+        #expect(attachmentCount >= 2)
+        #expect(maximumAttachmentDepth >= 2)
+        #expect(coordinator.presentationRequest == newerRequest)
+        #expect(window.identifier == CommandlyWindowIdentifier.launcher)
+        #expect(window.styleMask.contains(.borderless))
+        #expect(window.styleMask.contains(.fullSizeContentView))
+        #expect(window.styleMask.contains(.titled) == false)
+        #expect(window.collectionBehavior == ActiveSpaceWindowPresenter.overlayCollectionBehavior)
+        #expect(
+            window.frame.size
+                == NSSize(
+                    width: LayoutConstants.launcherIdealWidth,
+                    height: LayoutConstants.launcherIdealHeight
+                )
+        )
+        #expect(window.frame.midX == newerTarget.visibleFrame.midX)
+        #expect(window.frame.midY == newerTarget.visibleFrame.midY)
+    }
+
+    @Test @MainActor func launcherCoordinatorDismissesOnceForOutsideClickAndResetsOnReopen() {
+        let target = WindowPresentationTarget(
+            visibleFrame: CGRect(x: 0, y: 25, width: 1_512, height: 982)
+        )
+        let request = WindowPresentationRequest.initial.next(screenTarget: target)
+        var closeCount = 0
+        let coordinator = LauncherWindowConfigurator.Coordinator(
+            presentationRequest: request,
+            onRequestClose: { closeCount += 1 },
+            onEscape: { false }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            coordinator.tearDown()
+            window.orderOut(nil)
+        }
+
+        coordinator.attach(to: window)
+        #expect(window.isVisible)
+
+        coordinator.handleOutsideClick(
+            at: NSPoint(x: window.frame.midX, y: window.frame.midY)
+        )
+        #expect(closeCount == 0)
+
+        let outsidePoint = NSPoint(x: window.frame.maxX + 20, y: window.frame.maxY + 20)
+        coordinator.handleOutsideClick(at: outsidePoint)
+        coordinator.handleOutsideClick(at: outsidePoint)
+        coordinator.attach(to: window)
+        coordinator.handleOutsideClick(at: outsidePoint)
+        #expect(closeCount == 1)
+
+        let reopenedRequest = request.next(screenTarget: target)
+        coordinator.updatePresentationRequest(reopenedRequest)
+        coordinator.attach(to: window)
+        coordinator.handleOutsideClick(at: outsidePoint)
+        #expect(closeCount == 2)
+    }
+
     @Test @MainActor func appRuntimeShowLauncherRequestsSearchFocusAfterRaise() async {
         let container = makeTestContainer(hasCompletedOnboarding: true)
         let runtime = AppRuntime(container: container)
@@ -1511,6 +1687,206 @@ struct CommandlyTests {
         // `requestSearchFocus` runs on the next main-queue turn after raise.
         await yieldMainQueue()
         #expect(viewModel.searchFocusEpoch == epochBefore + 1)
+    }
+
+    @Test @MainActor func appRuntimeCapturesActiveLauncherScreenBeforeEveryOpenRequest() {
+        let firstTarget = WindowPresentationTarget(
+            visibleFrame: CGRect(x: -1_600, y: 40, width: 1_600, height: 960)
+        )
+        let secondTarget = WindowPresentationTarget(
+            visibleFrame: CGRect(x: 0, y: 25, width: 1_512, height: 982)
+        )
+        var activeTarget = firstTarget
+        let runtime = AppRuntime(
+            container: makeTestContainer(hasCompletedOnboarding: true),
+            windowPresentationTargetProvider: { activeTarget }
+        )
+        var requestsObservedByOpen: [WindowPresentationRequest] = []
+        runtime.openLauncherWindow = {
+            requestsObservedByOpen.append(runtime.launcherPresentationRequest)
+        }
+
+        runtime.showLauncher()
+        #expect(runtime.launcherPresentationRequest.generation == 1)
+        #expect(runtime.launcherPresentationRequest.screenTarget == firstTarget)
+        #expect(requestsObservedByOpen == [runtime.launcherPresentationRequest])
+
+        runtime.hideLauncher()
+        activeTarget = secondTarget
+        runtime.showLauncher()
+        #expect(runtime.launcherPresentationRequest.generation == 2)
+        #expect(runtime.launcherPresentationRequest.screenTarget == secondTarget)
+        #expect(requestsObservedByOpen == [
+            WindowPresentationRequest.initial.next(screenTarget: firstTarget),
+            runtime.launcherPresentationRequest,
+        ])
+    }
+
+    @Test @MainActor func appRuntimeReplaysPendingLauncherOpenExactlyOnce() {
+        let target = WindowPresentationTarget(
+            visibleFrame: CGRect(x: -1_600, y: 40, width: 1_600, height: 960)
+        )
+        let runtime = AppRuntime(
+            container: makeTestContainer(hasCompletedOnboarding: true),
+            windowPresentationTargetProvider: { target }
+        )
+        var launcherOpenCount = 0
+        var shelfOpenCount = 0
+        let owner = UUID()
+
+        runtime.showLauncher()
+        let pendingRequest = runtime.launcherPresentationRequest
+        #expect(runtime.showsLauncher)
+        #expect(pendingRequest.generation == 1)
+
+        runtime.installWindowPresentationActions(
+            owner: owner,
+            openLauncher: { launcherOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: { shelfOpenCount += 1 },
+            dismissShelf: {}
+        )
+
+        #expect(launcherOpenCount == 1)
+        #expect(shelfOpenCount == 0)
+        #expect(runtime.launcherPresentationRequest == pendingRequest)
+
+        runtime.installWindowPresentationActions(
+            owner: owner,
+            openLauncher: { launcherOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: { shelfOpenCount += 1 },
+            dismissShelf: {}
+        )
+
+        #expect(launcherOpenCount == 1)
+        #expect(shelfOpenCount == 0)
+        #expect(runtime.launcherPresentationRequest == pendingRequest)
+    }
+
+    @Test @MainActor func appRuntimeReplaysPendingShelfOpenExactlyOnce() {
+        let target = WindowPresentationTarget(
+            visibleFrame: CGRect(x: 0, y: 25, width: 1_512, height: 982)
+        )
+        let runtime = AppRuntime(
+            container: makeTestContainer(hasCompletedOnboarding: true),
+            windowPresentationTargetProvider: { target }
+        )
+        var launcherOpenCount = 0
+        var shelfOpenCount = 0
+        let owner = UUID()
+
+        runtime.openNewShelf()
+        let pendingRequest = runtime.shelfPresentationRequest
+        #expect(runtime.showsShelf)
+        #expect(pendingRequest.generation == 1)
+        #expect(pendingRequest.entryMode == .empty)
+
+        runtime.installWindowPresentationActions(
+            owner: owner,
+            openLauncher: { launcherOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: { shelfOpenCount += 1 },
+            dismissShelf: {}
+        )
+
+        #expect(launcherOpenCount == 0)
+        #expect(shelfOpenCount == 1)
+        #expect(runtime.shelfPresentationRequest == pendingRequest)
+
+        runtime.installWindowPresentationActions(
+            owner: owner,
+            openLauncher: { launcherOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: { shelfOpenCount += 1 },
+            dismissShelf: {}
+        )
+
+        #expect(launcherOpenCount == 0)
+        #expect(shelfOpenCount == 1)
+        #expect(runtime.shelfPresentationRequest == pendingRequest)
+    }
+
+    @Test @MainActor func appRuntimeReplacesAndOwnerScopesWindowPresentationActions() {
+        let runtime = AppRuntime(container: makeTestContainer(hasCompletedOnboarding: true))
+        let firstOwner = UUID()
+        let secondOwner = UUID()
+        let thirdOwner = UUID()
+        var firstOpenCount = 0
+        var secondOpenCount = 0
+        var thirdOpenCount = 0
+
+        runtime.installWindowPresentationActions(
+            owner: firstOwner,
+            openLauncher: { firstOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: {},
+            dismissShelf: {}
+        )
+        runtime.installWindowPresentationActions(
+            owner: secondOwner,
+            openLauncher: { secondOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: {},
+            dismissShelf: {}
+        )
+        runtime.uninstallWindowPresentationActions(owner: firstOwner)
+
+        runtime.showLauncher()
+        #expect(firstOpenCount == 0)
+        #expect(secondOpenCount == 1)
+
+        runtime.hideLauncher()
+        runtime.uninstallWindowPresentationActions(owner: secondOwner)
+        runtime.showLauncher()
+        #expect(secondOpenCount == 1)
+
+        runtime.installWindowPresentationActions(
+            owner: thirdOwner,
+            openLauncher: { thirdOpenCount += 1 },
+            dismissLauncher: {},
+            openShelf: {},
+            dismissShelf: {}
+        )
+        #expect(thirdOpenCount == 1)
+    }
+
+    @Test @MainActor func appRuntimeCapturesActiveShelfScreenBeforeEveryOpenRequest() {
+        let firstTarget = WindowPresentationTarget(
+            visibleFrame: CGRect(x: -1_600, y: 40, width: 1_600, height: 960)
+        )
+        let secondTarget = WindowPresentationTarget(
+            visibleFrame: CGRect(x: 0, y: 25, width: 1_512, height: 982)
+        )
+        var activeTarget = firstTarget
+        let runtime = AppRuntime(
+            container: makeTestContainer(hasCompletedOnboarding: true),
+            windowPresentationTargetProvider: { activeTarget }
+        )
+        var requestsObservedByOpen: [ShelfPresentationRequest] = []
+        runtime.openShelfWindow = {
+            requestsObservedByOpen.append(runtime.shelfPresentationRequest)
+        }
+
+        runtime.openNewShelf()
+        #expect(runtime.shelfPresentationRequest.generation == 1)
+        #expect(runtime.shelfPresentationRequest.entryMode == .empty)
+        #expect(runtime.shelfPresentationRequest.screenTarget == firstTarget)
+        #expect(requestsObservedByOpen == [runtime.shelfPresentationRequest])
+
+        runtime.hideShelf()
+        activeTarget = secondTarget
+        runtime.openNewShelfFromClipboard()
+        #expect(runtime.shelfPresentationRequest.generation == 2)
+        #expect(runtime.shelfPresentationRequest.entryMode == .fromClipboard)
+        #expect(runtime.shelfPresentationRequest.screenTarget == secondTarget)
+        #expect(requestsObservedByOpen == [
+            ShelfPresentationRequest.initial.next(
+                entryMode: .empty,
+                screenTarget: firstTarget
+            ),
+            runtime.shelfPresentationRequest,
+        ])
     }
 
     @Test @MainActor func appRuntimeHideLauncherClearsClipboardSurfaceObservation() {

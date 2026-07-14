@@ -8,7 +8,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 |------------|-----------------|---------------|----------|
 | Calendar | Reserved for a future schedule application; Commandly does not currently surface calendar events | Onboarding Grant Access (optional) | System Settings → Privacy & Security → Calendars |
 | Contacts | Reserved for a future people application; Commandly does not currently surface contacts | Onboarding Grant Access (optional) | System Settings → Privacy & Security → Contacts |
-| Files and Folders | Search, preview, open, copy, move, duplicate, create shortcuts for, or trash files inside folders the user selects; temporarily stage explicitly dropped/copied file URLs in Shelf; list and open recent files from Downloads read-only | Onboarding Grant Access or Settings Manage Folders shows a folder picker; versioned security-scoped bookmarks are stored. Shelf receives temporary access when the user explicitly drops or pastes a file URL and does not store a bookmark. Recent Downloads uses a narrow read-only Downloads entitlement and does not mutate files. | Re-run Settings → Permissions → Manage Folders, re-drop the item into Shelf, or use System Settings → Files and Folders |
+| Files and Folders | Search, preview, open, copy, move, duplicate, create shortcuts for, or trash files inside folders the user selects; temporarily stage explicitly dropped/pasted file URLs in Shelf; list and open recent files from Downloads read-only | Onboarding Grant Access or Settings Manage Folders shows a folder picker; versioned security-scoped bookmarks are stored. Shelf receives temporary access when the user explicitly drops or pastes a file URL and does not store a bookmark. Recent Downloads uses a narrow read-only Downloads entitlement and does not mutate files. | Re-run Settings → Permissions → Manage Folders, re-drop the item into Shelf, or use System Settings → Files and Folders |
 | Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
 | Clipboard History | Browse and re-copy recent pasteboard items from the launcher; on-device Vision/PDFKit indexes images and readable files for search | Activating the Clipboard History command (no TCC prompt for pasteboard monitoring or on-device analysis) | Clear history from the command Actions menu |
@@ -35,9 +35,12 @@ Screen Recording, Notifications, Camera, Microphone, and Location remain unimple
 
 - Calculation History and Timers & Focus retain only in-process session state.
 - Shelf holds explicitly dropped or pasted file/folder URL references only while its board is open.
-  It uses native Quick Look, workspace, sharing, pasteboard, and file operations after user actions;
-  it does not add an account, background folder access, or automatic TCC prompt. A receiving share
-  service may require its own sign-in or transfer approval.
+  An explicit clipboard import may instead materialize text or image data beneath a per-board
+  directory in Commandly's temporary container; those private files are deleted when removed and the
+  directory is deleted when the board closes or is replaced. Native pasteboard reads, active-display
+  geometry, and Shelf's fixed Carbon shortcuts do not add a TCC, Screen Recording, or Accessibility
+  prompt. Shelf does not add an account or background folder access. A receiving native share service
+  may require its own sign-in or transfer approval.
 - Productivity Library persists private user-authored items locally in Commandly's Application
   Support container and never logs their contents.
 - System Activity reads aggregate host statistics and the regular GUI application list through public

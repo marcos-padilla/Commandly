@@ -19,10 +19,13 @@ feature model.
   the current calculator session.
 - **Timers & Focus** — run multiple named timers, including 25-minute focus and 5-minute break
   presets, with pause, resume, reset, delete, and an optional local completion sound.
-- **Shelf** — one temporary floating board for file/folder URL references, opened from the menu bar
-  or launcher. It supports drag-in and multi-item drag-out, clipboard file URLs, native previews and
-  file actions, direct AirDrop/Messages/Mail drop targets, and schema-driven visibility, empty-close,
-  placement, and sound settings. Boards are not persisted or restored.
+- **Shelf** — one temporary floating board opened from the launcher, menu bar, or two fixed global
+  shortcuts on the display/Space active at request time. It supports file/folder drag-in,
+  multi-item drag-out, clipboard file/folder URLs plus privately materialized text/images, native
+  previews and file actions, whole-surface movement that yields to item drags, direct
+  AirDrop/Messages/Mail drop targets, persistent cross-Space visibility, and schema-driven
+  empty-close, placement, and sound settings. Boards are not persisted or restored, and owned
+  clipboard files are deleted on cleanup.
 - **Productivity Library** — persistent local snippets, quick notes, Quicklinks, and emoji keywords.
   Snippets can expand `{{clipboard}}`; Quicklinks validate web, file, folder, and application deep-link
   targets before opening; native sharing is available for saved items.

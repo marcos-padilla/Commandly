@@ -156,8 +156,8 @@ struct ShelfDetailsView: View {
                 Image(systemName: "clipboard")
             }
             .buttonStyle(.plain)
-            .help("Add files from Clipboard")
-            .accessibilityLabel("Add files from Clipboard")
+            .help("Add Content from Clipboard")
+            .accessibilityLabel("Add Content from Clipboard")
         }
         .padding(.horizontal, Spacing.md.rawValue)
         .accessibilityElement(children: .contain)

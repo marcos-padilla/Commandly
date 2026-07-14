@@ -367,12 +367,38 @@ public protocol FileSystemAccessing: Sendable {
     func fileExists(at path: String) async -> Bool
 }
 
+/// Standalone image bytes read from a pasteboard without decoding or logging them.
+public struct PasteboardImageContent: Sendable, Equatable {
+    /// Encoded image bytes in the representation advertised by `typeIdentifier`.
+    public let data: Data
+    /// Uniform Type Identifier for the encoded bytes, such as `public.png`.
+    public let typeIdentifier: String
+
+    /// Creates an encoded pasteboard image value.
+    public init(data: Data, typeIdentifier: String) {
+        self.data = data
+        self.typeIdentifier = typeIdentifier
+    }
+}
+
+/// One preferred pasteboard representation in native priority order.
+public enum PasteboardContent: Sendable, Equatable {
+    /// Concrete file or folder references, in pasteboard order.
+    case fileURLs([URL])
+    /// A standalone encoded image that has no concrete file URL.
+    case image(PasteboardImageContent)
+    /// Plain text, preserved exactly as supplied by the pasteboard.
+    case text(String)
+}
+
 /// Pasteboard access boundary. Implementations must not log pasteboard contents.
 public protocol PasteboardAccessing: Sendable {
     /// Reads a string from the pasteboard, if present.
     func readString() async -> String?
     /// Reads file URLs from the pasteboard in pasteboard order.
     func readFileURLs() async -> [URL]
+    /// Reads the preferred supported representation: files/folders, image, then text.
+    func readContent() async -> PasteboardContent?
     /// Writes a string to the pasteboard.
     func writeString(_ string: String) async
     /// Writes file URLs so Finder and other apps can paste the files themselves.
@@ -383,6 +409,19 @@ extension PasteboardAccessing {
     /// Default for pasteboards that do not expose file URL reads.
     public func readFileURLs() async -> [URL] {
         []
+    }
+
+    /// Source-compatible fallback for pasteboards that expose only URLs and strings.
+    public func readContent() async -> PasteboardContent? {
+        let urls = await readFileURLs()
+        if urls.isEmpty == false {
+            return .fileURLs(urls)
+        }
+        guard let string = await readString(),
+              string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return nil
+        }
+        return .text(string)
     }
 
     public func writeFileURLs(_ urls: [URL]) async {

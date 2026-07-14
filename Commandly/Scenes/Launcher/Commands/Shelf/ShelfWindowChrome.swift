@@ -5,7 +5,7 @@ import SwiftUI
 /// Configures Shelf as a small floating, draggable board without traffic lights.
 struct ShelfWindowConfigurator: NSViewRepresentable {
     var preferredCorner: ShelfPreferredCorner
-    var keepVisibleWhenInactive: Bool
+    var presentationRequest: ShelfPresentationRequest
     var interaction: ShelfBoardInteractionState
     var onEscape: () -> Bool
     var onKeyDown: (NSEvent) -> Bool
@@ -13,41 +13,47 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             preferredCorner: preferredCorner,
-            keepVisibleWhenInactive: keepVisibleWhenInactive,
+            presentationRequest: presentationRequest,
             interaction: interaction,
             onEscape: onEscape,
             onKeyDown: onKeyDown
         )
     }
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+    func makeNSView(context: Context) -> WindowAttachmentProbeView {
+        let view = WindowAttachmentProbeView(frame: .zero)
         view.isHidden = true
         context.coordinator.preferredCorner = preferredCorner
-        context.coordinator.keepVisibleWhenInactive = keepVisibleWhenInactive
+        context.coordinator.updatePresentationRequest(presentationRequest)
         context.coordinator.interaction = interaction
         context.coordinator.onEscape = onEscape
         context.coordinator.onKeyDown = onKeyDown
-        scheduleConfigure(for: view, coordinator: context.coordinator)
+        installAttachmentCallback(on: view, coordinator: context.coordinator)
+        view.attachIfPossible()
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: WindowAttachmentProbeView, context: Context) {
         context.coordinator.preferredCorner = preferredCorner
-        context.coordinator.keepVisibleWhenInactive = keepVisibleWhenInactive
+        context.coordinator.updatePresentationRequest(presentationRequest)
         context.coordinator.interaction = interaction
         context.coordinator.onEscape = onEscape
         context.coordinator.onKeyDown = onKeyDown
-        scheduleConfigure(for: nsView, coordinator: context.coordinator)
+        installAttachmentCallback(on: nsView, coordinator: context.coordinator)
+        nsView.attachIfPossible()
     }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+    static func dismantleNSView(_ nsView: WindowAttachmentProbeView, coordinator: Coordinator) {
+        nsView.onWindowAttached = nil
         coordinator.tearDown()
     }
 
-    private func scheduleConfigure(for view: NSView, coordinator: Coordinator) {
-        DispatchQueue.main.async {
-            coordinator.attach(to: view.window)
+    private func installAttachmentCallback(
+        on view: WindowAttachmentProbeView,
+        coordinator: Coordinator
+    ) {
+        view.onWindowAttached = { [weak coordinator] window in
+            coordinator?.attach(to: window)
         }
     }
 
@@ -55,7 +61,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
     static func applyChrome(
         to window: NSWindow,
         preferredCorner: ShelfPreferredCorner,
-        keepVisibleWhenInactive: Bool,
+        screenTarget: WindowPresentationTarget?,
         placeIfNeeded: inout Bool
     ) {
         window.identifier = CommandlyWindowIdentifier.shelf
@@ -69,8 +75,8 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         window.backgroundColor = .clear
         window.hasShadow = false
         window.level = .floating
-        window.hidesOnDeactivate = keepVisibleWhenInactive == false
-        window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
+        window.hidesOnDeactivate = false
+        ActiveSpaceWindowPresenter.applyOverlayBehavior(to: window)
         window.animationBehavior = .utilityWindow
         window.toolbar = nil
 
@@ -83,7 +89,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         LauncherKeyableWindowSupport.installIfNeeded(for: window)
 
         if placeIfNeeded {
-            place(window, in: preferredCorner)
+            place(window, in: preferredCorner, screenTarget: screenTarget)
             placeIfNeeded = false
         }
     }
@@ -104,14 +110,22 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
     }
 
     @MainActor
-    static func place(_ window: NSWindow, in corner: ShelfPreferredCorner) {
-        guard let screen = window.screen ?? NSScreen.main else { return }
+    static func place(
+        _ window: NSWindow,
+        in corner: ShelfPreferredCorner,
+        screenTarget: WindowPresentationTarget? = nil
+    ) {
         let size = NSSize(
             width: LayoutConstants.shelfBoardSize,
             height: LayoutConstants.shelfBoardSize
         )
         let margin = LayoutConstants.shelfScreenMargin
-        let visible = screen.visibleFrame
+        guard let visible = screenTarget?.visibleFrame
+            ?? window.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSScreen.screens.first?.visibleFrame else {
+            return
+        }
         let origin: NSPoint
         switch corner {
         case .bottomRight:
@@ -141,7 +155,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
     /// AppKit owns these monitor callbacks. Every mutation is explicitly marshalled to MainActor.
     final class Coordinator: @unchecked Sendable {
         var preferredCorner: ShelfPreferredCorner
-        var keepVisibleWhenInactive: Bool
+        private(set) var presentationRequest: ShelfPresentationRequest
         var interaction: ShelfBoardInteractionState
         var onEscape: () -> Bool
         var onKeyDown: (NSEvent) -> Bool
@@ -152,40 +166,101 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         private var becomeActiveObserver: NSObjectProtocol?
         private var resignActiveObserver: NSObjectProtocol?
         private var needsPlacement = true
+        private var needsPresentation = true
+        private var isAttaching = false
+        private var attachingGeneration: UInt64?
+        private weak var deferredWindow: NSWindow?
 
         init(
             preferredCorner: ShelfPreferredCorner,
-            keepVisibleWhenInactive: Bool,
+            presentationRequest: ShelfPresentationRequest,
             interaction: ShelfBoardInteractionState,
             onEscape: @escaping () -> Bool,
             onKeyDown: @escaping (NSEvent) -> Bool
         ) {
             self.preferredCorner = preferredCorner
-            self.keepVisibleWhenInactive = keepVisibleWhenInactive
+            self.presentationRequest = presentationRequest
             self.interaction = interaction
             self.onEscape = onEscape
             self.onKeyDown = onKeyDown
         }
 
         @MainActor
+        func updatePresentationRequest(_ request: ShelfPresentationRequest) {
+            if request.generation != presentationRequest.generation {
+                needsPlacement = true
+                needsPresentation = true
+            }
+            presentationRequest = request
+            if isAttaching, attachingGeneration != request.generation {
+                deferredWindow = window
+            }
+        }
+
+        @MainActor
         func attach(to window: NSWindow?) {
             guard let window else { return }
-            self.window = window
-            ShelfWindowConfigurator.applyChrome(
-                to: window,
-                preferredCorner: preferredCorner,
-                keepVisibleWhenInactive: keepVisibleWhenInactive,
-                placeIfNeeded: &needsPlacement
-            )
-            refreshFocusState()
-            installMonitorsIfNeeded()
+            if isAttaching {
+                if attachingGeneration != presentationRequest.generation
+                    || self.window !== window {
+                    deferredWindow = window
+                }
+                return
+            }
+
+            isAttaching = true
+            var nextWindow: NSWindow? = window
+
+            while let currentWindow = nextWindow {
+                deferredWindow = nil
+                let request = presentationRequest
+                attachingGeneration = request.generation
+                self.window = currentWindow
+
+                var shouldPlace = needsPlacement
+                let shouldPresent = needsPresentation
+                needsPlacement = false
+                needsPresentation = false
+
+                ShelfWindowConfigurator.applyChrome(
+                    to: currentWindow,
+                    preferredCorner: preferredCorner,
+                    screenTarget: request.screenTarget,
+                    placeIfNeeded: &shouldPlace
+                )
+                // AppKit can synchronously reattach the probe while changing style/frame.
+                // Keep any newer request flags and process that generation in a fresh pass.
+                needsPlacement = needsPlacement || shouldPlace
+                installMonitorsIfNeeded()
+                if shouldPresent {
+                    if presentationRequest.generation == request.generation {
+                        ActiveSpaceWindowPresenter.present(currentWindow)
+                    } else {
+                        needsPresentation = true
+                    }
+                }
+                refreshFocusState()
+
+                if presentationRequest.generation != request.generation,
+                   deferredWindow == nil {
+                    deferredWindow = currentWindow
+                }
+                nextWindow = deferredWindow
+            }
+
+            attachingGeneration = nil
+            isAttaching = false
         }
 
         @MainActor
         func tearDown() {
             removeMonitors()
             window = nil
+            deferredWindow = nil
+            attachingGeneration = nil
+            isAttaching = false
             needsPlacement = true
+            needsPresentation = true
         }
 
         @MainActor
@@ -300,7 +375,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
 extension View {
     func shelfWindowChrome(
         preferredCorner: ShelfPreferredCorner,
-        keepVisibleWhenInactive: Bool,
+        presentationRequest: ShelfPresentationRequest,
         interaction: ShelfBoardInteractionState,
         onEscape: @escaping () -> Bool,
         onKeyDown: @escaping (NSEvent) -> Bool = { _ in false }
@@ -308,7 +383,7 @@ extension View {
         background(
             ShelfWindowConfigurator(
                 preferredCorner: preferredCorner,
-                keepVisibleWhenInactive: keepVisibleWhenInactive,
+                presentationRequest: presentationRequest,
                 interaction: interaction,
                 onEscape: onEscape,
                 onKeyDown: onKeyDown

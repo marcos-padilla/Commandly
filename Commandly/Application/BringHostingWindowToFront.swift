@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 enum CommandlyWindowIdentifier {
+    static let presentationHost = NSUserInterfaceItemIdentifier("commandly.presentation-host")
     static let documentation = NSUserInterfaceItemIdentifier("commandly.documentation")
     static let settings = NSUserInterfaceItemIdentifier("commandly.settings")
     static let launcher = NSUserInterfaceItemIdentifier("commandly.launcher")

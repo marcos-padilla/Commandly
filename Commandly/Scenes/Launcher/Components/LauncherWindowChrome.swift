@@ -5,36 +5,49 @@ import ObjectiveC
 
 /// Configures the launcher as a floating, draggable, vibrancy panel without traffic lights.
 struct LauncherWindowConfigurator: NSViewRepresentable {
+    var presentationRequest: WindowPresentationRequest
     var onRequestClose: () -> Void
     /// Called for Escape while the launcher window is key. Return `true` to consume the event.
     var onEscape: () -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onRequestClose: onRequestClose, onEscape: onEscape)
+        Coordinator(
+            presentationRequest: presentationRequest,
+            onRequestClose: onRequestClose,
+            onEscape: onEscape
+        )
     }
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+    func makeNSView(context: Context) -> WindowAttachmentProbeView {
+        let view = WindowAttachmentProbeView(frame: .zero)
         view.isHidden = true
+        context.coordinator.updatePresentationRequest(presentationRequest)
         context.coordinator.onRequestClose = onRequestClose
         context.coordinator.onEscape = onEscape
-        scheduleConfigure(for: view, coordinator: context.coordinator)
+        installAttachmentCallback(on: view, coordinator: context.coordinator)
+        view.attachIfPossible()
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: WindowAttachmentProbeView, context: Context) {
+        context.coordinator.updatePresentationRequest(presentationRequest)
         context.coordinator.onRequestClose = onRequestClose
         context.coordinator.onEscape = onEscape
-        scheduleConfigure(for: nsView, coordinator: context.coordinator)
+        installAttachmentCallback(on: nsView, coordinator: context.coordinator)
+        nsView.attachIfPossible()
     }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+    static func dismantleNSView(_ nsView: WindowAttachmentProbeView, coordinator: Coordinator) {
+        nsView.onWindowAttached = nil
         coordinator.tearDown()
     }
 
-    private func scheduleConfigure(for view: NSView, coordinator: Coordinator) {
-        DispatchQueue.main.async {
-            coordinator.attach(to: view.window)
+    private func installAttachmentCallback(
+        on view: WindowAttachmentProbeView,
+        coordinator: Coordinator
+    ) {
+        view.onWindowAttached = { [weak coordinator] window in
+            coordinator?.attach(to: window)
         }
     }
 
@@ -44,7 +57,11 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
     /// hide cannot accept typing. Patch `canBecomeKey` / `canBecomeMain` for launcher
     /// windows (by identifier) without titled chrome or `object_setClass` isa swaps.
     @MainActor
-    static func applyChrome(to window: NSWindow, centerIfNeeded: inout Bool) {
+    static func applyChrome(
+        to window: NSWindow,
+        screenTarget: WindowPresentationTarget?,
+        centerIfNeeded: inout Bool
+    ) {
         window.identifier = CommandlyWindowIdentifier.launcher
         // Borderless removes leftover title-bar / safe-area chrome that titled+hidden
         // titlebar still reserves (empty bottom strip in the launcher panel).
@@ -58,7 +75,7 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         window.hasShadow = true
         window.level = .floating
         window.hidesOnDeactivate = false
-        window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
+        ActiveSpaceWindowPresenter.applyOverlayBehavior(to: window)
         window.animationBehavior = .utilityWindow
         window.toolbar = nil
 
@@ -73,7 +90,7 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         if centerIfNeeded == false {
             return
         }
-        center(window)
+        center(window, screenTarget: screenTarget)
         centerIfNeeded = false
     }
 
@@ -105,15 +122,23 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
     }
 
     @MainActor
-    private static func center(_ window: NSWindow) {
-        guard let screen = window.screen ?? NSScreen.main else { return }
+    static func center(
+        _ window: NSWindow,
+        screenTarget: WindowPresentationTarget? = nil
+    ) {
+        guard let visibleFrame = screenTarget?.visibleFrame
+            ?? window.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSScreen.screens.first?.visibleFrame else {
+            return
+        }
         let size = NSSize(
             width: LayoutConstants.launcherIdealWidth,
             height: LayoutConstants.launcherIdealHeight
         )
         let origin = NSPoint(
-            x: screen.visibleFrame.midX - size.width / 2,
-            y: screen.visibleFrame.midY - size.height / 2
+            x: visibleFrame.midX - size.width / 2,
+            y: visibleFrame.midY - size.height / 2
         )
         window.setFrame(NSRect(origin: origin, size: size), display: true)
     }
@@ -121,41 +146,106 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
     /// AppKit event monitors and notification callbacks are nonisolated / Sendable.
     /// Mutable state is only read or written on the main queue.
     final class Coordinator: @unchecked Sendable {
+        private(set) var presentationRequest: WindowPresentationRequest
         var onRequestClose: () -> Void
         var onEscape: () -> Bool
         private weak var window: NSWindow?
         private var localMouseMonitor: Any?
         private var globalMouseMonitor: Any?
         private var escapeKeyMonitor: Any?
-        private var resignKeyObserver: NSObjectProtocol?
-        private var resignActiveObserver: NSObjectProtocol?
         private var needsCentering = true
+        private var needsPresentation = true
         private var isClosing = false
+        private var isAttaching = false
+        private var attachingGeneration: UInt64?
+        private weak var deferredWindow: NSWindow?
 
-        init(onRequestClose: @escaping () -> Void, onEscape: @escaping () -> Bool) {
+        init(
+            presentationRequest: WindowPresentationRequest,
+            onRequestClose: @escaping () -> Void,
+            onEscape: @escaping () -> Bool
+        ) {
+            self.presentationRequest = presentationRequest
             self.onRequestClose = onRequestClose
             self.onEscape = onEscape
         }
 
         @MainActor
+        func updatePresentationRequest(_ request: WindowPresentationRequest) {
+            if request.generation != presentationRequest.generation {
+                needsCentering = true
+                needsPresentation = true
+                isClosing = false
+            }
+            presentationRequest = request
+            if isAttaching, attachingGeneration != request.generation {
+                deferredWindow = window
+            }
+        }
+
+        @MainActor
         func attach(to window: NSWindow?) {
             guard let window else { return }
-            self.window = window
-            isClosing = false
-            LauncherWindowConfigurator.applyChrome(to: window, centerIfNeeded: &needsCentering)
-            installMonitorsIfNeeded()
-            // Do not raise or activate here. `updateNSView` calls `attach` on ordinary
-            // SwiftUI refreshes — including `@Observable` clipboard history updates —
-            // and raising would steal focus on every system-wide copy. Explicit open
-            // paths (`AppRuntime.showLauncher` / `LauncherPresentationBridge`) own
-            // activation and ordering front.
+            if isAttaching {
+                if attachingGeneration != presentationRequest.generation
+                    || self.window !== window {
+                    deferredWindow = window
+                }
+                return
+            }
+
+            isAttaching = true
+            var nextWindow: NSWindow? = window
+
+            while let currentWindow = nextWindow {
+                deferredWindow = nil
+                let request = presentationRequest
+                attachingGeneration = request.generation
+                self.window = currentWindow
+
+                var shouldCenter = needsCentering
+                let shouldPresent = needsPresentation
+                needsCentering = false
+                needsPresentation = false
+
+                LauncherWindowConfigurator.applyChrome(
+                    to: currentWindow,
+                    screenTarget: request.screenTarget,
+                    centerIfNeeded: &shouldCenter
+                )
+                // Preserve a newer request that arrived synchronously while AppKit changed
+                // the style mask or frame. The nested attachment is intentionally ignored for
+                // the same generation, but a newer generation receives another pass below.
+                needsCentering = needsCentering || shouldCenter
+                installMonitorsIfNeeded()
+                if shouldPresent {
+                    if presentationRequest.generation == request.generation {
+                        ActiveSpaceWindowPresenter.present(currentWindow)
+                    } else {
+                        needsPresentation = true
+                    }
+                }
+
+                if presentationRequest.generation != request.generation,
+                   deferredWindow == nil {
+                    deferredWindow = currentWindow
+                }
+                nextWindow = deferredWindow
+            }
+
+            attachingGeneration = nil
+            isAttaching = false
         }
 
         @MainActor
         func tearDown() {
             removeMonitors()
             window = nil
+            deferredWindow = nil
+            attachingGeneration = nil
+            isAttaching = false
             needsCentering = true
+            needsPresentation = true
             isClosing = false
         }
 
@@ -163,14 +253,24 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
         private func installMonitorsIfNeeded() {
             guard localMouseMonitor == nil else { return }
 
-            localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-                // Local monitors run on the main thread for the active app.
+            let mouseDownEvents: NSEvent.EventTypeMask = [
+                .leftMouseDown,
+                .rightMouseDown,
+                .otherMouseDown,
+            ]
+            localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: mouseDownEvents
+            ) { [weak self] event in
+                // Local monitors run on the main thread for clicks in Commandly-owned windows.
                 self?.handleMouseDownOnMain(event)
                 return event
             }
 
-            globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                // Avoid capturing NSEvent across isolation; only pass a screen point.
+            globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: mouseDownEvents
+            ) { [weak self] _ in
+                // A global monitor reports clicks delivered to other applications. Avoid moving
+                // the NSEvent across isolation and carry only its screen-space location.
                 let screenPoint = NSEvent.mouseLocation
                 DispatchQueue.main.async {
                     self?.handleOutsideClick(at: screenPoint)
@@ -198,29 +298,6 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
                 }
                 return consumed ? nil : event
             }
-
-            resignKeyObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didResignKeyNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] _ in
-                // Defer so we do not dismiss mid resign-key bookkeeping.
-                DispatchQueue.main.async {
-                    self?.requestCloseAfterFocusLoss()
-                }
-            }
-
-            // Accessory (LSUIElement) apps often keep a floating window key when the
-            // user clicks another app; app deactivation is the reliable dismiss signal.
-            resignActiveObserver = NotificationCenter.default.addObserver(
-                forName: NSApplication.didResignActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.requestCloseAfterFocusLoss()
-                }
-            }
         }
 
         @MainActor
@@ -239,39 +316,29 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
             }
 
             if let eventWindow = event.window {
-                let screenPoint = eventWindow.convertPoint(toScreen: event.locationInWindow)
-                handleOutsideClick(at: screenPoint)
+                handleOutsideClick(
+                    at: eventWindow.convertPoint(toScreen: event.locationInWindow)
+                )
                 return
             }
 
             handleOutsideClick(at: NSEvent.mouseLocation)
         }
 
+        /// Handles the screen-space portion of local/global mouse monitoring.
+        ///
+        /// Internal visibility keeps this deterministic in AppKit regression tests without
+        /// synthesizing system-wide input or granting an input-monitoring permission.
         @MainActor
-        private func handleOutsideClick(at screenPoint: NSPoint) {
-            guard let window else { return }
-            if window.frame.contains(screenPoint) == false {
-                requestCloseOnMain()
-            }
+        func handleOutsideClick(at screenPoint: NSPoint) {
+            guard let window, window.frame.contains(screenPoint) == false else { return }
+            requestCloseOnMain()
         }
 
         @MainActor
         private func requestCloseOnMain() {
             guard isClosing == false else { return }
             guard let window, window.isVisible else { return }
-            isClosing = true
-            onRequestClose()
-        }
-
-        /// Dismiss after resign-key / resign-active, ignoring stale callbacks if we
-        /// were already re-activated (e.g. hotkey reopen before the deferred close runs).
-        @MainActor
-        private func requestCloseAfterFocusLoss() {
-            guard isClosing == false else { return }
-            guard let window, window.isVisible else { return }
-            if NSApp.isActive, window.isKeyWindow {
-                return
-            }
             isClosing = true
             onRequestClose()
         }
@@ -289,14 +356,6 @@ struct LauncherWindowConfigurator: NSViewRepresentable {
             if let escapeKeyMonitor {
                 NSEvent.removeMonitor(escapeKeyMonitor)
                 self.escapeKeyMonitor = nil
-            }
-            if let resignKeyObserver {
-                NotificationCenter.default.removeObserver(resignKeyObserver)
-                self.resignKeyObserver = nil
-            }
-            if let resignActiveObserver {
-                NotificationCenter.default.removeObserver(resignActiveObserver)
-                self.resignActiveObserver = nil
             }
         }
     }
@@ -391,11 +450,13 @@ struct LauncherVisualEffectBackground: NSViewRepresentable {
 
 extension View {
     func launcherWindowChrome(
+        presentationRequest: WindowPresentationRequest,
         onRequestClose: @escaping () -> Void,
         onEscape: @escaping () -> Bool
     ) -> some View {
         background(
             LauncherWindowConfigurator(
+                presentationRequest: presentationRequest,
                 onRequestClose: onRequestClose,
                 onEscape: onEscape
             )

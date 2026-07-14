@@ -12,6 +12,11 @@ final class ShelfBoardInteractionState {
     var showsInstantActions = false
     var incomingItemCount = 0
 
+    /// Window movement yields to Shelf's explicit item drag source as soon as that session begins.
+    var allowsWindowDragging: Bool {
+        isDraggingShelfItems == false
+    }
+
     var incomingItemDescription: String {
         switch incomingItemCount {
         case 1: return "1 item"

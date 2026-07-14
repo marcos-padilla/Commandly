@@ -48,6 +48,12 @@ nonisolated enum ShelfItemKind: Hashable, Sendable {
     }
 }
 
+/// Whether Shelf owns the underlying file or only keeps a reference supplied by the user.
+nonisolated enum ShelfItemOwnership: Hashable, Sendable {
+    case externalReference
+    case shelfTemporary
+}
+
 /// A temporary reference to a file or folder staged on a Shelf board.
 ///
 /// Shelf does not copy an item when it is added. The URL remains the source of truth until the
@@ -62,6 +68,7 @@ nonisolated struct ShelfItem: Identifiable, Hashable, Sendable {
     var byteCount: Int64?
     var contentTypeIdentifier: String?
     var isAvailable: Bool
+    var ownership: ShelfItemOwnership
 
     init(
         url: URL,
@@ -69,7 +76,8 @@ nonisolated struct ShelfItem: Identifiable, Hashable, Sendable {
         isDirectory: Bool = false,
         byteCount: Int64? = nil,
         contentTypeIdentifier: String? = nil,
-        isAvailable: Bool = true
+        isAvailable: Bool = true,
+        ownership: ShelfItemOwnership = .externalReference
     ) {
         let normalizedURL = Self.normalized(url)
         self.id = normalizedURL.path
@@ -79,6 +87,7 @@ nonisolated struct ShelfItem: Identifiable, Hashable, Sendable {
         self.byteCount = byteCount
         self.contentTypeIdentifier = contentTypeIdentifier
         self.isAvailable = isAvailable
+        self.ownership = ownership
     }
 
     static func normalized(_ url: URL) -> URL {

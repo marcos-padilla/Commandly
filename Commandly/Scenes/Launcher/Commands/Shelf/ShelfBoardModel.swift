@@ -21,6 +21,7 @@ final class ShelfBoardModel {
     var errorMessage: String?
 
     private let services: ShelfApplicationServices
+    private let temporaryContentStore: any ShelfTemporaryContentStoring
     private let onClose: () -> Void
     private var metadataTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
     private var scopedURLs: Set<URL> = []
@@ -37,6 +38,7 @@ final class ShelfBoardModel {
         self.entryMode = entryMode
         self.configuration = configuration
         self.services = services
+        self.temporaryContentStore = services.makeTemporaryContentStore()
         self.onClose = onClose
     }
 
@@ -97,12 +99,17 @@ extension ShelfBoardModel {
 
     @discardableResult
     func stage(_ urls: [URL]) -> Int {
+        stage(urls.map { ($0, ShelfItemOwnership.externalReference) })
+    }
+
+    @discardableResult
+    private func stage(_ candidates: [(URL, ShelfItemOwnership)]) -> Int {
         guard isTornDown == false else { return 0 }
         let existingIDs = Set(items.map(\.id))
         var seen = existingIDs
-        let accepted = urls.compactMap { candidate -> ShelfItem? in
+        let accepted = candidates.compactMap { candidate, ownership -> ShelfItem? in
             guard candidate.isFileURL else { return nil }
-            let item = ShelfItem(url: candidate)
+            let item = ShelfItem(url: candidate, ownership: ownership)
             guard seen.insert(item.id).inserted else { return nil }
             return item
         }
@@ -127,12 +134,30 @@ extension ShelfBoardModel {
     }
 
     func addFromClipboard() async {
-        let urls = await services.pasteboard.readFileURLs()
-        guard urls.isEmpty == false else {
-            statusMessage = "The clipboard does not contain files or folders."
+        guard let content = await services.pasteboard.readContent() else {
+            statusMessage = "The clipboard does not contain supported text, images, files, or folders."
             return
         }
-        _ = stage(urls)
+        do {
+            switch content {
+            case .fileURLs(let urls):
+                _ = stage(urls)
+            case .text(let text):
+                let url = try await temporaryContentStore.createTextFile(containing: text)
+                if stage([(url, .shelfTemporary)]) == 0 {
+                    await temporaryContentStore.discard([url])
+                }
+            case .image(let image):
+                let url = try await temporaryContentStore.createImageFile(image)
+                if stage([(url, .shelfTemporary)]) == 0 {
+                    await temporaryContentStore.discard([url])
+                }
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            errorMessage = Self.userFacingMessage(for: error)
+        }
     }
 
     func copyItemsToClipboard() async {
@@ -300,14 +325,18 @@ extension ShelfBoardModel {
     }
 
     func duplicateSelected() async {
-        let urls = actionURLs
-        guard urls.isEmpty == false else { return }
+        let sourceItems = actionItems
+        guard sourceItems.isEmpty == false else { return }
         var outputs: [URL] = []
-        await runAction(success: urls.count == 1 ? "Duplicate created." : "Duplicates created.") { [services] in
-            outputs = try await services.fileActions.duplicate(urls)
+        await runAction(
+            success: sourceItems.count == 1 ? "Duplicate created." : "Duplicates created."
+        ) { [services] in
+            outputs = try await services.fileActions.duplicate(sourceItems.map(\.url))
         }
-        if outputs.isEmpty == false {
-            _ = stage(outputs)
+        if outputs.count == sourceItems.count {
+            _ = stage(zip(outputs, sourceItems).map { output, source in
+                (output, source.ownership)
+            })
         }
     }
 
@@ -337,7 +366,7 @@ extension ShelfBoardModel {
             outputs = try await services.fileActions.move(sourceItems.map(\.url), to: destination)
         }
         guard outputs.count == sourceItems.count else { return }
-        replace(sourceItems, with: outputs)
+        replace(sourceItems, with: outputs) { _ in .externalReference }
     }
 
     func rename(_ itemID: ShelfItem.ID, to proposedName: String) async {
@@ -352,7 +381,7 @@ extension ShelfBoardModel {
             output = try await services.fileActions.rename(item.url, to: name)
         }
         if let output {
-            replace([item], with: [output])
+            replace([item], with: [output]) { $0.ownership }
         }
     }
 
@@ -395,6 +424,10 @@ extension ShelfBoardModel {
             url.stopAccessingSecurityScopedResource()
         }
         scopedURLs.removeAll()
+        let store = temporaryContentStore
+        Task {
+            await store.discardAll()
+        }
     }
 
     private func loadMetadata(for stagedItems: [ShelfItem]) {
@@ -435,7 +468,11 @@ extension ShelfBoardModel {
         statusMessage = "One Shelf item is no longer available."
     }
 
-    private func replace(_ sourceItems: [ShelfItem], with outputURLs: [URL]) {
+    private func replace(
+        _ sourceItems: [ShelfItem],
+        with outputURLs: [URL],
+        ownership: (ShelfItem) -> ShelfItemOwnership
+    ) {
         let replacements = Dictionary(
             uniqueKeysWithValues: zip(sourceItems, outputURLs).map { ($0.id, $1) }
         )
@@ -449,7 +486,10 @@ extension ShelfBoardModel {
         var replacementItems: [ShelfItem] = []
         items = items.compactMap { item in
             guard let replacementURL = replacements[item.id] else { return item }
-            let replacement = ShelfItem(url: replacementURL)
+            let replacement = ShelfItem(
+                url: replacementURL,
+                ownership: ownership(item)
+            )
             replacementItems.append(replacement)
             return replacement
         }
@@ -461,6 +501,15 @@ extension ShelfBoardModel {
         })
         replacementItems.forEach { retainAccess(for: $0.url) }
         loadMetadata(for: replacementItems)
+
+        let transferredTemporaryURLs = sourceItems.compactMap { source -> URL? in
+            guard source.ownership == .shelfTemporary,
+                  ownership(source) == .externalReference else {
+                return nil
+            }
+            return source.url
+        }
+        discardTemporaryContent(transferredTemporaryURLs)
     }
 
     private func remove(itemIDs: Set<ShelfItem.ID>, status: String?) {
@@ -474,6 +523,11 @@ extension ShelfBoardModel {
             metadataTasks[item.id] = nil
             releaseAccess(for: item.url)
         }
+        discardTemporaryContent(
+            removedItems.compactMap { item in
+                item.ownership == .shelfTemporary ? item.url : nil
+            }
+        )
         items.removeAll { itemIDs.contains($0.id) }
         selectedItemIDs.subtract(itemIDs)
         if let status {
@@ -496,6 +550,14 @@ extension ShelfBoardModel {
         guard scopedURLs.contains(url) == false else { return }
         if url.startAccessingSecurityScopedResource() {
             scopedURLs.insert(url)
+        }
+    }
+
+    private func discardTemporaryContent(_ urls: [URL]) {
+        guard urls.isEmpty == false else { return }
+        let store = temporaryContentStore
+        Task {
+            await store.discard(urls)
         }
     }
 

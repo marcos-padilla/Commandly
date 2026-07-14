@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Native hit region that moves Shelf without making its file-content background draggable.
+/// Native top-region fallback for moving Shelf when a gesture starts on the visual grab handle.
 struct ShelfWindowDragHandle: NSViewRepresentable {
     func makeNSView(context: Context) -> ShelfWindowDragRegionView {
         ShelfWindowDragRegionView(frame: .zero)

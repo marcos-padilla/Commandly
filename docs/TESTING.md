@@ -58,11 +58,20 @@ so `make verify` remains safe for non-interactive environments.
 - System resource/application models, protected quit-all behavior, and confirmation flows without terminating real apps
 - Recent Downloads ordering/filtering and open/reveal/file-copy actions against temporary files and injected adapters
 - Shelf URL staging and metadata enrichment, duplicate suppression, selection and copy-only drag-out
-  retention, clipboard seeding, direct native-share routing, empty-close/drop-sound settings,
-  non-destructive reference removal, preview dispatch, semantic homogeneous/mixed item labels,
-  resilient incoming-drop counts, outgoing/incoming drag isolation, explicit-handle window movement,
-  rounded AppKit hosting-layer masking, custom shadow ownership, and file-action routing through
-  in-memory adapters
+  retention, file/folder/text/image clipboard seeding, private temporary-content ownership and
+  cleanup, direct native-share routing, empty-close/drop-sound settings, non-destructive reference
+  removal, preview dispatch, semantic homogeneous/mixed item labels, resilient incoming-drop counts,
+  outgoing/incoming drag isolation, whole-surface window-drag suppression during item drags,
+  repeated-presentation generations, fixed global-shortcut routing, shared launcher/Shelf
+  configure-before-activate overlay behavior, cold first-window attachment, pending first-open
+  replay, reentrant AppKit attachment/style-mask changes without lost presentation requests,
+  sticky cross-Space window roles, launcher outside-click dismissal, launcher centering, and Shelf corner geometry
+  (including displays with negative origins), rounded AppKit hosting-layer masking, custom shadow
+  ownership, and file-action routing through in-memory or isolated named-pasteboard adapters
 - Documentation registration coverage, structured-content validation, automatic catalog inclusion,
   disabled-app discoverability, live alias/hotkey metadata, full-text search, selection repair, and
   launcher-menu routing
+
+Shelf's opening fade/scale, live launcher/Shelf state retention while changing Spaces, control hit
+testing during whole-surface movement, and reduced-motion presentation still require targeted macOS
+UI/VoiceOver review in addition to the deterministic unit coverage above.

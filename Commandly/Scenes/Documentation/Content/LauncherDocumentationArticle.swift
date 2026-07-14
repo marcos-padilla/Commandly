@@ -124,7 +124,7 @@ enum LauncherDocumentationArticle {
                             "Click a result to select and run it.",
                             "Right-click an installed application row to open its searchable actions panel.",
                             "While the results list is scrolling, hover does not steal the keyboard selection.",
-                            "Clicking outside Commandly or switching to another app dismisses the launcher.",
+                            "Clicking outside Commandly dismisses the launcher. Keyboard-only Space changes keep it available in the current Space.",
                             "The launcher window can be moved to a convenient position; macOS preserves normal window placement behavior.",
                         ]),
                     ]

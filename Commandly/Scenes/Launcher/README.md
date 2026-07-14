@@ -8,7 +8,7 @@ The main field is the primary entry point for discovering and running work:
 
 - Focus stays on the search field (not the parent window chrome) so typing always updates the query
 - Launcher chrome stays **borderless** (no titled title-bar / empty chrome strip) and patches `canBecomeKey` for the launcher window identifier so reopen can type; `searchFocusEpoch` / `prepareForPresentation` / `requestSearchFocus` reclaim `@FocusState` after hide
-- Click outside / app deactivate dismisses the launcher (global + local mouse monitors, resign-key, resign-active)
+- Clicking outside dismisses the launcher through local/global mouse monitors; keyboard-only Space changes do not count as an outside click
 - **Escape**: AppKit key monitor (TextField cannot swallow it); overlays first, then application-local Escape, then home, then hide
 - Ranked results via SearchKit providers: **commands**, **applications**, and honest **placeholders**
 - Result rows are single-line: icon, title, optional muted inline subtitle, trailing kind label; selection uses a subtle full-width rounded overlay

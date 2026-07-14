@@ -266,42 +266,43 @@ extension RegisteredApplicationDocumentation {
 
     static let shelf = LauncherApplicationDocumentation(
         category: .productivity,
-        overview: "Keep temporary references to files and folders on one floating local board, then preview, share, manage, copy, move, or drag them into another macOS application.",
+        overview: "Keep files, folders, clipboard text, and clipboard images on one temporary floating board, then preview, share, manage, copy, move, or drag them into another macOS application.",
         sections: [
             DocumentationSection(
                 id: "shelf.open",
                 title: "Open, Stage, and Use Items",
                 blocks: [
                     .steps("shelf.open.steps", [
-                        "Choose New Shelf or New Shelf From Clipboard from Commandly's menu bar item, or search for Shelf in the launcher and press Return.",
-                        "Drop one or more files or folders on the board. A blue outline and an incoming-item prompt confirm the target without relying on color alone. New Shelf From Clipboard seeds concrete file URLs from the pasteboard.",
+                        "Use the system-wide New Shelf or New Shelf From Clipboard shortcut, choose either command from Commandly's menu bar item, or search for Shelf in the launcher and press Return. Each new board opens on the display that is active when you invoke it.",
+                        "Drop one or more files or folders on the board. A blue outline and an incoming-item prompt confirm the target without relying on color alone. New Shelf From Clipboard accepts text, standalone images, files, and folders.",
                         "Choose the semantic item count, such as 2 images or 3 PDFs, to inspect the grid, toggle a multi-item selection, and drag the active items into Finder or another compatible app. Drag-out is copy-only, so originals are never moved or deleted and the Shelf references remain.",
                         "When a drag enters Shelf, drop directly on the native AirDrop, Messages, or Mail targets below the board to open that sharing service without first staging the files."
                     ]),
                     .bullets("shelf.open.actions", [
                         "Open, Open With, Show in Finder, and Quick Look use native macOS services.",
                         "AirDrop, Messages, Mail, and More Sharing apply to the explicit selection, or to all staged items when nothing is selected.",
-                        "Add From Clipboard and Copy Items exchange file and folder URLs with the pasteboard. Copy Paths writes their newline-separated paths as text.",
+                        "Add From Clipboard accepts text, standalone images, files, and folders. Copy Items writes the staged file representations back to the pasteboard; Copy Paths writes their newline-separated paths as text.",
+                        "Drag from any unused part of the board to move Shelf. Controls and staged-item drags keep their own interactions, so dragging an item out does not move the window.",
                         "Duplicate, Copy To, Move To, and Rename change the real items on disk. Remove From Shelf and Clear Shelf remove references only.",
                         "Move to Trash changes the real items and requires confirmation from the detail view."
                     ]),
                     .shortcuts("shelf.open.shortcuts", [
                         DocumentationShortcut(
                             id: "shelf.open.new",
-                            title: "New Shelf from the menu bar",
+                            title: "New Shelf",
                             keys: ["⌥", "⇧", "Space"],
-                            detail: "Shown as a menu-bar key equivalent beside New Shelf."
+                            detail: "Works system-wide while Commandly is running."
                         ),
                         DocumentationShortcut(
                             id: "shelf.open.clipboard",
-                            title: "New Shelf From Clipboard from the menu bar",
+                            title: "New Shelf From Clipboard",
                             keys: ["⌥", "⇧", "A"],
-                            detail: "Shown as a menu-bar key equivalent beside New Shelf From Clipboard."
+                            detail: "Works system-wide while Commandly is running."
                         ),
                         DocumentationShortcut(id: "shelf.open.preview", title: "Quick Look active items", keys: ["Space"]),
                         DocumentationShortcut(id: "shelf.open.details", title: "Toggle compact and detail views", keys: ["Tab"]),
                         DocumentationShortcut(id: "shelf.open.copy", title: "Copy active file URLs", keys: ["⌘", "C"]),
-                        DocumentationShortcut(id: "shelf.open.paste", title: "Add clipboard file URLs", keys: ["⌘", "V"]),
+                        DocumentationShortcut(id: "shelf.open.paste", title: "Add clipboard content", keys: ["⌘", "V"]),
                         DocumentationShortcut(id: "shelf.open.clear", title: "Clear the board", keys: ["Delete"]),
                         DocumentationShortcut(
                             id: "shelf.open.escape",
@@ -317,17 +318,16 @@ extension RegisteredApplicationDocumentation {
                 title: "Shelf Settings",
                 blocks: [
                     .bullets("shelf.settings.items", [
-                        "Keep shelf visible when inactive leaves the board on screen after Commandly loses focus.",
                         "Close when empty dismisses the board after its final staged reference is explicitly removed or trashed. Copy-only drag-out keeps references, and a new empty board remains open.",
-                        "Preferred corner chooses Bottom right, Bottom left, Top right, or Top left for newly opened boards.",
-                        "Play drop sound plays a local macOS sound after new file or folder references are accepted."
+                        "Preferred corner chooses Bottom right, Bottom left, Top right, or Top left on the display active when a new board opens.",
+                        "Play drop sound plays a local macOS sound after new content is accepted."
                     ]),
                     .callout(
                         "shelf.settings.scope",
                         DocumentationCallout(
                             kind: .important,
                             title: "Corner placement applies on open",
-                            text: "Preferred corner positions a newly opened board. Drag the top grab handle to move the board afterward; dragging an item leaves the board in place."
+                            text: "Preferred corner positions a new board on the active display. Drag any unused part of the board to move it afterward; controls and item drags keep the board in place."
                         )
                     )
                 ]
@@ -340,8 +340,8 @@ extension RegisteredApplicationDocumentation {
                         "shelf.limits.preview",
                         DocumentationCallout(
                             kind: .limitation,
-                            title: "One temporary file-URL board",
-                            text: "Shelf does not persist or restore boards, open simultaneous or recent/pinned shelves, reorder items, materialize promised files, or stage plain text, standalone clipboard images, or snippets. It accepts concrete file and folder URLs only."
+                            title: "One temporary board",
+                            text: "Shelf does not persist or restore boards, open simultaneous or recent/pinned shelves, reorder items, materialize promised Finder files, or create reusable snippets. Clipboard text and standalone images are represented by private temporary files only for the lifetime of the board."
                         )
                     ),
                     .callout(
@@ -356,8 +356,8 @@ extension RegisteredApplicationDocumentation {
                         "shelf.limits.privacy",
                         DocumentationCallout(
                             kind: .privacy,
-                            title: "Temporary local references",
-                            text: "The board keeps security-scoped URL references in memory only and releases access when an item leaves or Shelf closes. It does not log or persist paths, previews, clipboard values, or contents. Native sharing occurs only after your action; the selected macOS service controls recipients, sign-in, and transfer."
+                            title: "Temporary local content",
+                            text: "Dropped or pasted files and folders remain untouched references. Clipboard text and standalone images are written to a private per-board temporary directory so native macOS actions can use them, then removed when the item leaves or Shelf closes. Shelf does not log paths, previews, clipboard values, or contents. Native sharing occurs only after your action; the selected macOS service controls recipients, sign-in, and transfer."
                         )
                     )
                 ]

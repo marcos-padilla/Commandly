@@ -7,7 +7,7 @@ struct ShelfApplication: LauncherApplication {
     static let manifest = CommandManifest(
         id: applicationID,
         title: "Shelf",
-        subtitle: "Stage files and folders on a temporary local board",
+        subtitle: "Stage files, folders, text, and images on a temporary local board",
         systemImage: "square.stack.3d.up",
         category: .productivity,
         mode: .action,
@@ -18,7 +18,10 @@ struct ShelfApplication: LauncherApplication {
             "clipboard",
             "board",
             "temporary",
-            "files"
+            "files",
+            "folders",
+            "text",
+            "images"
         ],
         badgeTitle: "Application",
         defaultActions: [
@@ -33,14 +36,6 @@ struct ShelfApplication: LauncherApplication {
 
     static let configurationFields: [LauncherConfigurationField] = [
         LauncherConfigurationField(
-            id: "keep-visible",
-            variable: "keepVisibleWhenInactive",
-            title: "Keep shelf visible when inactive",
-            description: "Leave the shelf on screen after Commandly loses focus.",
-            kind: .toggle,
-            defaultValue: .boolean(true)
-        ),
-        LauncherConfigurationField(
             id: "clear-when-empty",
             variable: "clearWhenEmpty",
             title: "Close when empty",
@@ -52,7 +47,7 @@ struct ShelfApplication: LauncherApplication {
             id: "preferred-corner",
             variable: "preferredCorner",
             title: "Preferred corner",
-            description: "Default placement when opening a new Shelf board.",
+            description: "Default placement on the display active when a new Shelf opens.",
             kind: .selection,
             defaultValue: .text(ShelfPreferredCorner.bottomRight.rawValue),
             options: ShelfPreferredCorner.allCases.map { corner in
@@ -67,7 +62,7 @@ struct ShelfApplication: LauncherApplication {
             id: "drop-sound",
             variable: "playDropSound",
             title: "Play drop sound",
-            description: "Play a local macOS sound after a file or folder is staged.",
+            description: "Play a local macOS sound after new content is staged.",
             kind: .toggle,
             defaultValue: .boolean(false)
         )
