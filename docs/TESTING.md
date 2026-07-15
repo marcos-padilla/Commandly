@@ -35,9 +35,38 @@ so `make verify` remains safe for non-interactive environments.
 ## Rules
 
 - No `XCTAssertTrue(true)` / empty `#expect(true)` style placeholders.
-- No real clipboard, Keychain, network, user files, or permission prompts.
+- No real clipboard, Keychain, provider network, user API keys, user files, or permission prompts.
+- AI tests use injected HTTP fixtures, `InMemorySecureStore`, fake provider credentials, and
+  in-memory or isolated temporary authorized roots. They must not depend on quota, billing, installed
+  Ollama models, or a developer's provider account.
 - Prefer deterministic providers (`FixedDateProvider`, `FixedUUIDProvider`).
 - Prefer Swift Testing for new unit tests.
+
+## Required AI coverage
+
+The AI vertical slice is not complete until deterministic tests cover these categories without
+claiming live-provider compatibility:
+
+- `AIKit` value semantics, redaction, JSON/schema validation, duplicate provider registration,
+  native continuation-state correlation, bounded agent rounds, and cancellation
+- Provider-specific authentication and metadata/model discovery fixtures, pagination/filtering,
+  capability-evidence provenance, malformed payloads, and sanitized status mapping
+- Explicit runtime/catalog behavior for OpenAI, Anthropic, Gemini, Mistral, Groq, xAI, OpenRouter,
+  and loopback Ollama, including each adapter's native authentication, discovery, and tool wire form
+- Non-streaming generation/tool responses, working/cancellation UI state, quota/provider failure,
+  and preservation of the same provider's opaque continuation state across tool rounds
+- BYOK setup ordering: key held only in memory before validation, model choice required before save,
+  Keychain write/delete, and non-secret provider/model preference round-trip
+- Secret hygiene: keys and authorization headers absent from descriptions, errors, fixtures,
+  UserDefaults, logs, and failure output
+- Finder root/handle lifetime, canonical containment, resource-identity revalidation, symlink and
+  package leaf behavior, collision/name limits, and prohibited protected roots
+- Exact content/mutation planning, expiring single-use approval, stale-plan rejection, partial
+  failure reporting, and natural-language delete mapping only to Move to Trash
+- Rejection of unknown/malformed tools, raw paths, permanent deletion, overwrite/merge, arbitrary
+  sharing, AppleScript, process launch, and shell execution
+- Ephemeral conversation cleanup plus cancellation of provider, approval, and pending tool work when
+  the launcher application stops
 
 ## What foundation tests cover
 

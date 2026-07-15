@@ -13,6 +13,8 @@ struct AppDependencies: Sendable {
     let uuidProvider: any UUIDProviding
     let commandRegistry: CommandRegistry
     let persistenceStore: any PersistenceStore
+    let secureStore: any SecureStoring
+    let aiConnectionStore: any AIConnectionStoring
     let permissionService: any PermissionServicing
     let privacySettingsOpener: any PrivacySettingsOpening
     let onboardingStatusStore: any OnboardingStatusStoring

@@ -8,6 +8,53 @@ public struct SecureStoreKey: Hashable, Sendable, Codable, RawRepresentable {
     public init(rawValue: String) {
         self.rawValue = rawValue
     }
+
+    /// Whether the key contains a stable, nonempty storage identifier.
+    public var isValid: Bool {
+        rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+}
+
+/// Sanitized failures produced by secure-storage implementations.
+///
+/// These cases deliberately omit storage keys, secret values, Keychain status codes, and other
+/// operation-specific payloads so they are safe to surface or interpolate into diagnostics.
+public enum SecureStoreError: Error, Sendable, Equatable {
+    /// The supplied logical storage key was empty or otherwise invalid.
+    case invalidKey
+    /// The secure store was initialized with invalid configuration.
+    case invalidConfiguration
+    /// The process is not permitted to access the requested secure store.
+    case accessDenied
+    /// Secure storage could not perform an interaction in the current device state.
+    case interactionNotAllowed
+    /// The secure-storage service is currently unavailable.
+    case unavailable
+    /// Secure storage returned data in an unexpected format.
+    case invalidData
+    /// The operation failed for a reason that is intentionally not exposed.
+    case operationFailed
+}
+
+extension SecureStoreError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .invalidKey:
+            return "The secure storage key is invalid."
+        case .invalidConfiguration:
+            return "Secure storage is not configured correctly."
+        case .accessDenied:
+            return "Secure storage access was denied."
+        case .interactionNotAllowed:
+            return "Secure storage is locked or unavailable for interaction."
+        case .unavailable:
+            return "Secure storage is unavailable."
+        case .invalidData:
+            return "Secure storage returned invalid data."
+        case .operationFailed:
+            return "The secure storage operation failed."
+        }
+    }
 }
 
 /// Contract for storing sensitive values outside of source control and UserDefaults.
@@ -18,6 +65,43 @@ public protocol SecureStoring: Sendable {
     func write(_ key: SecureStoreKey, value: Data) async throws
     /// Deletes a sensitive value.
     func delete(_ key: SecureStoreKey) async throws
+}
+
+/// Actor-confined secure storage for deterministic tests and previews.
+///
+/// Values remain in memory only and are discarded with the store. Production code should inject a
+/// platform secure-storage adapter instead.
+public actor InMemorySecureStore: SecureStoring {
+    private var values: [SecureStoreKey: Data]
+
+    /// Creates an in-memory store with optional predetermined values.
+    public init(values: [SecureStoreKey: Data] = [:]) {
+        self.values = values
+    }
+
+    public func read(_ key: SecureStoreKey) async throws -> Data? {
+        try Task.checkCancellation()
+        try validate(key)
+        return values[key]
+    }
+
+    public func write(_ key: SecureStoreKey, value: Data) async throws {
+        try Task.checkCancellation()
+        try validate(key)
+        values[key] = value
+    }
+
+    public func delete(_ key: SecureStoreKey) async throws {
+        try Task.checkCancellation()
+        try validate(key)
+        values[key] = nil
+    }
+
+    private func validate(_ key: SecureStoreKey) throws {
+        guard key.isValid else {
+            throw SecureStoreError.invalidKey
+        }
+    }
 }
 
 /// Categories of macOS permissions Commandly may request.
@@ -99,7 +183,7 @@ public struct InMemoryPermissionChecker: PermissionChecking, Sendable {
 }
 
 /// Sensitive value wrapper that avoids accidental string interpolation into logs.
-public struct SensitiveValue<Value: Sendable>: Sendable {
+public struct SensitiveValue<Value: Sendable>: Sendable, CustomReflectable {
     private let value: Value
 
     /// Creates a sensitive value wrapper.
@@ -110,6 +194,11 @@ public struct SensitiveValue<Value: Sendable>: Sendable {
     /// Reveals the underlying value intentionally.
     public func reveal() -> Value {
         value
+    }
+
+    /// Prevents reflection-based diagnostics from exposing the wrapped value.
+    public var customMirror: Mirror {
+        Mirror(self, children: ["value": "<redacted>"], displayStyle: .struct)
     }
 }
 

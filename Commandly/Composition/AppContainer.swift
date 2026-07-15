@@ -52,6 +52,7 @@ final class AppContainer {
     }
 
     func makeSettingsViewModel(
+        aiSettingsModel: AISettingsModel? = nil,
         onMenuBarIconChange: @escaping (Bool) -> Void = { _ in },
         onTextSizeChange: @escaping (AppTextSizePreference) -> Void = { _ in },
         onViewModeChange: @escaping (AppViewModePreference) -> Void = { _ in },
@@ -65,6 +66,7 @@ final class AppContainer {
             permissionService: dependencies.permissionService,
             privacySettingsOpener: dependencies.privacySettingsOpener,
             metadata: dependencies.metadata,
+            aiSettingsModel: aiSettingsModel,
             applicationRegistry: applicationRegistry,
             onApplicationPreferencesChange: onApplicationPreferencesChange,
             applicationHotkeyIssues: applicationHotkeyIssues,

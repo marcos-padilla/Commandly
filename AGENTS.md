@@ -60,6 +60,10 @@ Every future agent must:
 | Login item registration (`SMAppService`) | `Packages/Sources/Infrastructure` |
 | Persistence contracts | `Packages/Sources/Persistence` |
 | Secure storage / permissions contracts | `Packages/Sources/SecurityKit` |
+| AI provider/model/tool contracts and adapters | `Packages/Sources/AIKit` |
+| BYOK connection storage, Keychain, and Finder AI filesystem boundary | `Commandly/Services/AI` |
+| AI provider setup UI | `Commandly/Scenes/Settings` |
+| Finder AI launcher application and conversation UI | `Commandly/Scenes/Launcher/Commands/FinderAI` |
 | Experimental extension models | `Packages/Sources/ExtensionKit` |
 | Logging | `Packages/Sources/Observability` |
 | App target tests | `CommandlyTests` |

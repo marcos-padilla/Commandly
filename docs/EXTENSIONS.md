@@ -2,6 +2,12 @@
 
 Extension support is **not implemented**. `ExtensionKit` only stores experimental manifest models.
 
+This status refers to **external** extensions. The launcher definition role named `AI Extension`
+describes built-in, reviewed Commandly code such as Finder AI; it does not load an external bundle,
+script, manifest implementation, or provider-supplied code. `AIKit` provider adapters are ordinary
+compiled package code, and model output is treated as untrusted data accepted only through typed,
+locally enforced tools. See `docs/AI.md` and ADR-0006.
+
 ## Candidate approaches
 
 | Approach | Pros | Cons |
@@ -23,3 +29,6 @@ Extension support is **not implemented**. `ExtensionKit` only stores experimenta
 - Crash isolation: prefer out-of-process execution for untrusted code
 
 Do not load external code, create a marketplace, or embed a JS runtime until an ADR is accepted.
+The BYOK AI decision does not authorize any of those capabilities. Adding a built-in AI extension
+must not be used to bypass the future signing, isolation, permission, and review design required for
+third-party extensions.

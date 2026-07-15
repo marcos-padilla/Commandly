@@ -12,6 +12,7 @@ Commandly uses a thin macOS app target and a local Swift package of focused modu
 | CommandKit | Command descriptors and registry contracts | AppCore |
 | SearchKit | Search query/result/provider contracts | AppCore |
 | CalculatorKit | Calculator classify/parse/evaluate engine | AppCore |
+| AIKit | Provider/model contracts, normalized conversations and tools, HTTP transport, and reviewed provider adapters | — |
 | DesignSystem | Spacing, radius, typography roles, colors, motion | — (SwiftUI/AppKit for tokens) |
 | Infrastructure | System integration protocols | AppCore |
 | Persistence | Store/repository contracts + in-memory store | AppCore |
@@ -27,6 +28,7 @@ Commandly App
 ├── CommandKit
 ├── SearchKit
 ├── CalculatorKit
+├── AIKit
 ├── DesignSystem
 ├── Infrastructure
 ├── Persistence
@@ -64,6 +66,20 @@ Prefer initializer injection. Do not introduce a DI framework.
 - After onboarding, Commandly runs as a **menu bar agent** (`MenuBarExtra` + `LSUIElement` / accessory activation policy): no persistent center-screen window, Dock icon hidden. An ordered-out, one-pixel scene-action host keeps SwiftUI's launcher/Shelf `openWindow` actions registered even when the optional menu-bar item is disabled; owner-scoped registration prevents a stale disappearing bridge from clearing a replacement. Settings open via the standard Settings scene; Documentation opens in its own resizable standard window; Quit is available from the status item menu. Opening either utility window activates the app and orders that window front without using a permanent floating window level.
 - The **launcher** is a floating, draggable SwiftUI `Window` (`AppWindowID.launcher`) opened by ⌥Space (`OptionSpaceHotkeyMonitor` via Carbon) or **Open Commandly** in the status item menu. Every built-in capability has a typed `LauncherApplicationDefinition` registered once in `LauncherApplicationRegistry`; launchable definitions attach a `LauncherApplication` implementation that creates a strongly typed session. Definitions form a hierarchy and declare kind, hotkey/enablement defaults, discovery metadata, optional non-secret configuration fields, and required structured documentation. `LauncherApplicationPreferencesStoring` persists user aliases and other overrides; aliases begin empty and feed command search only after the user sets them. Effective enablement inherits from groups, and `ApplicationHotkeyMonitor` registers conflict-safe Carbon shortcuts without an Accessibility prompt. `LauncherRootView` hosts the active session without feature-specific branches. Root search uses SearchKit providers (`CommandSearchProvider`, `ApplicationSearchProvider`, placeholders) merged by `CompositeSearchService` with cancellation on query change. **CalculatorKit** evaluates calculator-shaped queries in parallel and pins a Calculator section above other results. Installed macOS apps open through `ApplicationOpening` and remain distinct from Commandly's registered launcher applications. Root search shows a footer with an app menu (Documentation / Settings / Quit) and Actions; right-clicking an installed application (or Actions / ⌘K) opens a searchable application-actions panel (open, Finder, copy, favorites, ranking, auto-quit, disable, uninstall review with related files). Active application sessions expose footer actions through `CommandActionDescriptor`. **Clipboard History** is a fully implemented registered application (`ClipboardHistoryStore` + surface UI). Pasteboard monitoring runs headlessly after launch; image/file entries are enriched once at capture time via on-device Vision/PDFKit (OCR, labels, readable file text) so search never re-indexes while typing. Store updates must not activate the app or order the launcher front. Each explicit launcher presentation captures the active display before focus changes, applies the shared cross-application overlay role and captured geometry, and only then orders and activates the window so it joins the user's current desktop or full-screen Space. The same live launcher follows keyboard-only Space changes with its query, route, selection, and active application state intact; clicking outside, pressing Escape through the current navigation stack, or toggling the hotkey dismisses it.
 - **File Search** is a registered launcher application backed by `FileSearching` contracts in SearchKit and a persistent local SQLite FTS5 index in the app target. A direct filesystem snapshot makes names, paths, types, dates, sizes, and Finder tags searchable in bounded batches; a second phase adds bounded text/PDF extraction, optional Spotlight metadata, and on-device image OCR. FSEvents refresh changed paths without querying the disk on each keystroke. Search remains limited to security-scoped folders selected by the user and supports UTType-based filters. Native file actions are isolated behind `FileActionServicing`; they include Open With, sharing services, Finder integration, clipboard export, duplicate/copy/move/trash, and Commandly `.webloc` shortcuts. See `docs/FILE_SEARCH.md` and ADR-0003.
+- The **BYOK AI vertical slice** introduces a dependency-free `AIKit` package and a dedicated app
+  boundary for provider connections. The explicit initial catalog is OpenAI, Anthropic, Google
+  Gemini, Mistral AI, Groq, xAI, OpenRouter, and loopback-only Ollama; provider authentication,
+  discovery, capability evidence, errors, and native conversation context remain adapter-specific.
+  Every listed adapter supports the initial non-streaming text/client-tool runtime. Cloud keys are
+  revision-bound generic-password Keychain items through `SecureStoring`; UserDefaults receives
+  only versioned non-secret provider/model metadata.
+- **Finder AI** is the first built-in AI extension. Its in-memory launcher session gives the model
+  declarative tools with conversation-scoped opaque handles, never raw path authority, AppleScript,
+  a process API, or a shell. Read-only metadata work is bounded; content disclosure and every
+  filesystem mutation require an exact local approval. Natural-language deletion means Move to
+  Trash only, and permanent deletion is not a tool. Finder AI is limited to current user-selected
+  folder scopes, reports partial failures honestly, and clears its conversation when the launcher
+  session ends. See `docs/AI.md` and ADR-0006.
 - **Shelf** owns one temporary floating board of external file/folder URL references and board-owned
   files materialized from explicit clipboard text/image imports. Each presentation request captures
   the active display before Commandly activates, increments a generation even when its entry mode is
@@ -88,7 +104,7 @@ Prefer initializer injection. Do not introduce a DI framework.
 - **Window Layouts** keeps layout geometry and custom-layout persistence separate from the Accessibility adapter. The adapter asks for Accessibility only from an explicit Apply action, then resizes the focused window against its display's visible work area. The built-in catalog contains 58 original normalized presets.
 - **Offline Tools** groups small, focused application surfaces around injected pasteboard, dictionary, color-sampling, and font-catalog boundaries. Emoji data, text conversion, color conversion, installed font discovery, dictionary lookup, and typing practice do not call network services.
 - `LauncherApplicationScreen` is an opt-in reusable search/filter/sidebar/detail composition. It centralizes focus, keyboard handling, semantic chrome, selection-row styling, empty states, and metadata rows for browser-style applications such as Clipboard History and File Search. Applications with different interaction models provide their own surface. See `docs/LAUNCHER_APPLICATIONS.md` and ADR-0004.
-- Settings use a collapsible quiet sidebar, persistent top navigation chrome, and card pages under `Commandly/Scenes/Settings`, backed by `AppSettingsStoring` and permission/login-item services. The Applications pane renders the registry hierarchy and each definition's configuration schema; it contains no feature-specific settings branches.
+- Settings use a collapsible quiet sidebar, persistent top navigation chrome, and card pages under `Commandly/Scenes/Settings`, backed by `AppSettingsStoring` and permission/login-item services. The Applications pane renders the registry hierarchy and each definition's non-secret configuration schema; it contains no feature-specific settings branches. AI provider connection and active-model selection use a dedicated AI pane because credentials must never enter launcher configuration.
 - Documentation uses a separate resizable `Window` under `Commandly/Scenes/Documentation`. `DocumentationCatalog` combines static core articles with every documented registry definition and resolves live aliases, shortcuts, actions, configuration, and enablement. The screen renders typed blocks and never parses repository Markdown at runtime. See `docs/DOCUMENTATION.md`.
 
 ## Concurrency rules
@@ -117,13 +133,22 @@ choose a reviewed format behind a narrow contract: File Search uses local SQLite
 Productivity Library uses versioned JSON in Application Support. See
 `docs/decisions/OPEN_QUESTIONS.md`.
 
+AI credentials are outside this general persistence boundary: cloud keys use Keychain through
+`SecureStoring`, while provider/model selection is non-secret UserDefaults metadata. Initial AI
+conversations, prompts, tool arguments, results, filenames, paths, and disclosed contents are not
+persisted.
+
 ## System integration boundary
 
 `Infrastructure` exposes protocols for opening apps/URLs, filesystem checks, pasteboard, notifications, and workspace introspection. Implementations must live behind these protocols and must not execute arbitrary shell strings.
 
 ## Extension boundary
 
-`ExtensionKit` contains experimental models only. No extension loading, JS runtime, marketplace, or remote code execution exists. Any future design must address signing, permissions, sandboxing, and crash isolation. See `docs/EXTENSIONS.md`.
+`ExtensionKit` contains experimental models for future external extensions only. No extension
+loading, JS runtime, marketplace, or remote code execution exists. A registered launcher item with
+kind `AI Extension`, such as Finder AI, is reviewed native Commandly code; provider responses do not
+install or execute extension code. Any future external-extension design must address signing,
+permissions, sandboxing, and crash isolation. See `docs/EXTENSIONS.md`.
 
 ## Testing strategy
 
@@ -131,3 +156,6 @@ Productivity Library uses versioned JSON in Application Support. See
 - App tests cover composition and navigation wiring.
 - UI tests exist but are skipped by default in the shared scheme because they require GUI automation.
 - Tests must not touch real clipboard, Keychain, network, user files, or macOS permission prompts.
+- AI provider tests use deterministic injected HTTP fixtures and fake credentials. Finder AI tests
+  use in-memory secure storage and isolated authorized roots; they must cover opaque-handle scope,
+  approval invalidation, cancellation, and prohibited operations without contacting a provider.

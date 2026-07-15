@@ -134,24 +134,31 @@ public struct FileSearchRequest: Sendable, Equatable {
     public let query: SearchQuery
     public let category: FileSearchCategory
     public let includesFileNames: Bool
+    public let includesFilePaths: Bool
     public let includesFileContents: Bool
     public let includesMetadata: Bool
     public let includesTags: Bool
+    /// Optional local scopes applied by the index before ranking and limiting results.
+    public let scopeURLs: [URL]
 
     public init(
         query: SearchQuery,
         category: FileSearchCategory = .all,
         includesFileNames: Bool = true,
+        includesFilePaths: Bool = true,
         includesFileContents: Bool = true,
         includesMetadata: Bool = true,
-        includesTags: Bool = true
+        includesTags: Bool = true,
+        scopeURLs: [URL] = []
     ) {
         self.query = query
         self.category = category
         self.includesFileNames = includesFileNames
+        self.includesFilePaths = includesFilePaths
         self.includesFileContents = includesFileContents
         self.includesMetadata = includesMetadata
         self.includesTags = includesTags
+        self.scopeURLs = scopeURLs.map(\.standardizedFileURL)
     }
 }
 
@@ -254,7 +261,15 @@ public actor InMemoryFileSearchService: FileSearching {
     public func search(_ request: FileSearchRequest) async throws -> [FileSearchItem] {
         try Task.checkCancellation()
         requests.append(request)
-        let limited = request.query.limit.map { Array(items.prefix($0)) } ?? items
+        let scoped = request.scopeURLs.isEmpty ? items : items.filter { item in
+            request.scopeURLs.contains { scope in
+                let itemPath = item.url.standardizedFileURL.path
+                let scopePath = scope.path
+                return itemPath == scopePath
+                    || itemPath.hasPrefix(scopePath.hasSuffix("/") ? scopePath : "\(scopePath)/")
+            }
+        }
+        let limited = request.query.limit.map { Array(scoped.prefix($0)) } ?? scoped
         return limited
     }
 }

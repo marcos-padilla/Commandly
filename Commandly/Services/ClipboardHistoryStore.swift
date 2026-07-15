@@ -111,6 +111,11 @@ enum ClipboardImageFile {
 @Observable
 @MainActor
 final class ClipboardHistoryStore {
+    private static let sensitivePasteboardMarkers: Set<NSPasteboard.PasteboardType> = [
+        NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
+        NSPasteboard.PasteboardType("org.nspasteboard.TransientType"),
+    ]
+
     private(set) var entries: [ClipboardHistoryEntry] = []
     private let maxEntries: Int
     private let pasteboard: NSPasteboard
@@ -267,6 +272,27 @@ final class ClipboardHistoryStore {
         entries.removeAll()
     }
 
+    /// Removes one exact credential from Commandly's in-memory history and prevents the current
+    /// pasteboard generation from being captured if it contains that credential. The value is not
+    /// retained as a suppression list and the user's system clipboard is not modified.
+    func excludeSensitiveTextFromHistory(_ sensitiveText: String) {
+        guard sensitiveText.isEmpty == false else { return }
+        let removedIDs = entries.compactMap { entry in
+            entry.contentType == .text && entry.text == sensitiveText ? entry.id : nil
+        }
+        removedIDs.forEach { enrichmentCoordinator.cancel(id: $0) }
+        entries.removeAll { entry in
+            entry.contentType == .text && entry.text == sensitiveText
+        }
+
+        let currentText = pasteboard.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if currentText == sensitiveText {
+            lastChangeCount = pasteboard.changeCount
+            suppressRecordingThroughChangeCount = pasteboard.changeCount
+        }
+    }
+
     /// Applies capture-time enrichment to a live entry. Ignores unknown IDs.
     func applyEnrichment(id: UUID, enrichment: ClipboardEnrichment) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
@@ -346,6 +372,10 @@ final class ClipboardHistoryStore {
     }
 
     private func captureCurrentPasteboard() -> ClipboardHistoryEntry? {
+        let types = Set(pasteboard.types ?? [])
+        guard types.isDisjoint(with: Self.sensitivePasteboardMarkers) else {
+            return nil
+        }
         let frontApp = NSWorkspace.shared.frontmostApplication
         let sourceName = frontApp?.localizedName
         let sourceBundle = frontApp?.bundleIdentifier

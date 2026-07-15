@@ -1,6 +1,6 @@
 # Roadmap
 
-Status legend: ✅ done · 🔜 next · ⏳ later
+Status legend: ✅ done · 🚧 in progress · 🔜 next · ⏳ later
 
 1. ✅ **Project foundation** — structure, modules, docs, scripts, placeholder UI
 2. ✅ **First-run onboarding** — multi-step welcome, feature tour, setup, permissions, and hotkey reveal
@@ -19,7 +19,10 @@ Status legend: ✅ done · 🔜 next · ⏳ later
 15. ⏳ **Extension prototype** — after ADR, likely declarative or signed native first
 16. ⏳ **Distribution and updates** — signing, notarization, updater decision
 17. ✅ **File search provider** — cancellable, persistent, content-aware files provider behind SearchKit
-18. ⏳ **Natural-language / AI answers** — only after a deliberate product/privacy design
+18. 🚧 **BYOK AI + Finder AI vertical slice** — accepted privacy/tool-safety design, AIKit and
+    secure provider setup implemented; the initial non-streaming text/tool runtime covers OpenAI,
+    Anthropic, Gemini, Mistral, Groq, xAI, OpenRouter, and loopback Ollama while broader AI product
+    work remains in progress
 19. ✅ **Native productivity applications** — recent downloads, timers/focus, calculation history, system activity, emoji, text case, color, dictionary, fonts, and typing practice
 20. ✅ **Shelf staging board** — one active-display temporary board with file/folder drag-in,
     multi-item drag-out, clipboard URL/text/image import, native sharing and file actions, global and

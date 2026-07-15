@@ -297,8 +297,9 @@ actor FileIndexDatabase {
         try ensureOpen()
         let limit = max(0, request.query.limit ?? 100)
         guard limit > 0 else { return [] }
+        let scopePaths = Array(request.scopeURLs.prefix(64)).map(\.standardizedFileURL.path)
         if request.query.isEmpty {
-            return try recent(category: request.category, limit: limit)
+            return try recent(category: request.category, scopePaths: scopePaths, limit: limit)
         }
 
         let tokens = FileIndexNormalizer.tokens(request.query.text)
@@ -314,24 +315,42 @@ actor FileIndexDatabase {
         }
 
         if request.includesFileNames {
-            append(try ftsSearch(fields: ["normalized_name", "normalized_path"], tokens: tokens, category: request.category, matchKind: .filename, limit: limit * 2))
+            var fields = ["normalized_name"]
+            if request.includesFilePaths { fields.append("normalized_path") }
+            append(try ftsSearch(
+                fields: fields,
+                tokens: tokens,
+                category: request.category,
+                scopePaths: scopePaths,
+                matchKind: .filename,
+                limit: limit * 2
+            ))
         }
         if request.includesTags {
-            append(try ftsSearch(fields: ["tags"], tokens: tokens, category: request.category, matchKind: .tag, limit: limit))
+            append(try ftsSearch(fields: ["tags"], tokens: tokens, category: request.category, scopePaths: scopePaths, matchKind: .tag, limit: limit))
         }
         if request.includesMetadata {
-            append(try ftsSearch(fields: ["metadata"], tokens: tokens, category: request.category, matchKind: .metadata, limit: limit))
+            append(try ftsSearch(fields: ["metadata"], tokens: tokens, category: request.category, scopePaths: scopePaths, matchKind: .metadata, limit: limit))
         }
         if request.includesFileContents {
-            append(try ftsSearch(fields: ["content"], tokens: tokens, category: request.category, matchKind: .contents, limit: limit))
+            append(try ftsSearch(fields: ["content"], tokens: tokens, category: request.category, scopePaths: scopePaths, matchKind: .contents, limit: limit))
         }
         return orderedPaths.prefix(limit).compactMap { resultsByPath[$0] }
     }
 
-    private func recent(category: FileSearchCategory, limit: Int) throws -> [FileSearchItem] {
-        let categoryClause = category == .all ? "" : "WHERE category = ?"
+    private func recent(
+        category: FileSearchCategory,
+        scopePaths: [String],
+        limit: Int
+    ) throws -> [FileSearchItem] {
+        var predicates: [String] = []
+        if category != .all { predicates.append("category = ?") }
+        if scopePaths.isEmpty == false {
+            predicates.append(Self.scopePredicate(pathColumn: "path", count: scopePaths.count))
+        }
+        let whereClause = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
         let statement = try prepare(
-            "SELECT \(selectedColumns) FROM files \(categoryClause) " +
+            "SELECT \(selectedColumns) FROM files \(whereClause) " +
                 "ORDER BY COALESCE(last_used_at, modified_at, created_at, 0) DESC LIMIT ?"
         )
         defer { sqlite3_finalize(statement) }
@@ -340,6 +359,7 @@ actor FileIndexDatabase {
             bind(category.rawValue, at: binding, in: statement)
             binding += 1
         }
+        binding = bindScopes(scopePaths, startingAt: binding, in: statement)
         sqlite3_bind_int(statement, binding, Int32(limit))
         return try readItems(from: statement, matchKind: .recent)
     }
@@ -348,6 +368,7 @@ actor FileIndexDatabase {
         fields: [String],
         tokens: [String],
         category: FileSearchCategory,
+        scopePaths: [String],
         matchKind: FileSearchMatchKind,
         limit: Int
     ) throws -> [FileSearchItem] {
@@ -356,11 +377,14 @@ actor FileIndexDatabase {
         }
         let expression = tokenExpressions.joined(separator: " AND ")
         let categoryClause = category == .all ? "" : "AND files.category = ?"
+        let scopeClause = scopePaths.isEmpty
+            ? ""
+            : "AND \(Self.scopePredicate(pathColumn: "files.path", count: scopePaths.count))"
         let statement = try prepare(
             """
             SELECT \(selectedColumns)
             FROM file_fts JOIN files ON files.rowid = file_fts.rowid
-            WHERE file_fts MATCH ? \(categoryClause)
+            WHERE file_fts MATCH ? \(categoryClause) \(scopeClause)
             ORDER BY bm25(file_fts, 8.0, 4.0, 6.0, 2.0, 1.0),
                      COALESCE(files.last_used_at, files.modified_at, 0) DESC
             LIMIT ?
@@ -374,8 +398,38 @@ actor FileIndexDatabase {
             bind(category.rawValue, at: binding, in: statement)
             binding += 1
         }
+        binding = bindScopes(scopePaths, startingAt: binding, in: statement)
         sqlite3_bind_int(statement, binding, Int32(limit))
         return try readItems(from: statement, matchKind: matchKind)
+    }
+
+    private static func scopePredicate(pathColumn: String, count: Int) -> String {
+        "(" + Array(
+            repeating: "(\(pathColumn) = ? OR \(pathColumn) LIKE ? ESCAPE '\\')",
+            count: count
+        ).joined(separator: " OR ") + ")"
+    }
+
+    private func bindScopes(
+        _ scopePaths: [String],
+        startingAt initialIndex: Int32,
+        in statement: OpaquePointer
+    ) -> Int32 {
+        var index = initialIndex
+        for path in scopePaths {
+            bind(path, at: index, in: statement)
+            index += 1
+            bind("\(escapedLikeValue(path))/%", at: index, in: statement)
+            index += 1
+        }
+        return index
+    }
+
+    private func escapedLikeValue(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     private var selectedColumns: String {

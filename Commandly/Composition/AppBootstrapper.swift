@@ -26,6 +26,14 @@ enum AppBootstrapper {
 
         let folderAccessStore = UserDefaultsFolderAccessStore()
         let permissionService = SystemPermissionService(folderAccessStore: folderAccessStore)
+        let secureStore: any SecureStoring
+        do {
+            secureStore = try KeychainSecureStore(
+                service: "\(metadata.bundleIdentifier).ai-provider-credentials"
+            )
+        } catch {
+            preconditionFailure("Commandly's Keychain service identifier must be valid.")
+        }
 
         let dependencies = AppDependencies(
             metadata: metadata,
@@ -33,6 +41,8 @@ enum AppBootstrapper {
             uuidProvider: SystemUUIDProvider(),
             commandRegistry: CommandRegistry(),
             persistenceStore: InMemoryPersistenceStore(),
+            secureStore: secureStore,
+            aiConnectionStore: UserDefaultsAIConnectionStore(),
             permissionService: permissionService,
             privacySettingsOpener: WorkspacePrivacySettingsOpener(),
             onboardingStatusStore: UserDefaultsOnboardingStatusStore(),

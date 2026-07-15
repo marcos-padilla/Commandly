@@ -35,6 +35,12 @@ feature model.
   Accessibility is requested only when the user applies a layout.
 - **Emoji Search**, **Convert Text Case**, **Color Tools**, **Dictionary**, **Search Fonts**, and
   **Typing Practice** — focused, offline utilities backed by macOS frameworks and local data.
+- **AI Extensions / Finder AI (vertical slice in progress)** — a built-in native conversation
+  surface for questions about authorized files and exact, locally approved Finder operations. It
+  uses the provider/model selected in the dedicated AI settings pane, keeps conversation state only
+  for the launcher session, and uses conversation-scoped opaque file handles. The reviewed initial
+  provider runtime is non-streaming across OpenAI, Anthropic, Gemini, Mistral, Groq, xAI,
+  OpenRouter, and loopback Ollama.
 - **Open Settings** — action-only navigation into Commandly settings.
 
 These names and workflows are Commandly's own. The registry does not load or imitate another
@@ -109,8 +115,29 @@ empty until the user enters them in Settings, then are added to command search k
 global shortcuts do not request Accessibility access;
 reserved and duplicate shortcuts remain unregistered and surface an issue in Settings.
 
-Only non-secret values belong in this schema or UserDefaults store. A future credential field must
-use SecurityKit-backed storage and a separate privacy review.
+Only non-secret values belong in this schema or UserDefaults store. AI credentials deliberately do
+not add a credential field: they use the dedicated AI settings flow and Keychain-backed
+`SecureStoring`, while only provider/model selection metadata is persisted as a non-secret
+preference.
+
+## Built-in AI extensions
+
+`AI Extension` is a launcher-definition role for native, reviewed Commandly applications. It does
+not load code through `ExtensionKit`, install provider responses, or create a marketplace/runtime
+for external extensions. Finder AI is placed beneath a built-in **AI Extensions** group and follows
+the same branch-free session hosting and lifecycle cleanup as other registered applications.
+
+Finder AI supplies its own chat/approval surface rather than forcing the browser-style
+`LauncherApplicationScreen`. Its focused service group injects the active provider connection,
+bounded agent loop, authorized Finder workspace, and local approval coordinator. Leaving the
+application calls session cleanup, which cancels provider/tool work and clears the ephemeral
+conversation.
+
+The model receives declarative tools whose arguments contain opaque session handles, not paths or
+security-scoped bookmarks. Read-only metadata calls are bounded. File-content disclosure and exact
+create, rename, duplicate, copy, move, or Trash plans require local approval. Permanent deletion,
+overwrite/merge, arbitrary sharing, AppleScript, process launch, and shell execution are outside the
+application contract. See `docs/AI.md` and ADR-0006.
 
 ## Reusing screens
 
@@ -135,4 +162,7 @@ launcher shell genuinely needs to coordinate it.
 - Registration must reject duplicate identifiers.
 - Closing or leaving an application session must call its lifecycle cleanup.
 - Applications must not log queries, clipboard contents, file paths, previews, or indexed contents.
+- AI applications must additionally avoid logging credentials, prompts, provider bodies, tool
+  arguments/results, file metadata, and disclosed content. Cloud disclosure must identify the
+  active provider and remain within the approved bounded payload.
 - New permission behavior still requires the documented contextual permission flow.

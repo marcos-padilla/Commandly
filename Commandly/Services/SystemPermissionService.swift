@@ -90,13 +90,7 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
 
     @MainActor
     private func requestFilesAccess() async -> PermissionState {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.prompt = "Allow Access"
-        panel.message = "Choose folders Commandly can search and manage. Select your Home folder for broad coverage; you can change scopes later in Settings."
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let panel = Self.makeFilesAccessPanel()
 
         let response = await panel.beginSheetModalIfPossible()
         guard response == .OK else {
@@ -123,6 +117,21 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
 
         folderAccessStore.saveBookmarks(bookmarks)
         return .authorized
+    }
+
+    @MainActor
+    static func makeFilesAccessPanel() -> NSOpenPanel {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Choose Folders"
+        panel.message = "Choose one or more specific folders Commandly can search and manage. "
+            + "For safety, Finder AI cannot use your Home folder, folders above Home, or an "
+            + "entire volume as a scope. Choose narrower folders for Finder AI; you can change "
+            + "scopes later in Settings."
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        return panel
     }
 
     private func mapEventKitStatus(_ status: EKAuthorizationStatus) -> PermissionState {

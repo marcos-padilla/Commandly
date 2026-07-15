@@ -1,3 +1,4 @@
+import AIKit
 import Foundation
 import Observation
 import Infrastructure
@@ -48,6 +49,10 @@ final class AppRuntime {
     @ObservationIgnored
     private let fileSearchApplicationServices: FileSearchApplicationServices
     @ObservationIgnored
+    private let aiConnectionService: any AIConnectionServicing
+    @ObservationIgnored
+    private let aiCredentialStore: any AIProviderCredentialStoring
+    @ObservationIgnored
     private let windowLayoutService: AccessibilityWindowLayoutService
     @ObservationIgnored
     private let systemActivityProtectionTracker: SystemActivityProtectionTracker
@@ -77,6 +82,28 @@ final class AppRuntime {
         self.showMenuBarIcon = settings.showMenuBarIcon
         self.textSize = settings.textSize
         self.viewMode = settings.viewMode
+        let aiTransport = URLSessionAIHTTPTransport()
+        let aiRegistry: AIProviderRegistry
+        do {
+            aiRegistry = try AIProviderRegistry.standard(transport: aiTransport)
+        } catch {
+            preconditionFailure("Commandly's built-in AI provider identifiers must be unique.")
+        }
+        let aiConnectionService = AIKitConnectionService(
+            registry: aiRegistry,
+            transport: aiTransport
+        )
+        self.aiConnectionService = aiConnectionService
+        let aiCredentialStore = SecureAIProviderCredentialStore(
+            secureStore: container.dependencies.secureStore
+        )
+        self.aiCredentialStore = aiCredentialStore
+        let aiProviderRuntime = AIProviderRuntimeService(
+            connectionStore: container.dependencies.aiConnectionStore,
+            credentialStore: aiCredentialStore,
+            registry: aiRegistry,
+            transport: aiTransport
+        )
         let clipboardHistoryStore = ClipboardHistoryStore(
             enricher: VisionClipboardContentEnricher()
         )
@@ -106,6 +133,19 @@ final class AppRuntime {
             pasteboard: pasteboard
         )
         self.fileSearchApplicationServices = fileSearchApplicationServices
+        let finderAIWorkspace = FinderAIWorkspaceService(
+            folderAccessStore: container.dependencies.folderAccessStore,
+            searchService: fileSearchService,
+            fileRevealer: fileSearchApplicationServices.fileRevealer
+        )
+        let finderAIServices = FinderAIApplicationServices(
+            runtime: aiProviderRuntime,
+            workspace: finderAIWorkspace,
+            toolExecutor: FinderAIToolExecutor(
+                workspace: finderAIWorkspace,
+                approvalCoordinator: finderAIWorkspace
+            )
+        )
         self.shelfApplicationServices = ShelfApplicationServices(
             metadataReader: WorkspaceFileResourceMetadataReader(),
             fileActions: WorkspaceShelfFileActionService(),
@@ -143,6 +183,7 @@ final class AppRuntime {
             timerStore: TimerStore(),
             productivityLibraryServices: productivityLibraryServices,
             offlineToolsServices: offlineToolsServices,
+            finderAIServices: finderAIServices,
             windowLayoutsServices: windowLayoutsServices,
             systemActivityService: NativeSystemActivityService(
                 protectionTracker: systemActivityProtectionTracker
@@ -176,6 +217,14 @@ final class AppRuntime {
             return cachedSettingsViewModel
         }
         let viewModel = container.makeSettingsViewModel(
+            aiSettingsModel: AISettingsModel(
+                connectionStore: container.dependencies.aiConnectionStore,
+                credentialStore: aiCredentialStore,
+                connectionService: aiConnectionService,
+                excludeCredentialFromClipboardHistory: { [weak clipboardHistoryStore] credential in
+                    clipboardHistoryStore?.excludeSensitiveTextFromHistory(credential)
+                }
+            ),
             onMenuBarIconChange: { [weak self] showIcon in
                 self?.showMenuBarIcon = showIcon
             },
@@ -218,6 +267,14 @@ final class AppRuntime {
                 self?.hideLauncher()
             }
             cachedLauncherViewModel.onOpenSettings = onOpenSettings
+            cachedLauncherViewModel.onOpenAISettings = { [weak self] in
+                self?.makeSettingsViewModel().selectedPane = .ai
+                onOpenSettings()
+            }
+            cachedLauncherViewModel.onOpenPermissionsSettings = { [weak self] in
+                self?.makeSettingsViewModel().selectedPane = .permissions
+                onOpenSettings()
+            }
             cachedLauncherViewModel.onOpenDocumentation = onOpenDocumentation
             cachedLauncherViewModel.onQuit = quit
             return cachedLauncherViewModel
@@ -242,6 +299,14 @@ final class AppRuntime {
             },
             onOpenDocumentation: onOpenDocumentation,
             onOpenSettings: onOpenSettings,
+            onOpenAISettings: { [weak self] in
+                self?.makeSettingsViewModel().selectedPane = .ai
+                onOpenSettings()
+            },
+            onOpenPermissionsSettings: { [weak self] in
+                self?.makeSettingsViewModel().selectedPane = .permissions
+                onOpenSettings()
+            },
             onQuit: quit
         )
         cachedLauncherViewModel = viewModel

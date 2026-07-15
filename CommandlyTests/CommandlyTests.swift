@@ -542,9 +542,11 @@ struct CommandlyTests {
         #expect(request.query.limit == 100)
         #expect(request.category == .documents)
         #expect(request.includesFileNames)
+        #expect(request.includesFilePaths)
         #expect(request.includesFileContents)
         #expect(request.includesMetadata)
         #expect(request.includesTags)
+        #expect(request.scopeURLs.isEmpty)
         #expect(requests.count == 1)
     }
 
@@ -824,6 +826,76 @@ struct CommandlyTests {
         #expect(tags.first?.name == "board-photo.png")
         #expect(tags.first?.tags == ["HOA Board"])
         #expect(tags.first?.matchKind == .tag)
+    }
+
+    @Test func persistentFileIndexScopesBeforeLimitingAndCanDisableAbsolutePathMatches() async throws {
+        let selectedRoot = URL(fileURLWithPath: "/Volumes/Selected")
+        let crowdedRoot = URL(fileURLWithPath: "/Volumes/Crowded")
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandlyScopedSearch-\(UUID().uuidString).sqlite")
+        let database = FileIndexDatabase(databaseURL: databaseURL)
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+        try await database.replaceAuthorizedScopes(with: [selectedRoot.path, crowdedRoot.path])
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let crowded = (0 ..< 220).map { index in
+            FileIndexRecord(
+                path: crowdedRoot.appendingPathComponent("needle-\(index).txt").path,
+                rootPath: crowdedRoot.path,
+                name: "needle-\(index).txt",
+                parentPath: crowdedRoot.path,
+                kind: .file,
+                category: .documents,
+                contentTypeIdentifier: "public.plain-text",
+                contentTypeDescription: "Plain text",
+                byteCount: 1,
+                createdAt: now,
+                modifiedAt: now,
+                lastUsedAt: now,
+                tags: [],
+                metadataText: "",
+                contentText: "",
+                scanGeneration: 1
+            )
+        }
+        let selected = FileIndexRecord(
+            path: selectedRoot.appendingPathComponent("needle-target.txt").path,
+            rootPath: selectedRoot.path,
+            name: "needle-target.txt",
+            parentPath: selectedRoot.path,
+            kind: .file,
+            category: .documents,
+            contentTypeIdentifier: "public.plain-text",
+            contentTypeDescription: "Plain text",
+            byteCount: 1,
+            createdAt: now,
+            modifiedAt: now,
+            lastUsedAt: .distantPast,
+            tags: [],
+            metadataText: "",
+            contentText: "",
+            scanGeneration: 1
+        )
+        try await database.upsert(crowded + [selected])
+
+        let scoped = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "needle", limit: 10),
+            includesFilePaths: false,
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false,
+            scopeURLs: [selectedRoot]
+        ))
+        let hiddenAncestorProbe = try await database.search(FileSearchRequest(
+            query: SearchQuery(text: "volumes", limit: 10),
+            includesFilePaths: false,
+            includesFileContents: false,
+            includesMetadata: false,
+            includesTags: false,
+            scopeURLs: [selectedRoot]
+        ))
+
+        #expect(scoped.map(\.name) == ["needle-target.txt"])
+        #expect(hiddenAncestorProbe.isEmpty)
     }
 
     @Test func fileIndexScannerFindsFilesImmediatelyAndRefreshesChangedContents() async throws {
@@ -1920,6 +1992,45 @@ struct CommandlyTests {
         #expect(store.entries.count == 1)
     }
 
+    @Test @MainActor func clipboardHistorySkipsConcealedAndTransientPasteboardItems() {
+        for marker in [
+            NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
+            NSPasteboard.PasteboardType("org.nspasteboard.TransientType"),
+        ] {
+            let pasteboard = NSPasteboard(
+                name: .init("CommandlyTests.clipboard.sensitive.\(UUID().uuidString)")
+            )
+            let store = ClipboardHistoryStore(pasteboard: pasteboard)
+            pasteboard.declareTypes([.string, marker], owner: nil)
+            pasteboard.setString("secret-value", forType: .string)
+            pasteboard.setData(Data(), forType: marker)
+
+            store.poll()
+
+            #expect(store.entries.isEmpty)
+        }
+    }
+
+    @Test @MainActor func excludingSensitiveTextPurgesAndSuppressesOnlyThatExactValue() {
+        let pasteboard = NSPasteboard(
+            name: .init("CommandlyTests.clipboard.excluded.\(UUID().uuidString)")
+        )
+        let store = ClipboardHistoryStore(pasteboard: pasteboard)
+        pasteboard.clearContents()
+        pasteboard.setString("provider-secret", forType: .string)
+        store.poll()
+        #expect(store.entries.map(\.text) == ["provider-secret"])
+
+        store.excludeSensitiveTextFromHistory("provider-secret")
+        store.poll()
+
+        #expect(store.entries.isEmpty)
+        pasteboard.clearContents()
+        pasteboard.setString("ordinary text", forType: .string)
+        store.poll()
+        #expect(store.entries.map(\.text) == ["ordinary text"])
+    }
+
     @Test @MainActor func clipboardHistoryFiltersAndCopiesWithoutLoggingRequirement() {
         let pasteboard = NSPasteboard(name: .init("CommandlyTests.clipboard.filter.\(UUID().uuidString)"))
         let store = ClipboardHistoryStore(pasteboard: pasteboard)
@@ -2601,6 +2712,23 @@ struct CommandlyTests {
         #expect(await permissions.state(for: .files) == .authorized)
     }
 
+    @Test @MainActor func filePermissionPickerGuidesSpecificFolderSelection() {
+        let panel = SystemPermissionService.makeFilesAccessPanel()
+
+        #expect(panel.canChooseFiles == false)
+        #expect(panel.canChooseDirectories)
+        #expect(panel.allowsMultipleSelection)
+        #expect(panel.prompt == "Choose Folders")
+        #expect(
+            panel.message
+                == "Choose one or more specific folders Commandly can search and manage. "
+                + "For safety, Finder AI cannot use your Home folder, folders above Home, or an "
+                + "entire volume as a scope. Choose narrower folders for Finder AI; you can change "
+                + "scopes later in Settings."
+        )
+        #expect(panel.directoryURL == FileManager.default.homeDirectoryForCurrentUser)
+    }
+
     @Test @MainActor func deniedPermissionOpensSettingsRecovery() async {
         let permissions = InMemoryPermissionService(states: [.accessibility: .denied])
         let opener = RecordingPrivacySettingsOpener()
@@ -2649,6 +2777,8 @@ struct CommandlyTests {
             uuidProvider: FixedUUIDProvider(uuid: fixedUUID),
             commandRegistry: CommandRegistry(),
             persistenceStore: InMemoryPersistenceStore(),
+            secureStore: InMemorySecureStore(),
+            aiConnectionStore: InMemoryAIConnectionStore(),
             permissionService: InMemoryPermissionService(),
             privacySettingsOpener: InMemoryPrivacySettingsOpener(),
             onboardingStatusStore: store,

@@ -81,6 +81,8 @@ final class LauncherViewModel {
     var onDismiss: () -> Void
     var onOpenDocumentation: () -> Void
     var onOpenSettings: () -> Void
+    var onOpenAISettings: () -> Void
+    var onOpenPermissionsSettings: () -> Void
     var onQuit: () -> Void
 
     @ObservationIgnored
@@ -111,6 +113,8 @@ final class LauncherViewModel {
         onDismiss: @escaping () -> Void = {},
         onOpenDocumentation: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
+        onOpenAISettings: (() -> Void)? = nil,
+        onOpenPermissionsSettings: (() -> Void)? = nil,
         onQuit: @escaping () -> Void = {}
     ) {
         self.clipboardHistoryStore = clipboardHistoryStore
@@ -128,6 +132,8 @@ final class LauncherViewModel {
         self.onDismiss = onDismiss
         self.onOpenDocumentation = onOpenDocumentation
         self.onOpenSettings = onOpenSettings
+        self.onOpenAISettings = onOpenAISettings ?? onOpenSettings
+        self.onOpenPermissionsSettings = onOpenPermissionsSettings ?? onOpenSettings
         self.onQuit = onQuit
         self.applicationRegistry = applicationRegistry ?? .makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
@@ -154,6 +160,14 @@ final class LauncherViewModel {
                 openSettings: { [weak self] in
                     self?.dismiss()
                     self?.onOpenSettings()
+                },
+                openAISettings: { [weak self] in
+                    self?.dismiss()
+                    self?.onOpenAISettings()
+                },
+                openPermissionsSettings: { [weak self] in
+                    self?.dismiss()
+                    self?.onOpenPermissionsSettings()
                 },
                 goBack: { [weak self] in self?.goBack() }
             ),

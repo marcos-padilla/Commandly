@@ -243,7 +243,7 @@ workspace-aware placement system.
 | 11 | Check the Weather | Not implemented/excluded | No WeatherKit or remote weather workflow is registered; Location permission is not requested. |
 | 12 | Search for GIFs | Not implemented/excluded | GIF catalog search requires remote content/provider integration and is absent. Local files can still be found through Search Files. |
 | 13 | Search for Emojis | Implemented in this change | Emoji Search locally filters a curated Unicode catalog and copies the selection. |
-| 14 | Search for Emojis with AI | Not implemented/excluded | No AI model or remote semantic search is included; Emoji Search is deterministic and local. |
+| 14 | Search for Emojis with AI | Not implemented/excluded | The BYOK runtime is not connected to Emoji Search; that application remains deterministic and local. |
 | 15 | Set Timers | Implemented in this change | Timers & Focus supports multiple named countdowns, presets, pause/resume/reset/delete, filters, and optional local sound. |
 | 16 | Replace Spotlight | Partial | Option-Space opens a fast keyboard launcher, but Commandly does not disable Spotlight, take over Command-Space, or modify macOS preferences. |
 | 17 | Lock the screen | Not implemented/excluded | No lock-screen command is registered. |
@@ -252,8 +252,8 @@ workspace-aware placement system.
 | 20 | Create dynamic blocks of code from your clipboard | Implemented in this change | Snippets replace every `{{clipboard}}` token on explicit copy. There is no arbitrary script or template execution. |
 | 21 | Share snippets | Implemented in this change | Saved items and drafts use the native share sheet; there is no Commandly-hosted public/team link. |
 | 22 | Search Google | Not implemented/excluded | No query-to-Google command exists. A user may save a static website Quicklink, but it is not a search provider. |
-| 23 | Have AI search the web | Not implemented/excluded | No AI, browser-agent, or remote web-search service is included. |
-| 24 | Not search the web at all | Not implemented/excluded | There is no AI web-search mode or toggle. Ordinary launcher, file, emoji, dictionary, font, and tool searches are already local; currency is the documented pre-existing network exception. |
+| 23 | Have AI search the web | Not implemented/excluded | Finder AI has no browser or web-search tool, and no remote web-search service is included. |
+| 24 | Not search the web at all | Not implemented/excluded | There is no AI web-search mode or toggle, and Finder AI cannot search the web. Ordinary launcher, file, emoji, dictionary, font, and tool searches are local; currency and explicit BYOK provider traffic are the documented network exceptions. |
 | 25 | Take Quick Notes From Anywhere | Implemented in this change | Persistent Quick Notes are available from the launcher and can receive a configured global app shortcut. They copy/share text but do not modify Apple Notes. |
 | 26 | Open Your Latest Download | Implemented in this change | Recent Downloads orders visible top-level files by download/creation/modification recency and can open the newest or selected file in its default app. |
 | 27 | Copy Your Latest Download | Implemented in this change | Recent Downloads can copy the newest or selected file URL to the pasteboard for use in another app. |
@@ -278,7 +278,7 @@ workspace-aware placement system.
 | 46 | Toggle Bluetooth | Not implemented/excluded | macOS does not provide a suitable supported sandboxed API for a third-party app to toggle Bluetooth power; private APIs are not used. |
 | 47 | Control Apple Music | Not implemented/excluded | Commandly can launch installed apps but has no Music playback/library controller. |
 | 48 | Control Spotify | Not implemented/excluded | No Spotify account, Apple Events, URL-control, or Web API integration is included. |
-| 49 | Create Spotify playlists with AI | Not implemented/excluded | Requires both Spotify and AI services/accounts and is outside the native/local scope. |
+| 49 | Create Spotify playlists with AI | Not implemented/excluded | Finder AI has no Spotify authority. This would require a separately reviewed Spotify account/API integration and approval boundary. |
 | 50 | Switch between open windows | Partial | System Activity can switch to a running application and Window Layouts tracks one focused external window, but there is no list or selector for individual open windows. |
 | 51 | Manage running processes | Partial | System Activity lists and manages regular GUI applications only; it is not a daemon/Unix-process inspector. |
 | 52 | Start a Screen Recording | Not implemented/excluded | No recording workflow exists and Screen Recording permission is not requested. |
@@ -288,13 +288,13 @@ workspace-aware placement system.
 | 56 | Force quit applications | Implemented in this change | System Activity offers a destructive confirmation before native force termination. |
 | 57 | Automatically quit applications | Existing | Installed-app Actions can enable a fixed five-minute background idle auto-quit policy using graceful native termination. |
 | 58 | Uninstall applications | Existing | A review workflow discovers the app and matching support files, then moves the user's selected items to Trash and reports partial failures. |
-| 59 | AI Chat with multiple models | Not implemented/excluded | No AI runtime, model provider, credential flow, or chat UI exists. |
-| 60 | Browse your AI Chat history | Not implemented/excluded | There is no AI chat or chat-history persistence. |
-| 61 | Add attachments to AI Chat | Not implemented/excluded | There is no AI chat attachment workflow. |
+| 59 | AI Chat with multiple models | Partial | BYOK settings support an explicit catalog of providers and credential-visible models, while Finder AI provides one in-memory conversation with the active model. There is no provider-neutral general chat surface or mid-conversation model switch. |
+| 60 | Browse your AI Chat history | Not implemented/excluded | The current Finder AI transcript is memory-only and ends with its launcher session; there is no persisted or searchable chat history. |
+| 61 | Add attachments to AI Chat | Not implemented/excluded | There is no general AI chat attachment workflow. Finder AI can disclose only exact bounded file text through its separate local approval flow. |
 | 62 | Give entire websites as context to AI | Not implemented/excluded | There is no website ingestion, browser crawler, or AI context system. |
 | 63 | Save and share AI presets through a hosted service | Not implemented/excluded | This requires an external service and conflicts with the original/local scope. |
-| 64 | Launch AI commands from anywhere | Not implemented/excluded | No AI commands are registered. |
-| 65 | Assign hotkeys to AI commands | Not implemented/excluded | Registered apps support hotkeys, but there are no AI commands to assign. |
+| 64 | Launch AI commands from anywhere | Partial | Finder AI is a registered launcher application; there is no catalog of standalone reusable AI commands or presets. |
+| 65 | Assign hotkeys to AI commands | Partial | Finder AI participates in registered-application hotkey settings, but individual AI prompts or presets are not commands and cannot receive their own hotkeys. |
 | 66 | Switch Keyboard Layouts | Not implemented/excluded | No input-source switching command is registered. |
 | 67 | Switch your display resolution | Not implemented/excluded | No display-mode workflow is registered. |
 | 68 | Eject all of your disks | Not implemented/excluded | No volume-ejection service or confirmation workflow exists. |

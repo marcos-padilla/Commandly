@@ -38,7 +38,23 @@ struct FileSearchApplicationServices {
 struct LauncherApplicationNavigation {
     let dismissLauncher: () -> Void
     let openSettings: () -> Void
+    let openAISettings: () -> Void
+    let openPermissionsSettings: () -> Void
     let goBack: () -> Void
+
+    init(
+        dismissLauncher: @escaping () -> Void,
+        openSettings: @escaping () -> Void,
+        openAISettings: (() -> Void)? = nil,
+        openPermissionsSettings: (() -> Void)? = nil,
+        goBack: @escaping () -> Void
+    ) {
+        self.dismissLauncher = dismissLauncher
+        self.openSettings = openSettings
+        self.openAISettings = openAISettings ?? openSettings
+        self.openPermissionsSettings = openPermissionsSettings ?? openSettings
+        self.goBack = goBack
+    }
 }
 
 /// Result of launching a registered application.
@@ -229,6 +245,7 @@ final class LauncherApplicationRegistry {
         timerStore: TimerStore = TimerStore(),
         productivityLibraryServices: ProductivityLibraryApplicationServices = .inMemory,
         offlineToolsServices: OfflineToolsServices? = nil,
+        finderAIServices: FinderAIApplicationServices = .inMemory,
         windowLayoutsServices: WindowLayoutsApplicationServices = WindowLayoutsApplicationServices(
             layoutService: InMemoryWindowLayoutService(),
             customStore: InMemoryCustomWindowLayoutStore()
@@ -250,6 +267,7 @@ final class LauncherApplicationRegistry {
         )
         do {
             try registry.register(BuiltInLauncherApplicationGroup.catalog)
+            try registry.register(BuiltInLauncherApplicationGroup.aiExtensions)
             try registry.register(OpenSettingsApplication())
             try registry.register(
                 ClipboardHistoryApplication(store: clipboardHistoryStore)
@@ -271,6 +289,7 @@ final class LauncherApplicationRegistry {
             )
             try registry.register(SystemActivityApplication(service: systemActivityService))
             try registry.register(WindowLayoutsApplication(services: windowLayoutsServices))
+            try registry.register(FinderAIApplication(services: finderAIServices))
             for tool in OfflineToolKind.allCases {
                 try registry.register(
                     OfflineToolsApplication(tool: tool, services: resolvedOfflineToolsServices)
@@ -434,6 +453,7 @@ final class LauncherApplicationRegistry {
 
 enum BuiltInLauncherApplicationGroup {
     static let catalogID = CommandID(rawValue: "commandly.catalog")
+    static let aiExtensionsID = CommandID(rawValue: "commandly.ai-extensions")
 
     static let catalog = LauncherApplicationDefinition.group(
         id: catalogID,
@@ -441,6 +461,14 @@ enum BuiltInLauncherApplicationGroup {
         subtitle: "Built-in launcher applications and commands",
         systemImage: "square.grid.2x2",
         order: 0
+    )
+
+    static let aiExtensions = LauncherApplicationDefinition.group(
+        id: aiExtensionsID,
+        title: "AI Extensions",
+        subtitle: "Tools powered by your active AI provider",
+        systemImage: "sparkles.rectangle.stack",
+        order: 10
     )
 }
 

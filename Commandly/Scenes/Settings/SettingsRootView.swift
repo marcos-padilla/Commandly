@@ -104,6 +104,8 @@ struct SettingsRootView: View {
         switch viewModel.selectedPane {
         case .general:
             GeneralSettingsPage(viewModel: viewModel)
+        case .ai:
+            AISettingsPage(model: viewModel.ai)
         case .applications:
             ApplicationsSettingsPage(model: viewModel.applications)
         case .permissions:
