@@ -73,6 +73,9 @@ enum ShelfPreferredCorner: String, Sendable, Equatable, CaseIterable {
     case topRight
     case topLeft
 
+    /// Initial placement when the user has not selected a preferred corner.
+    static let defaultValue: ShelfPreferredCorner = .topRight
+
     var title: String {
         switch self {
         case .bottomRight: return "Bottom right"
@@ -84,7 +87,7 @@ enum ShelfPreferredCorner: String, Sendable, Equatable, CaseIterable {
 
     static func resolve(_ rawValue: String?) -> ShelfPreferredCorner {
         guard let rawValue, let corner = Self(rawValue: rawValue) else {
-            return .bottomRight
+            return defaultValue
         }
         return corner
     }

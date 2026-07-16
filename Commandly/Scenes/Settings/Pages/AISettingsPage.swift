@@ -12,76 +12,61 @@ struct AISettingsPage: View {
     }
 
     var body: some View {
-        ScrollView {
-            GlassEffectContainer(spacing: density.pageStackSpacing) {
-                VStack(alignment: .leading, spacing: density.pageStackSpacing) {
-                    SettingsPageHeader(
-                        title: "AI",
-                        subtitle: "Connect your own provider account and choose the model Commandly uses."
-                    )
-
-                    privacyCard
-                    connectionsCard
-                    setupCard
-                    feedback
-                }
+        SettingsPageLayout(maxWidth: 760) {
+            VStack(alignment: .leading, spacing: max(24, density.pageStackSpacing + 8)) {
+                privacyNote
+                connectionsSection
+                setupSection
+                feedback
             }
-            .padding(.horizontal, Spacing.md.rawValue)
-            .padding(.vertical, Spacing.md.rawValue)
         }
         .task {
             await model.load()
         }
     }
 
-    private var privacyCard: some View {
-        SettingsCard {
-            HStack(alignment: .top, spacing: density.spacing(.sm)) {
-                settingsGlyph("lock.shield.fill", emphasized: true)
+    private var privacyNote: some View {
+        HStack(alignment: .top, spacing: density.spacing(.sm)) {
+            settingsGlyph("lock.shield.fill", emphasized: true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Bring your own key")
-                        .commandlyFont(size: 12.5, weight: .semibold)
-                    Text(
-                        "Cloud API keys are stored in your macOS Keychain, never in Commandly preferences. "
-                            + "Prompts and bounded Finder metadata/tool results go directly to the provider you select; "
-                            + "file contents are sent only after approval. "
-                            + "Inference usage and any charges stay with that provider account."
-                    )
-                    .commandlyFont(size: 10.5)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Bring your own key")
+                    .commandlyFont(size: 12.5, weight: .semibold)
+                Text(
+                    "Cloud API keys are stored in your macOS Keychain, never in Commandly preferences. "
+                        + "Prompts and bounded Finder metadata/tool results go directly to the provider you select; "
+                        + "file contents are sent only after approval. "
+                        + "Inference usage and any charges stay with that provider account."
+                )
+                .commandlyFont(size: 10.5)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(6)
-            .accessibilityElement(children: .combine)
         }
+        .padding(.horizontal, Spacing.xs.rawValue)
+        .accessibilityElement(children: .combine)
     }
 
-    private var connectionsCard: some View {
-        SettingsCard {
-            VStack(alignment: .leading, spacing: 0) {
-                sectionLabel("Connected providers")
-
-                if model.configuredConnections.isEmpty {
-                    HStack(spacing: density.spacing(.sm)) {
-                        settingsGlyph("link.badge.plus")
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("No provider connected")
-                                .commandlyFont(size: 12.5, weight: .medium)
-                            Text("Validate a credential or local endpoint below to get started.")
-                                .commandlyFont(size: 10.5)
-                                .foregroundStyle(.tertiary)
-                        }
+    private var connectionsSection: some View {
+        SettingsSection("Connected Providers") {
+            if model.configuredConnections.isEmpty {
+                HStack(spacing: density.spacing(.sm)) {
+                    settingsGlyph("link.badge.plus")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No provider connected")
+                            .commandlyFont(size: 12.5, weight: .medium)
+                        Text("Validate a credential or local endpoint below to get started.")
+                            .commandlyFont(size: 10.5)
+                            .foregroundStyle(.tertiary)
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, density.rowVerticalPadding)
-                } else {
-                    ForEach(Array(model.configuredConnections.enumerated()), id: \.element.id) {
-                        index, connection in
-                        if index > 0 { SettingsDivider() }
-                        connectionRow(connection)
-                    }
+                }
+                .padding(.horizontal, Spacing.xs.rawValue)
+                .padding(.vertical, max(8, density.rowVerticalPadding))
+            } else {
+                ForEach(Array(model.configuredConnections.enumerated()), id: \.element.id) {
+                    index, connection in
+                    if index > 0 { SettingsDivider() }
+                    connectionRow(connection)
                 }
             }
         }
@@ -91,21 +76,20 @@ struct AISettingsPage: View {
         let provider = model.providers.first { $0.id == connection.providerID }
         let isActive = model.preferences.activeProviderID == connection.providerID
         return HStack(spacing: density.spacing(.sm)) {
-            settingsGlyph(provider?.systemImage ?? "brain", emphasized: isActive)
+            settingsGlyph(
+                provider?.systemImage ?? "brain",
+                emphasized: isActive
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(provider?.title ?? connection.providerID)
                         .commandlyFont(size: 12.5, weight: .medium)
                     if isActive {
-                        Text("ACTIVE")
-                            .commandlyFont(size: 8.5, weight: .bold)
-                            .foregroundStyle(BrandPalette.accentSoft)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule().fill(BrandPalette.accent.opacity(0.14))
-                            )
+                        Label("Active", systemImage: "checkmark.circle.fill")
+                            .labelStyle(.titleAndIcon)
+                            .commandlyFont(size: 9, weight: .semibold)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 Text(connection.modelDisplayName)
@@ -120,29 +104,28 @@ struct AISettingsPage: View {
                 Button("Make Active") {
                     model.makeActive(connection.providerID)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(model.isBusy)
+                .accessibilityLabel("Make \(provider?.title ?? connection.providerID) active")
             }
 
             Button("Disconnect", role: .destructive) {
                 model.disconnect(connection.providerID)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(model.isBusy)
             .accessibilityLabel("Disconnect \(provider?.title ?? connection.providerID)")
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, max(5, density.rowVerticalPadding - 1))
+        .padding(.horizontal, Spacing.xs.rawValue)
+        .padding(.vertical, max(8, density.rowVerticalPadding))
     }
 
-    private var setupCard: some View {
-        SettingsCard {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionLabel("Add or update a provider")
-
-                LabeledContent("Provider") {
+    private var setupSection: some View {
+        SettingsSection("Add or Update a Provider") {
+            VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
+                AIFormRow("Provider") {
                     Picker("Provider", selection: providerSelection) {
                         Text("Choose a provider…").tag("")
                         ForEach(model.providers) { provider in
@@ -157,7 +140,8 @@ struct AISettingsPage: View {
                 }
 
                 if let provider = model.selectedProvider {
-                    Divider().overlay(SettingsPalette.border)
+                    Divider()
+                        .overlay(SettingsVisualStyle.separator)
 
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -176,10 +160,11 @@ struct AISettingsPage: View {
                     }
 
                     if provider.requiresCredential {
-                        LabeledContent("API key") {
+                        AIFormRow("API key") {
                             SecureField("Paste API key", text: $model.credentialInput)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 310)
+                                .accessibilityLabel("API key")
                                 .focused($focusedField, equals: .credential)
                                 .onChange(of: model.credentialInput) { _, _ in
                                     model.credentialDraftDidChange()
@@ -193,10 +178,11 @@ struct AISettingsPage: View {
                     }
 
                     if provider.allowsEndpointEditing {
-                        LabeledContent("Local endpoint") {
+                        AIFormRow("Local endpoint") {
                             TextField("http://localhost:11434", text: $model.endpointInput)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 310)
+                                .accessibilityLabel("Local endpoint")
                                 .focused($focusedField, equals: .endpoint)
                                 .disabled(model.isBusy)
                                 .accessibilityHint("Only loopback endpoints are accepted.")
@@ -214,15 +200,16 @@ struct AISettingsPage: View {
                             focusedField = nil
                             model.validate()
                         }
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(model.canValidate == false)
                     }
 
                     if model.discoveredModels.isEmpty == false {
-                        Divider().overlay(SettingsPalette.border)
+                        Divider()
+                            .overlay(SettingsVisualStyle.separator)
 
-                        LabeledContent("Available model") {
+                        AIFormRow("Available model") {
                             Picker("Available model", selection: modelSelection) {
                                 ForEach(model.discoveredModels) { availableModel in
                                     Text(modelTitle(availableModel)).tag(availableModel.id)
@@ -236,38 +223,44 @@ struct AISettingsPage: View {
                         HStack {
                             if let selected = model.selectedModel,
                                selected.supportsTools == false {
-                                Label("This model may not support Finder tools.", systemImage: "exclamationmark.triangle")
-                                    .commandlyFont(size: 10)
-                                    .foregroundStyle(.orange)
+                                Label(
+                                    "This model may not support Finder tools.",
+                                    systemImage: "exclamationmark.triangle"
+                                )
+                                .commandlyFont(size: 10)
+                                .foregroundStyle(.orange)
                             }
                             Spacer()
                             Button("Save & Use Model") {
                                 model.saveSelection()
                             }
-                            .buttonStyle(.glassProminent)
+                            .buttonStyle(.borderedProminent)
                             .controlSize(.small)
                             .disabled(model.canSave == false)
                         }
                     }
                 }
             }
-            .padding(6)
+            .padding(.horizontal, Spacing.xs.rawValue)
+            .padding(.vertical, 6)
         }
     }
 
     @ViewBuilder
     private var feedback: some View {
         if let error = model.errorMessage {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
-                .commandlyFont(size: 10.5, weight: .medium)
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("AI settings error: \(error)")
+            SettingsStatusBanner(
+                message: error,
+                tint: .red,
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .accessibilityLabel("AI settings error: \(error)")
         } else if let status = model.statusMessage {
-            Label(status, systemImage: "checkmark.circle.fill")
-                .commandlyFont(size: 10.5, weight: .medium)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsStatusBanner(
+                message: status,
+                tint: .green,
+                systemImage: "checkmark.circle.fill"
+            )
         }
     }
 
@@ -292,16 +285,27 @@ struct AISettingsPage: View {
             ? availableModel.displayName
             : "\(availableModel.displayName) — tools unverified"
     }
+}
 
-    private func sectionLabel(_ value: String) -> some View {
-        Text(value.uppercased())
-            .commandlyFont(size: 9, weight: .semibold)
-            .foregroundStyle(.tertiary)
-            .tracking(0.7)
-            .padding(.horizontal, 6)
-            .padding(.top, 4)
-            .padding(.bottom, 3)
-            .accessibilityAddTraits(.isHeader)
+private struct AIFormRow<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.md.rawValue) {
+            Text(title)
+                .commandlyFont(size: 11.5, weight: .medium)
+                .foregroundStyle(.secondary)
+                .frame(width: 112, alignment: .leading)
+
+            Spacer(minLength: Spacing.sm.rawValue)
+            content()
+        }
     }
 }
 

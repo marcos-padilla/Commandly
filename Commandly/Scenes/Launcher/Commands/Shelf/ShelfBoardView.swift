@@ -1,3 +1,4 @@
+import AppKit
 import DesignSystem
 import SwiftUI
 
@@ -10,9 +11,12 @@ struct ShelfBoardView: View {
     @State private var isCloseHovered = false
     @State private var isDragHandleHovered = false
     @State private var hasRevealedInitialContent = false
+    @State private var hasRevealedEmptyPrompt = false
 
     private let restingHandleWidth: CGFloat = 34
     private let hoveredHandleWidth: CGFloat = 42
+    private let emptyPromptRevealDelay: Duration = .seconds(1)
+    private let emptyPromptRevealDuration = 0.72
 
     var body: some View {
         VStack(spacing: Spacing.xs.rawValue) {
@@ -32,14 +36,36 @@ struct ShelfBoardView: View {
         .accessibilityLabel(model.accessibilityLabel)
         .accessibilityValue(boardAccessibilityValue)
         .task(id: ObjectIdentifier(model)) {
+            let revealClock = ContinuousClock()
+            let emptyPromptDeadline = revealClock.now.advanced(by: emptyPromptRevealDelay)
             hasRevealedInitialContent = false
+            hasRevealedEmptyPrompt = false
             await model.loadInitialContent()
             guard Task.isCancelled == false else { return }
             if reduceMotion {
                 hasRevealedInitialContent = true
+                hasRevealedEmptyPrompt = true
             } else {
                 withAnimation(.easeOut(duration: MotionDuration.normal.rawValue)) {
                     hasRevealedInitialContent = true
+                }
+
+                guard model.items.isEmpty else {
+                    hasRevealedEmptyPrompt = true
+                    return
+                }
+
+                do {
+                    try await revealClock.sleep(
+                        until: emptyPromptDeadline,
+                        tolerance: .milliseconds(60)
+                    )
+                } catch {
+                    return
+                }
+                guard Task.isCancelled == false else { return }
+                withAnimation(.easeOut(duration: emptyPromptRevealDuration)) {
+                    hasRevealedEmptyPrompt = true
                 }
             }
         }
@@ -74,7 +100,11 @@ struct ShelfBoardView: View {
                 ShelfDetailsView(model: model, interaction: interaction)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
-                ShelfCompactContentView(model: model, interaction: interaction)
+                ShelfCompactContentView(
+                    model: model,
+                    interaction: interaction,
+                    hasRevealedEmptyPrompt: hasRevealedEmptyPrompt
+                )
                     .opacity(hasRevealedInitialContent ? 1 : 0)
                     .scaleEffect(hasRevealedInitialContent || reduceMotion ? 1 : 0.95)
                     .accessibilityHidden(hasRevealedInitialContent == false)
@@ -110,19 +140,16 @@ struct ShelfBoardView: View {
     }
 
     private var boardBackground: some View {
-        ZStack {
-            LauncherVisualEffectBackground(
-                material: .hudWindow,
-                blendingMode: .behindWindow
-            )
-
-            Color.primary.opacity(0.06)
-        }
+        ShelfPersistentGlassBackground()
         .clipShape(
             RoundedRectangle(
                 cornerRadius: LayoutConstants.shelfCornerRadius,
                 style: .continuous
             )
+        )
+        .glassEffect(
+            .clear,
+            in: .rect(cornerRadius: LayoutConstants.shelfCornerRadius)
         )
         .overlay {
             RoundedRectangle(
@@ -132,8 +159,8 @@ struct ShelfBoardView: View {
             .strokeBorder(
                 interaction.isBoardDropTargeted
                     ? BrandPalette.accent
-                    : Color.clear,
-                lineWidth: interaction.isBoardDropTargeted ? 2.5 : 0
+                    : Color.primary.opacity(0.1),
+                lineWidth: interaction.isBoardDropTargeted ? 2.5 : 0.75
             )
         }
         .shadow(
@@ -260,5 +287,29 @@ struct ShelfBoardView: View {
         @unknown default:
             interaction.updateBoardDropTarget(isTargeted: false)
         }
+    }
+}
+
+/// Keeps Shelf's behind-window material optically alive while another application has focus.
+///
+/// Shelf intentionally remains visible across application changes, so following the key-window
+/// state makes its material turn into a comparatively solid inactive fill. The active material
+/// state preserves desktop sampling while macOS still owns contrast and Reduce Transparency.
+private struct ShelfPersistentGlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        configure(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        configure(nsView)
+    }
+
+    private func configure(_ view: NSVisualEffectView) {
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = false
     }
 }

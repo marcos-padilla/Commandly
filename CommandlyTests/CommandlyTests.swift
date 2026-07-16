@@ -23,15 +23,148 @@ struct CommandlyTests {
         )
         let coordinator = CompactWindowChrome.Coordinator()
 
-        coordinator.configure(window, hidesZoomButton: true)
+        coordinator.configure(
+            window,
+            hidesZoomButton: true,
+            accessibilityLabel: "Commandly Settings"
+        )
         window.title = "Commandly Settings"
         window.titleVisibility = .visible
-        coordinator.configure(window, hidesZoomButton: true)
+        window.toolbar = NSToolbar(identifier: "restored-settings-toolbar")
+        coordinator.configure(
+            window,
+            hidesZoomButton: true,
+            accessibilityLabel: "Commandly Settings"
+        )
 
         #expect(window.title.isEmpty)
         #expect(window.titleVisibility == .hidden)
+        #expect(window.titlebarAppearsTransparent)
+        #expect(window.titlebarSeparatorStyle == .none)
         #expect(window.styleMask.contains(.fullSizeContentView))
+        #expect(window.toolbar == nil)
+        #expect(window.standardWindowButton(.closeButton)?.isHidden == false)
+        #expect(window.standardWindowButton(.miniaturizeButton)?.isHidden == false)
         #expect(window.standardWindowButton(.zoomButton)?.isHidden == true)
+    }
+
+    @Test @MainActor func compactWindowChromeUsesCustomChromeAndKeepsResizableControls() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 720),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.toolbar = NSToolbar(identifier: "settings-test-toolbar")
+        let toolbar = window.toolbar
+        let coordinator = CompactWindowChrome.Coordinator()
+
+        coordinator.configure(window, hidesZoomButton: false)
+
+        #expect(toolbar != nil)
+        #expect(window.toolbar == nil)
+        #expect(window.styleMask.contains(.closable))
+        #expect(window.styleMask.contains(.miniaturizable))
+        #expect(window.styleMask.contains(.resizable))
+        #expect(window.standardWindowButton(.closeButton)?.isHidden == false)
+        #expect(window.standardWindowButton(.miniaturizeButton)?.isHidden == false)
+        #expect(window.standardWindowButton(.zoomButton)?.isHidden == false)
+    }
+
+    @Test @MainActor func sidebarTitlebarAccessoryIsMinimalStableAndPreservesForeignAccessories() throws {
+        let firstWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let secondWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let foreignAccessory = NSTitlebarAccessoryViewController()
+        foreignAccessory.layoutAttribute = .trailing
+        foreignAccessory.view = NSView(
+            frame: NSRect(x: 0, y: 0, width: 20, height: 28)
+        )
+        firstWindow.addTitlebarAccessoryViewController(foreignAccessory)
+
+        var toggleCount = 0
+        let coordinator = CommandlySidebarTitlebarAccessory.Coordinator(
+            isSidebarVisible: true,
+            accessibilityIdentifier: "settings.sidebar.toggle",
+            navigationName: "Settings",
+            onToggleSidebar: { toggleCount += 1 }
+        )
+
+        coordinator.attach(to: firstWindow)
+        coordinator.attach(to: firstWindow)
+
+        #expect(firstWindow.titlebarAccessoryViewControllers.count == 2)
+        let commandlyAccessory = try #require(
+            firstWindow.titlebarAccessoryViewControllers.first(where: {
+                $0 !== foreignAccessory
+            })
+        )
+        #expect(commandlyAccessory.layoutAttribute == .leading)
+        let button = try #require(commandlyAccessory.view.subviews.first as? NSButton)
+        #expect(button.identifier?.rawValue == "settings.sidebar.toggle")
+        #expect(button.toolTip == "Hide Sidebar")
+        #expect(button.isBordered == false)
+        #expect(button.accessibilityLabel() == "Hide Sidebar")
+        #expect(button.accessibilityHelp() == "Toggles the Settings navigation sidebar")
+        let supplementaryButton = try #require(
+            commandlyAccessory.view.subviews.last as? NSButton
+        )
+        #expect(supplementaryButton.isHidden)
+
+        button.performClick(nil)
+        #expect(toggleCount == 1)
+
+        var supplementaryActionCount = 0
+        coordinator.update(
+            isSidebarVisible: false,
+            accessibilityIdentifier: "settings.sidebar.toggle",
+            navigationName: "Settings",
+            supplementaryAction: CommandlySidebarTitlebarAccessory.SupplementaryAction(
+                title: "Find in Documentation",
+                systemImage: "magnifyingglass",
+                accessibilityIdentifier: "documentation.find",
+                accessibilityHelp: "Focuses Documentation search",
+                onPerform: { supplementaryActionCount += 1 }
+            ),
+            onToggleSidebar: { toggleCount += 10 }
+        )
+        #expect(button.toolTip == "Show Sidebar")
+        #expect(button.accessibilityLabel() == "Show Sidebar")
+        #expect(supplementaryButton.isHidden == false)
+        #expect(supplementaryButton.identifier?.rawValue == "documentation.find")
+        #expect(supplementaryButton.accessibilityLabel() == "Find in Documentation")
+        #expect(supplementaryButton.isBordered == false)
+        button.performClick(nil)
+        #expect(toggleCount == 11)
+        supplementaryButton.performClick(nil)
+        #expect(supplementaryActionCount == 1)
+
+        coordinator.update(
+            isSidebarVisible: false,
+            accessibilityIdentifier: "settings.sidebar.toggle",
+            navigationName: "Settings",
+            onToggleSidebar: { toggleCount += 10 }
+        )
+        #expect(supplementaryButton.isHidden)
+
+        coordinator.attach(to: secondWindow)
+        #expect(firstWindow.titlebarAccessoryViewControllers.count == 1)
+        #expect(firstWindow.titlebarAccessoryViewControllers.first === foreignAccessory)
+        #expect(secondWindow.titlebarAccessoryViewControllers.count == 1)
+
+        coordinator.tearDown()
+        #expect(firstWindow.titlebarAccessoryViewControllers.count == 1)
+        #expect(firstWindow.titlebarAccessoryViewControllers.first === foreignAccessory)
+        #expect(secondWindow.titlebarAccessoryViewControllers.isEmpty)
     }
 
     @Test @MainActor func dependencyContainerBootstrapsToRootWhenOnboarded() {
@@ -1081,8 +1214,8 @@ struct CommandlyTests {
         let viewModel = LauncherViewModel()
         #expect(viewModel.route == .root)
         #expect(viewModel.appMenuActions.map(\.id) == [
-            BuiltInCommandActionID.documentation,
             BuiltInCommandActionID.settings,
+            BuiltInCommandActionID.documentation,
             BuiltInCommandActionID.quit
         ])
         #expect(viewModel.footerActions.map(\.id) == [

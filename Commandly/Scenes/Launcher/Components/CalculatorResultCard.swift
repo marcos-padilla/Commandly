@@ -59,14 +59,10 @@ struct CalculatorResultCard: View {
                         .disabled(action.isEnabled == false)
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle.fill")
+                    Image(systemName: "ellipsis")
                         .commandlyFont(size: 14, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .padding(6)
-                        .background(
-                            Circle()
-                                .fill(Color.primary.opacity(0.08))
-                        )
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -80,14 +76,7 @@ struct CalculatorResultCard: View {
         .padding(.vertical, density.spacing(.md))
         .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
         .background(cardBackground)
-        .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                .strokeBorder(
-                    isSelected ? BrandPalette.accent.opacity(0.55) : Color.white.opacity(0.08),
-                    lineWidth: isSelected ? 1.5 : 1
-                )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
         .padding(.horizontal, density.spacing(.xs))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -107,18 +96,14 @@ struct CalculatorResultCard: View {
     private var dividerWithArrow: some View {
         ZStack {
             Rectangle()
-                .fill(Color.primary.opacity(0.12))
+                .fill(LauncherPalette.separator)
                 .frame(width: 1)
                 .padding(.vertical, 4)
 
             Image(systemName: "arrow.right")
                 .commandlyFont(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
-                .padding(6)
-                .background(
-                    Circle()
-                        .fill(Color.primary.opacity(0.08))
-                )
+                .padding(4)
         }
         .frame(width: 28)
         .padding(.horizontal, density.spacing(.xs))
@@ -136,20 +121,14 @@ struct CalculatorResultCard: View {
             Text(badge)
                 .commandlyFont(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.primary.opacity(0.08))
-                )
         }
         .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
     }
 
     @ViewBuilder
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-            .fill(Color.primary.opacity(isSelected ? 0.10 : 0.06))
+        RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+            .fill(Color.primary.opacity(isSelected ? 0.105 : 0.035))
     }
 }
 

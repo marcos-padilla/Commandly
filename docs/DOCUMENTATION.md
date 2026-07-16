@@ -1,7 +1,7 @@
 # In-App Documentation
 
 Commandly ships a private, searchable documentation browser as a standard macOS window. Open it
-from the Commandly icon in the launcher's bottom-left corner or the menu-bar item by choosing
+from the Settings gear menu in the launcher's bottom-right corner or the menu-bar item by choosing
 **Documentation**. The keyboard shortcut is **Command-?**. The browser describes implemented
 behavior only; it must not present roadmap items or placeholders as available features.
 
@@ -77,9 +77,9 @@ aligned with `docs/CALCULATOR.md` and CalculatorKit coverage.
 ## UI and accessibility
 
 The Documentation window is resizable and uses Commandly's original macOS material language: a
-translucent native background, a searchable navigation sidebar, restrained Liquid Glass controls,
-and readable glass article cards. It honors the shared text-size preference and uses a fixed reading
-layout optimized for documentation at either launcher density.
+translucent native background, a searchable navigation sidebar, restrained Liquid Glass navigation
+controls, and quiet standard-material article surfaces. It honors the shared text-size preference
+and uses a fixed reading layout optimized for documentation at either launcher density.
 
 - **Command-F** focuses documentation search.
 - Up/Down Arrow moves article selection while search is focused.

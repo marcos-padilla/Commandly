@@ -50,7 +50,7 @@ enum WelcomeDocumentationArticle {
                                 id: "welcome-shortcut-open-documentation",
                                 title: "Open Documentation",
                                 keys: ["⌘", "?"],
-                                detail: "Also available from the Commandly icon at the bottom-left of the launcher."
+                                detail: "Also available from the Settings gear at the bottom-right of the launcher."
                             ),
                             DocumentationShortcut(
                                 id: "welcome-shortcut-open-settings",

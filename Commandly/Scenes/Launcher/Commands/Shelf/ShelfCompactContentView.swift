@@ -4,6 +4,9 @@ import SwiftUI
 struct ShelfCompactContentView: View {
     @Bindable var model: ShelfBoardModel
     @Bindable var interaction: ShelfBoardInteractionState
+    var hasRevealedEmptyPrompt: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -33,8 +36,15 @@ struct ShelfCompactContentView: View {
                 .foregroundStyle(.primary.opacity(interaction.isBoardDropTargeted ? 0.86 : 0.48))
                 .multilineTextAlignment(.center)
         }
+        .opacity(showsEmptyPrompt ? 1 : 0)
+        .offset(y: showsEmptyPrompt || reduceMotion ? 0 : 5)
+        .accessibilityHidden(showsEmptyPrompt == false)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(dropPrompt)
+    }
+
+    private var showsEmptyPrompt: Bool {
+        reduceMotion || hasRevealedEmptyPrompt || interaction.isBoardDropTargeted
     }
 
     private var stagedContent: some View {

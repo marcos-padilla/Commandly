@@ -5,10 +5,10 @@ struct DocumentationSectionCard: View {
     let section: DocumentationSection
 
     var body: some View {
-        DocumentationGlassCard {
-            VStack(alignment: .leading, spacing: 14) {
+        DocumentationSurfaceCard {
+            VStack(alignment: .leading, spacing: Spacing.md.rawValue) {
                 Text(section.title)
-                    .commandlyFont(size: 16.5, weight: .semibold)
+                    .commandlyFont(size: 16, weight: .semibold)
                     .accessibilityAddTraits(.isHeader)
 
                 ForEach(section.blocks) { block in
@@ -28,44 +28,51 @@ private struct DocumentationBlockView: View {
         switch block.content {
         case .paragraph(let text):
             Text(text)
-                .commandlyFont(size: 12)
+                .commandlyFont(size: 12.5)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(2.5)
 
         case .bullets(let items):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs.rawValue) {
                         Image(systemName: "circle.fill")
                             .font(.system(size: 4))
-                            .foregroundStyle(BrandPalette.accentSoft)
+                            .foregroundStyle(.tertiary)
                             .accessibilityHidden(true)
                         Text(item)
-                            .commandlyFont(size: 11.5)
+                            .commandlyFont(size: 12)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineSpacing(2)
                     }
                 }
             }
 
         case .steps(let items):
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("\(index + 1)")
-                            .commandlyFont(size: 9.5, weight: .bold)
-                            .foregroundStyle(BrandPalette.accentSoft)
-                            .frame(width: 22, height: 22)
-                            .background(Circle().fill(BrandPalette.accent.opacity(0.13)))
+                    HStack(alignment: .top, spacing: Spacing.sm.rawValue) {
+                        Text("\(index + 1).")
+                            .commandlyFont(size: 10.5, weight: .semibold)
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 22, alignment: .trailing)
+                            .accessibilityHidden(true)
                         Text(item)
-                            .commandlyFont(size: 11.5)
+                            .commandlyFont(size: 12)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineSpacing(2)
                             .padding(.top, 3)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Step \(index + 1), \(item)")
                 }
             }
 
         case .shortcuts(let shortcuts):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                 ForEach(shortcuts) { shortcut in
                     DocumentationShortcutRow(
                         title: shortcut.title,
@@ -76,14 +83,20 @@ private struct DocumentationBlockView: View {
             }
 
         case .examples(let examples):
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 220), spacing: 10)],
-                alignment: .leading,
-                spacing: 10
-            ) {
-                ForEach(examples) { example in
-                    DocumentationExampleCard(example: example)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(examples.enumerated()), id: \.offset) { index, example in
+                    DocumentationExampleRow(example: example)
+
+                    if index < examples.count - 1 {
+                        Divider()
+                            .overlay(DocumentationVisualStyle.separator)
+                            .padding(.horizontal, Spacing.sm.rawValue)
+                    }
                 }
+            }
+            .background {
+                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                    .fill(DocumentationVisualStyle.field)
             }
 
         case .callout(let callout):
@@ -92,26 +105,23 @@ private struct DocumentationBlockView: View {
     }
 }
 
-struct DocumentationGlassCard<Content: View>: View {
+/// A flat documentation group separated by a single hairline.
+///
+/// The renderer avoids nesting cards. Spacing and separators carry the article hierarchy,
+/// leaving Liquid Glass to the window's elevated navigation controls.
+struct DocumentationSurfaceCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         content()
-            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .fill(SettingsPalette.card)
+            .padding(.bottom, Spacing.xl.rawValue)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(DocumentationVisualStyle.separator)
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
             }
-            .glassEffect(
-                .regular.tint(BrandPalette.accent.opacity(0.025)),
-                in: .rect(cornerRadius: 17)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .strokeBorder(SettingsPalette.border, lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.07), radius: 16, y: 7)
     }
 }
 
@@ -120,10 +130,19 @@ struct DocumentationSectionHeading: View {
     let title: String
 
     var body: some View {
-        Label(title, systemImage: icon)
-            .commandlyFont(size: 13, weight: .semibold)
-            .foregroundStyle(.primary)
-            .accessibilityAddTraits(.isHeader)
+        HStack(spacing: Spacing.xs.rawValue) {
+            Image(systemName: icon)
+                .symbolVariant(.fill)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+
+            Text(title)
+        }
+        .commandlyFont(size: 13, weight: .semibold)
+        .foregroundStyle(.primary)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -133,35 +152,42 @@ struct DocumentationShortcutRow: View {
     let detail: String?
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: Spacing.sm.rawValue) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .commandlyFont(size: 11.5, weight: .medium)
+                    .commandlyFont(size: 12, weight: .medium)
                 if let detail {
                     Text(detail)
-                        .commandlyFont(size: 9.5)
+                        .commandlyFont(size: 10)
                         .foregroundStyle(.tertiary)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Spacing.xs.rawValue)
             HStack(spacing: 3) {
                 ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                     Text(key)
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .frame(minWidth: 20, minHeight: 20)
+                        .frame(minWidth: 21, minHeight: 21)
                         .padding(.horizontal, 2)
                         .background {
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(Color.primary.opacity(0.07))
+                            RoundedRectangle(
+                                cornerRadius: CornerRadius.sm.rawValue,
+                                style: .continuous
+                            )
+                                .fill(DocumentationVisualStyle.field)
                         }
                         .overlay {
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .strokeBorder(SettingsPalette.border, lineWidth: 1)
+                            RoundedRectangle(
+                                cornerRadius: CornerRadius.sm.rawValue,
+                                style: .continuous
+                            )
+                                .strokeBorder(DocumentationVisualStyle.separator, lineWidth: 1)
                         }
                 }
             }
             .accessibilityLabel(spokenKeys)
         }
+        .padding(.vertical, 1)
     }
 
     private var spokenKeys: String {
@@ -184,13 +210,13 @@ struct DocumentationShortcutRow: View {
     }
 }
 
-private struct DocumentationExampleCard: View {
+private struct DocumentationExampleRow: View {
     let example: DocumentationExample
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
             Text(example.input)
-                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .commandlyFont(size: 11.5, weight: .medium, design: .monospaced)
                 .textSelection(.enabled)
                 .foregroundStyle(.primary)
 
@@ -198,31 +224,24 @@ private struct DocumentationExampleCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "arrow.turn.down.right")
                         .commandlyFont(size: 8, weight: .semibold)
-                        .foregroundStyle(BrandPalette.accentSoft)
+                        .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
                     Text(output)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .commandlyFont(size: 11, weight: .semibold, design: .monospaced)
                         .textSelection(.enabled)
                 }
             }
 
             if let detail = example.detail {
                 Text(detail)
-                    .commandlyFont(size: 9.5)
+                    .commandlyFont(size: 10)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(2)
             }
         }
-        .padding(12)
+        .padding(Spacing.sm.rawValue)
         .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-        .background {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(SettingsPalette.border, lineWidth: 1)
-        }
     }
 }
 
@@ -239,25 +258,46 @@ private struct DocumentationCalloutView: View {
         }
     }
 
+    private var tint: CommandlyTint {
+        callout.kind.documentationTint
+    }
+
+    private var iconColor: Color {
+        switch callout.kind {
+        case .tip:
+            return CommandlyTint.orange.color
+        default:
+            return tint.color
+        }
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: Spacing.sm.rawValue) {
             Image(systemName: icon)
-                .foregroundStyle(BrandPalette.accentSoft)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(iconColor)
+                .frame(width: 21)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(callout.title)
-                    .commandlyFont(size: 11.5, weight: .semibold)
+                    .commandlyFont(size: 12, weight: .semibold)
                 Text(callout.text)
-                    .commandlyFont(size: 10.5)
+                    .commandlyFont(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(2)
             }
         }
-        .padding(12)
+        .padding(Spacing.sm.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(BrandPalette.accent.opacity(0.08))
+            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                .fill(DocumentationVisualStyle.field)
+        }
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(iconColor)
+                .frame(width: 2)
+                .padding(.vertical, Spacing.xs.rawValue)
         }
         .accessibilityElement(children: .combine)
     }
@@ -268,12 +308,16 @@ struct DocumentationBadge: View {
     let color: Color
 
     var body: some View {
-        Text(label)
-            .commandlyFont(size: 8.5, weight: .semibold)
-            .foregroundStyle(color)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(color.opacity(0.12)))
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 5, height: 5)
+                .accessibilityHidden(true)
+            Text(label)
+        }
+        .commandlyFont(size: 8.5, weight: .semibold)
+        .foregroundStyle(color)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -283,19 +327,21 @@ struct DocumentationMetadataPill: View {
     let value: String
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon).foregroundStyle(BrandPalette.accentSoft)
+        HStack(spacing: Spacing.xs.rawValue) {
+            Image(systemName: icon)
+                .symbolVariant(.fill)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label.uppercased())
                     .commandlyFont(size: 7.5, weight: .semibold)
                     .foregroundStyle(.quaternary)
                 Text(value)
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .commandlyFont(size: 10.5, weight: .semibold, design: .rounded)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.04)))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -306,15 +352,30 @@ struct DocumentationInlineNotice: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
-            Image(systemName: icon).foregroundStyle(.orange)
+            Image(systemName: icon)
+                .symbolVariant(.fill)
+                .foregroundStyle(CommandlyTint.orange.color)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).commandlyFont(size: 11, weight: .semibold)
-                Text(text).commandlyFont(size: 10).foregroundStyle(.secondary)
+                Text(title)
+                    .commandlyFont(size: 11.5, weight: .semibold)
+                Text(text)
+                    .commandlyFont(size: 10.5)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2)
             }
         }
-        .padding(10)
+        .padding(Spacing.sm.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.08)))
+        .background {
+            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                .fill(DocumentationVisualStyle.field)
+        }
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(CommandlyTint.orange.color)
+                .frame(width: 2)
+                .padding(.vertical, Spacing.xs.rawValue)
+        }
         .accessibilityElement(children: .combine)
     }
 }

@@ -3,6 +3,11 @@ import CommandKit
 import DesignSystem
 import SwiftUI
 
+enum LauncherChromeMetrics {
+    static let footerHeight: CGFloat = 50
+    static let actionPanelBottomInset: CGFloat = footerHeight + 8
+}
+
 struct LauncherSearchField: View {
     @Binding var query: String
     var autocompleteSuffix: String = ""
@@ -17,11 +22,11 @@ struct LauncherSearchField: View {
 
     var body: some View {
         HStack(spacing: density.spacing(.sm)) {
-            LauncherGlyph(
-                systemName: "magnifyingglass",
-                tone: .cyan,
-                size: density.iconSize
-            )
+            Image(systemName: "magnifyingglass")
+                .commandlyFont(size: 15, weight: .medium)
+                .foregroundStyle(.secondary)
+                .frame(width: density.iconSize, height: density.iconSize)
+                .accessibilityHidden(true)
 
             ZStack(alignment: .leading) {
                 if autocompleteSuffix.isEmpty == false, query.isEmpty == false {
@@ -35,7 +40,7 @@ struct LauncherSearchField: View {
 
                 TextField("Search apps and commands…", text: $query)
                     .textFieldStyle(.plain)
-                    .commandlyFont(size: 15, weight: .medium)
+                    .commandlyFont(size: 16, weight: .medium)
                     .focused($isFocused)
                     .onSubmit(onSubmit)
                     .onKeyPress(.upArrow) {
@@ -75,7 +80,7 @@ struct LauncherSearchField: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .commandlyFont(size: 14, weight: .regular)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -89,7 +94,7 @@ struct LauncherSearchField: View {
                             .padding(.horizontal, density.spacing(.xs))
                             .padding(.vertical, 2)
                             .background(
-                                .quaternary,
+                                LauncherPalette.surface,
                                 in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                         Text(
                             autocompleteActionLabel == "Tab to convert"
@@ -104,9 +109,16 @@ struct LauncherSearchField: View {
                 .accessibilityHint("Completes the suggested calculator or search input")
             }
         }
-        .padding(.horizontal, density.spacing(.md))
+        // The search field is part of the launcher canvas, rather than a control
+        // floating inside another rounded surface.
+        .padding(.horizontal, density.spacing(.lg))
         .padding(.vertical, density.searchVerticalPadding)
-        .background(LauncherPalette.chrome)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isFocused = true
+        }
+        .padding(.top, density.spacing(.xs))
+        .padding(.bottom, density.spacing(.xxs))
         .onAppear {
             reclaimFocus()
         }
@@ -130,10 +142,9 @@ struct LauncherSectionHeader: View {
     @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
-        Text(title.uppercased())
-            .commandlyFont(size: 10, weight: .semibold)
-            .foregroundStyle(.tertiary)
-            .tracking(0.8)
+        Text(title)
+            .commandlyFont(size: 11, weight: .medium)
+            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, density.spacing(.md))
             .padding(.top, density.sectionHeaderTopPadding)
@@ -148,7 +159,9 @@ struct LauncherResultRow: View {
     var onHoverChange: ((Bool) -> Void)?
     var onContextAction: (() -> Void)?
     let action: () -> Void
+    @State private var isHovered = false
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -161,7 +174,7 @@ struct LauncherResultRow: View {
 
                 HStack(spacing: density.spacing(.xs)) {
                     Text(item.title)
-                        .commandlyFont(size: 13, weight: .medium)
+                        .commandlyFont(size: 13, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -185,13 +198,8 @@ struct LauncherResultRow: View {
             .padding(.vertical, density.rowVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(isSelected ? LauncherPalette.selection : Color.clear)
+                    .fill(rowFill)
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? LauncherPalette.separator : Color.clear, lineWidth: 1)
-            }
             .contentShape(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
         }
@@ -205,12 +213,20 @@ struct LauncherResultRow: View {
             }
         }
         .onHover { hovering in
+            isHovered = hovering
             onHoverChange?(hovering)
         }
+        .animation(reduceMotion ? nil : CommandlyMotion.hover, value: isHovered)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabelText)
         .accessibilityValue(accessibilityValueText)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var rowFill: Color {
+        if isSelected { return Color.primary.opacity(0.105) }
+        if isHovered { return Color.primary.opacity(0.052) }
+        return .clear
     }
 
     private var accessibilityLabelText: String {
@@ -230,7 +246,7 @@ struct LauncherResultRow: View {
     }
 }
 
-/// Root launcher footer: app menu on the left, primary + Actions on the right.
+/// Root launcher footer: contextual actions on the left, app utilities on the right.
 struct LauncherRootFooterBar: View {
     let appMenuActions: [CommandActionDescriptor]
     let actions: [CommandActionDescriptor]
@@ -239,47 +255,42 @@ struct LauncherRootFooterBar: View {
     @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
-        HStack(spacing: density.spacing(.sm)) {
-            // AppKit menu opens upward and avoids SwiftUI Menu’s empty title-bar chrome.
-            LauncherUpwardMenuButton(
-                actions: appMenuActions,
-                onAction: onAction
-            ) {
-                LauncherAppMark(size: density.iconSize - 4)
+        HStack(spacing: density.spacing(.xs)) {
+            ForEach(actions) { action in
+                LauncherFooterActionButton(
+                    title: action.title,
+                    keys: action.keyHint?.symbols ?? [],
+                    isEnabled: action.isEnabled,
+                    action: { onAction(action.id) }
+                )
             }
-            .accessibilityLabel("Commandly menu")
 
             Spacer(minLength: density.spacing(.sm))
 
-            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                if index > 0 {
-                    footerDivider
-                }
-
-                if action.id == BuiltInCommandActionID.openActions {
-                    LauncherFooterActionButton(
-                        title: action.title,
-                        keys: action.keyHint?.symbols ?? [],
-                        isEnabled: action.isEnabled,
-                        action: { onAction(action.id) }
-                    )
-                    .accessibilityLabel(action.title)
-                } else {
-                    LauncherFooterActionButton(
-                        title: action.title,
-                        keys: action.keyHint?.symbols ?? [],
-                        isEnabled: action.isEnabled,
-                        action: { onAction(action.id) }
-                    )
-                }
+            // Keep app-wide utilities behind one quiet, native menu instead of
+            // adding a second branded control to the footer.
+            LauncherUpwardMenuButton(
+                actions: appMenuActions,
+                isEnabled: appMenuActions.contains(where: \.isEnabled),
+                onAction: onAction
+            ) {
+                Image(systemName: "gearshape")
+                    .commandlyFont(size: 14, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .frame(width: density.iconSize - 2, height: density.iconSize - 2)
+                    .accessibilityHidden(true)
             }
+            .accessibilityIdentifier("launcher.settings-menu")
+            .accessibilityLabel("Settings menu")
+            .accessibilityHint("Includes Settings, Documentation, and Quit Commandly")
+            .help("Settings menu")
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.sm))
-        .background(LauncherPalette.chrome)
+        .padding(.vertical, density.spacing(.xs))
+        .frame(minHeight: LauncherChromeMetrics.footerHeight)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(LauncherPalette.separator)
+                .fill(Color.primary.opacity(0.075))
                 .frame(height: 1)
         }
         .accessibilityElement(children: .contain)
@@ -298,15 +309,13 @@ struct LauncherFooterBar: View {
     @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
-        HStack(spacing: density.spacing(.sm)) {
+        HStack(spacing: density.spacing(.xs)) {
             Image(systemName: contextSystemImage)
+                .symbolVariant(.fill)
+                .symbolRenderingMode(.monochrome)
                 .commandlyFont(size: 12, weight: .semibold)
-                .foregroundStyle(BrandPalette.accentSoft)
-                .frame(width: density.iconSize - 6, height: density.iconSize - 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(BrandPalette.accent.opacity(0.18))
-                )
+                .foregroundStyle(.secondary)
+                .frame(width: density.iconSize - 4, height: density.iconSize - 4)
                 .accessibilityHidden(true)
 
             Text(contextTitle)
@@ -316,11 +325,7 @@ struct LauncherFooterBar: View {
 
             Spacer(minLength: density.spacing(.sm))
 
-            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                if index > 0 {
-                    footerDivider
-                }
-
+            ForEach(actions) { action in
                 if action.id == BuiltInCommandActionID.openActions {
                     LauncherUpwardMenuButton(
                         actions: menuActions,
@@ -348,20 +353,14 @@ struct LauncherFooterBar: View {
             }
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.sm))
-        .background(LauncherPalette.chrome)
+        .padding(.vertical, density.spacing(.xs))
+        .frame(minHeight: LauncherChromeMetrics.footerHeight)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(LauncherPalette.separator)
+                .fill(Color.primary.opacity(0.075))
                 .frame(height: 1)
         }
     }
-}
-
-private var footerDivider: some View {
-    Rectangle()
-        .fill(Color.primary.opacity(0.1))
-        .frame(width: 1, height: 14)
 }
 
 private func footerLabel(_ action: CommandActionDescriptor) -> some View {
@@ -379,23 +378,11 @@ private func footerLabel(_ action: CommandActionDescriptor) -> some View {
                         .padding(.vertical, 2)
                         .background(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.primary.opacity(0.08))
+                                .fill(LauncherPalette.surface)
                         )
                 }
             }
         }
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-}
-
-/// Compact Commandly mark for the root footer app menu.
-struct LauncherAppMark: View {
-    var size: CGFloat = 18
-
-    var body: some View {
-        CommandlyApplicationIcon(size: size)
-            .accessibilityHidden(true)
     }
 }
 
@@ -419,8 +406,12 @@ private struct LauncherUpwardMenuButton<Label: View>: View {
             presentMenu()
         } label: {
             label()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .controlSize(.small)
         .disabled(isEnabled == false)
         .opacity(isEnabled ? 1 : 0.45)
         .background {
@@ -442,6 +433,9 @@ private struct LauncherUpwardMenuButton<Label: View>: View {
             menu.addItem(item)
         } else {
             for action in actions {
+                if action.id == BuiltInCommandActionID.quit, menu.items.isEmpty == false {
+                    menu.addItem(.separator())
+                }
                 let item = NSMenuItem(
                     title: action.title,
                     action: #selector(LauncherUpwardMenuBridge.selectItem(_:)),
@@ -526,15 +520,16 @@ enum CopySuccessFeedback {
 
     static func runMorph(
         token: Int,
-        didSucceed: Binding<Bool>
+        didSucceed: Binding<Bool>,
+        reduceMotion: Bool = false
     ) async {
         guard token > 0 else { return }
-        withAnimation(succeedSpring) {
+        withAnimation(reduceMotion ? nil : succeedSpring) {
             didSucceed.wrappedValue = true
         }
         try? await Task.sleep(for: visibleDuration)
         guard Task.isCancelled == false else { return }
-        withAnimation(revertSpring) {
+        withAnimation(reduceMotion ? nil : revertSpring) {
             didSucceed.wrappedValue = false
         }
     }
@@ -546,33 +541,20 @@ private struct LauncherFooterActionButton: View {
     var isEnabled: Bool = true
     let action: () -> Void
 
-    @State private var isHovered = false
-    @State private var isPressed = false
-
     var body: some View {
         Button(action: action) {
             footerChrome(
                 title: title,
                 keys: keys,
-                isHovered: isHovered,
-                isPressed: isPressed,
                 didSucceed: false,
-                showsLeadingIcon: false
+                showsLeadingIcon: false,
+                reduceMotion: false
             )
             .opacity(isEnabled ? 1 : 0.45)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .controlSize(.small)
         .disabled(isEnabled == false)
-        .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHovered)
-        .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isPressed)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
         .accessibilityLabel(title)
     }
 }
@@ -584,10 +566,9 @@ private struct LauncherFooterCopyActionButton: View {
     var isEnabled: Bool = true
     let action: () -> Void
 
-    @State private var isHovered = false
-    @State private var isPressed = false
     @State private var didSucceed = false
     @State private var successToken = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
@@ -597,28 +578,22 @@ private struct LauncherFooterCopyActionButton: View {
             footerChrome(
                 title: didSucceed ? "Copied" : title,
                 keys: keys,
-                isHovered: isHovered,
-                isPressed: isPressed,
                 didSucceed: didSucceed,
-                showsLeadingIcon: true
+                showsLeadingIcon: true,
+                reduceMotion: reduceMotion
             )
             .opacity(isEnabled ? 1 : 0.45)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .controlSize(.small)
         .disabled(isEnabled == false)
-        .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHovered)
-        .animation(CopySuccessFeedback.succeedSpring, value: didSucceed)
-        .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isPressed)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
+        .animation(reduceMotion ? nil : CommandlyMotion.control, value: didSucceed)
         .task(id: successToken) {
-            await CopySuccessFeedback.runMorph(token: successToken, didSucceed: $didSucceed)
+            await CopySuccessFeedback.runMorph(
+                token: successToken,
+                didSucceed: $didSucceed,
+                reduceMotion: reduceMotion
+            )
         }
         .accessibilityLabel(didSucceed ? "Copied" : title)
     }
@@ -628,84 +603,50 @@ private struct LauncherFooterCopyActionButton: View {
 private func footerChrome(
     title: String,
     keys: [String],
-    isHovered: Bool,
-    isPressed: Bool,
     didSucceed: Bool,
-    showsLeadingIcon: Bool
+    showsLeadingIcon: Bool,
+    reduceMotion: Bool
 ) -> some View {
     HStack(spacing: 6) {
         if showsLeadingIcon {
             Image(systemName: didSucceed ? "checkmark" : "doc.on.doc")
                 .commandlyFont(size: 10, weight: .semibold)
-                .foregroundStyle(
-                    didSucceed
-                        ? BrandPalette.accentSoft
-                        : (isHovered ? Color.primary : Color.secondary)
-                )
+                .foregroundStyle(didSucceed ? CommandlyTint.green.color : Color.secondary)
                 .contentTransition(.symbolEffect(.replace))
-                .symbolEffect(.bounce, value: didSucceed)
+                .symbolEffect(.bounce, value: reduceMotion ? false : didSucceed)
         }
 
         Text(title)
             .commandlyFont(size: 11, weight: .medium)
-            .foregroundStyle(
-                didSucceed
-                    ? BrandPalette.accentSoft
-                    : (isHovered ? Color.primary : Color.secondary)
-            )
+            .foregroundStyle(didSucceed ? CommandlyTint.green.color : Color.primary)
             .contentTransition(.opacity)
 
         HStack(spacing: 3) {
             ForEach(keys, id: \.self) { key in
                 Text(key)
                     .commandlyFont(size: 10, weight: .semibold, design: .rounded)
-                    .foregroundStyle(
-                        didSucceed || isHovered ? BrandPalette.accentSoft : Color.secondary
-                    )
+                    .foregroundStyle(didSucceed ? CommandlyTint.green.color : Color.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(
-                                didSucceed || isHovered
-                                    ? BrandPalette.accent.opacity(0.22)
-                                    : Color.primary.opacity(0.08)
-                            )
+                            .fill(didSucceed ? CommandlyTint.green.softFill : LauncherPalette.surface)
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .strokeBorder(
-                                BrandPalette.accent.opacity(didSucceed || isHovered ? 0.35 : 0),
+                                didSucceed
+                                    ? CommandlyTint.green.color.opacity(0.32)
+                                    : LauncherPalette.separator,
                                 lineWidth: 1
                             )
                     }
-                    .shadow(
-                        color: BrandPalette.accent.opacity(
-                            isHovered && didSucceed == false ? 0.28 : 0),
-                        radius: isHovered && didSucceed == false ? 6 : 0,
-                        y: isHovered && didSucceed == false ? 1 : 0
-                    )
             }
         }
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
-    .background(
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(
-                didSucceed
-                    ? BrandPalette.accent.opacity(0.16)
-                    : (isHovered ? BrandPalette.accent.opacity(0.12) : Color.clear)
-            )
-    )
-    .overlay {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .strokeBorder(
-                BrandPalette.accent.opacity(didSucceed ? 0.28 : (isHovered ? 0.22 : 0)),
-                lineWidth: 1
-            )
-    }
-    .scaleEffect(isPressed ? 0.97 : (isHovered || didSucceed ? 1.03 : 1))
+    .contentShape(Rectangle())
 }
 
 /// Captures secondary clicks so launcher result rows can open their actions panel.
@@ -794,7 +735,7 @@ struct ApplicationLauncherIcon: View {
             } else {
                 Image(systemName: "app.fill")
                     .commandlyFont(size: size * 0.46, weight: .semibold)
-                    .foregroundStyle(BrandPalette.accentSoft)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(width: size, height: size)

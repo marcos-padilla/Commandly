@@ -6,43 +6,38 @@ struct AboutSettingsPage: View {
     @Bindable var viewModel: SettingsViewModel
 
     var body: some View {
-        ScrollView {
-            GlassEffectContainer(spacing: Spacing.sm.rawValue) {
-                VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
-                    SettingsPageHeader(
-                        title: viewModel.selectedPane.title,
-                        subtitle: viewModel.selectedPane.subtitle
-                    )
+        SettingsPageLayout(maxWidth: 640) {
+            VStack(spacing: Spacing.md.rawValue) {
+                CommandlyApplicationIcon(size: 72)
 
-                    SettingsCard {
-                        HStack(alignment: .top, spacing: Spacing.sm.rawValue) {
-                            CommandlyApplicationIcon(size: 64)
+                VStack(spacing: 4) {
+                    Text(viewModel.metadata.name)
+                        .commandlyFont(size: 17, weight: .semibold)
+                        .accessibilityAddTraits(.isHeader)
 
-                            VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
-                                Text(viewModel.metadata.name)
-                                    .commandlyFont(size: 14, weight: .semibold)
-                                Text(
-                                    "Version \(viewModel.metadata.version) (\(viewModel.metadata.build))"
-                                )
-                                .commandlyFont(size: 11)
-                                .foregroundStyle(.secondary)
-                                Text(viewModel.metadata.bundleIdentifier)
-                                    .commandlyFont(size: 10, design: .monospaced)
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, 2)
+                    Text("Version \(viewModel.metadata.version) (\(viewModel.metadata.build))")
+                        .commandlyFont(size: 11)
+                        .foregroundStyle(.secondary)
 
-                                Text("A keyboard-first productivity launcher for macOS.")
-                                    .commandlyFont(size: 11)
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, Spacing.xs.rawValue)
-                            }
-                        }
-                        .padding(.vertical, 6)
-                    }
+                    Text(viewModel.metadata.bundleIdentifier)
+                        .commandlyFont(size: 10, design: .monospaced)
+                        .foregroundStyle(.tertiary)
+                        .textSelection(.enabled)
                 }
+
+                Divider()
+                    .overlay(SettingsVisualStyle.separator)
+                    .frame(maxWidth: 320)
+                    .padding(.vertical, Spacing.xs.rawValue)
+
+                Text("A keyboard-first productivity launcher for macOS.")
+                    .commandlyFont(size: 11)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, Spacing.md.rawValue)
-            .padding(.vertical, Spacing.md.rawValue)
+            .frame(maxWidth: .infinity)
+            .padding(.top, Spacing.lg.rawValue)
+            .accessibilityElement(children: .contain)
         }
     }
 }

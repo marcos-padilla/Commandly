@@ -26,7 +26,7 @@ enum RegisteredApplicationDocumentation {
                         ),
                         DocumentationShortcut(
                             id: "settings.open.command-comma",
-                            title: "Open Settings from Commandly's app menu",
+                            title: "Open Settings from the launcher gear menu",
                             keys: ["⌘", ","]
                         )
                     ])

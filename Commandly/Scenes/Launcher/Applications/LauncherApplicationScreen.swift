@@ -63,25 +63,21 @@ struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: Vie
                 filterControl: filterControl
             )
 
-            Rectangle()
-                .fill(LauncherPalette.separator)
-                .frame(height: 1)
-
             HStack(spacing: 0) {
                 sidebar
                     .frame(width: sidebarWidth)
                     .layoutPriority(1)
-                    .background(LauncherPalette.sidebar)
+                    .background(Color.primary.opacity(0.025))
                     .clipped()
 
                 Rectangle()
-                    .fill(LauncherPalette.separator)
+                    .fill(Color.primary.opacity(0.08))
                     .frame(width: 1)
 
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(0)
-                    .background(LauncherPalette.detail)
+                    .background(Color.clear)
                     .clipped()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -105,6 +101,7 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
     let filterControl: FilterControl
 
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: density.spacing(.sm)) {
@@ -112,8 +109,11 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
 
             HStack(spacing: density.spacing(.xs)) {
                 Image(systemName: "magnifyingglass")
+                    .symbolVariant(.none)
                     .commandlyFont(size: 13, weight: .medium)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(
+                        isSearchFocused.wrappedValue ? Color.primary : Color.secondary
+                    )
 
                 TextField(searchPlaceholder, text: $query)
                     .textFieldStyle(.plain)
@@ -133,41 +133,61 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
                         onEscape()
                         return .handled
                     }
+
+                if query.isEmpty == false {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .commandlyFont(size: 12)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
             }
             .padding(.horizontal, density.spacing(.sm))
-            .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(Color.primary.opacity(searchFillOpacity))
-            }
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .contentShape(
+                RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(searchStrokeOpacity), lineWidth: 1)
+                RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
+                    .strokeBorder(searchStroke, lineWidth: 1)
             }
             .onHover { isSearchHovered = $0 }
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isSearchHovered)
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isSearchFocused.wrappedValue)
+            .onTapGesture {
+                isSearchFocused.wrappedValue = true
+            }
+            .animation(reduceMotion ? nil : CommandlyMotion.hover, value: isSearchHovered)
+            .animation(
+                reduceMotion ? nil : CommandlyMotion.hover,
+                value: isSearchFocused.wrappedValue
+            )
             .accessibilityElement(children: .contain)
+            .layoutPriority(1)
 
             filterControl
+                .fixedSize(horizontal: true, vertical: false)
                 .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.xs))
-        .background(LauncherPalette.chrome)
+        .padding(.top, density.spacing(.sm))
+        .padding(.bottom, density.spacing(.xs))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.075))
+                .frame(height: 1)
+        }
         .zIndex(20)
     }
 
-    private var searchFillOpacity: Double {
-        if isSearchFocused.wrappedValue { return 0.09 }
-        if isSearchHovered { return 0.07 }
-        return 0.05
-    }
-
-    private var searchStrokeOpacity: Double {
-        if isSearchFocused.wrappedValue { return 0.18 }
-        if isSearchHovered { return 0.10 }
-        return 0
+    private var searchStroke: Color {
+        if isSearchFocused.wrappedValue {
+            return Color.primary.opacity(0.28)
+        }
+        return Color.primary.opacity(isSearchHovered ? 0.16 : 0.09)
     }
 }
 
@@ -220,11 +240,7 @@ struct LauncherApplicationRow<Label: View, Accessory: View>: View {
         .padding(.vertical, density.rowVerticalPadding)
         .background {
             RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .fill(isSelected ? LauncherPalette.selection : Color.clear)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .strokeBorder(isSelected ? LauncherPalette.separator : Color.clear, lineWidth: 1)
+                .fill(isSelected ? Color.primary.opacity(0.105) : Color.clear)
         }
         .padding(.horizontal, density.spacing(.xs))
         .background {

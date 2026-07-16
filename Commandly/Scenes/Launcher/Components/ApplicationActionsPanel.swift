@@ -41,7 +41,7 @@ struct LauncherActionPanel: View {
                     ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
                         if index > 0, actions[index - 1].section != action.section {
                             Divider()
-                                .opacity(0.35)
+                                .overlay(LauncherPalette.separator)
                                 .padding(.vertical, 4)
                                 .padding(.horizontal, density.spacing(.sm))
                         }
@@ -55,7 +55,8 @@ struct LauncherActionPanel: View {
             }
             .frame(maxHeight: 280)
 
-            Divider().opacity(0.35)
+            Divider()
+                .overlay(LauncherPalette.separator)
 
             HStack(spacing: density.spacing(.xs)) {
                 Image(systemName: "magnifyingglass")
@@ -75,15 +76,12 @@ struct LauncherActionPanel: View {
             .padding(.vertical, density.spacing(.sm))
         }
         .frame(width: 320)
-        .background {
-            RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
+        .glassEffect(.regular, in: .rect(cornerRadius: CornerRadius.lg.rawValue))
         .overlay {
             RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(0.11), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.28), radius: 20, y: 10)
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
         .onAppear {
             isSearchFocused = true
         }
@@ -135,6 +133,7 @@ private struct LauncherActionPanelRow: View {
     let onSelect: () -> Void
     @State private var isHovered = false
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: onSelect) {
@@ -161,7 +160,7 @@ private struct LauncherActionPanelRow: View {
                                 .padding(.vertical, 2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .fill(Color.primary.opacity(0.08))
+                                        .fill(LauncherPalette.surface)
                                 )
                         }
                     }
@@ -171,7 +170,7 @@ private struct LauncherActionPanelRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+                    .fill(isHovered ? LauncherPalette.hover : Color.clear)
             )
             .contentShape(Rectangle())
         }
@@ -179,6 +178,7 @@ private struct LauncherActionPanelRow: View {
         .disabled(action.isEnabled == false)
         .opacity(action.isEnabled ? 1 : 0.5)
         .onHover { isHovered = $0 }
+        .animation(reduceMotion ? nil : CommandlyMotion.hover, value: isHovered)
         .accessibilityLabel(action.title)
         .accessibilityIdentifier("launcher-action-\(action.id.rawValue)")
     }

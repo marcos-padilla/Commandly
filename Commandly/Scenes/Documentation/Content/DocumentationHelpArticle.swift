@@ -16,7 +16,7 @@ enum DocumentationHelpArticle {
                     blocks: [
                         .steps("documentation-open-steps", [
                             "Open Commandly with Option–Space.",
-                            "Click the Commandly icon in the bottom-left corner.",
+                            "Click the Settings gear in the bottom-right corner.",
                             "Choose Documentation.",
                         ]),
                         .shortcuts("documentation-open-shortcut", [
@@ -24,7 +24,7 @@ enum DocumentationHelpArticle {
                                 id: "documentation-shortcut-open",
                                 title: "Open Documentation",
                                 keys: ["⌘", "?"],
-                                detail: "Available from Commandly’s app menu."
+                                detail: "Available from the launcher’s Settings menu."
                             ),
                         ]),
                     ]

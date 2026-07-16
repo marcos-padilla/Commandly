@@ -131,11 +131,11 @@ enum LauncherDocumentationArticle {
                 ),
                 DocumentationSection(
                     id: "launcher-app-menu",
-                    title: "Commandly menu",
+                    title: "Settings menu",
                     blocks: [
                         .paragraph(
                             "launcher-app-menu-summary",
-                            "Click the Commandly icon at the bottom-left of launcher home to open the app menu. From there you can open Documentation, open Settings, or quit Commandly."
+                            "Click the Settings gear at the bottom-right of launcher home to open the utility menu. From there you can open Documentation, open Settings, or quit Commandly."
                         ),
                         .shortcuts("launcher-app-menu-shortcuts", [
                             DocumentationShortcut(
@@ -159,7 +159,7 @@ enum LauncherDocumentationArticle {
             ],
             keywords: [
                 "search", "launcher", "navigation", "arrow keys", "autocomplete", "Tab",
-                "Return", "Escape", "Actions", "Command K", "app menu", "footer",
+                "Return", "Escape", "Actions", "Command K", "Settings menu", "footer",
             ]
         )
     )

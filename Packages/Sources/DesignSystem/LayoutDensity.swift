@@ -8,7 +8,7 @@ public struct CommandlyLayoutDensity: Equatable, Sendable {
     public var rowVerticalPadding: CGFloat
     /// Horizontal padding inside list rows.
     public var rowHorizontalPadding: CGFloat
-    /// Icon tile size in launcher rows.
+    /// Glyph alignment frame in launcher rows.
     public var iconSize: CGFloat
     /// Launcher panel height.
     public var launcherHeight: CGFloat

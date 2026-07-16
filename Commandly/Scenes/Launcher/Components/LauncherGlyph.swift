@@ -3,7 +3,7 @@ import Foundation
 import SearchKit
 import SwiftUI
 
-/// Color families for Commandly's small filled artwork tiles.
+/// Semantic families retained by artwork classification without decorating launcher rows.
 enum LauncherGlyphTone: Sendable {
     case blue
     case cyan
@@ -12,21 +12,9 @@ enum LauncherGlyphTone: Sendable {
     case amber
     case coral
     case slate
-
-    var foreground: Color {
-        switch self {
-        case .blue: return Color(red: 0.48, green: 0.68, blue: 1.00)
-        case .cyan: return Color(red: 0.34, green: 0.82, blue: 0.98)
-        case .indigo: return Color(red: 0.64, green: 0.57, blue: 1.00)
-        case .mint: return Color(red: 0.35, green: 0.86, blue: 0.68)
-        case .amber: return Color(red: 1.00, green: 0.72, blue: 0.31)
-        case .coral: return Color(red: 1.00, green: 0.46, blue: 0.48)
-        case .slate: return Color(red: 0.68, green: 0.74, blue: 0.84)
-        }
-    }
 }
 
-/// One coherent visual treatment for command, file, and clipboard glyphs.
+/// A quiet monochrome treatment for command, file, and clipboard glyphs.
 struct LauncherGlyph: View {
     let systemName: String
     let tone: LauncherGlyphTone
@@ -35,30 +23,12 @@ struct LauncherGlyph: View {
 
     var body: some View {
         Image(systemName: systemName)
+            .symbolVariant(.fill)
             .symbolRenderingMode(.monochrome)
             .commandlyFont(size: size * 0.47, weight: .semibold)
-            .foregroundStyle(isSelected ? Color.white : tone.foreground)
+            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             .frame(width: size, height: size)
-            .background(tileBackground)
-            .overlay {
-                RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                    .strokeBorder(Color.white.opacity(isSelected ? 0.18 : 0.08), lineWidth: 0.75)
-            }
-            .shadow(color: tone.foreground.opacity(isSelected ? 0.22 : 0.08), radius: 4, y: 1)
             .accessibilityHidden(true)
-    }
-
-    private var tileBackground: some View {
-        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: isSelected
-                        ? [tone.foreground.opacity(0.96), tone.foreground.opacity(0.70)]
-                        : [tone.foreground.opacity(0.22), tone.foreground.opacity(0.11)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
     }
 }
 

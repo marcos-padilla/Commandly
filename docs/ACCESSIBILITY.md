@@ -11,6 +11,21 @@ Foundation requirements:
 
 Accessibility review is part of the definition of done for UI changes (`AGENTS.md`).
 
+## Shared window and launcher review
+
+- Settings and launcher navigation use labeled monochrome symbols; selected rows expose selected
+  state through shape, weight, and accessibility traits rather than color alone.
+- Search fields, sidebar toggles, article navigation, launcher results, and footer actions retain
+  keyboard and VoiceOver labels. The native Settings titlebar toggle exposes a stable identifier,
+  a current Hide/Show label, and help text while the visible scene title remains suppressed.
+- Settings and Documentation honor the shared Larger Text preference, and documentation maintains a
+  constrained reading measure rather than stretching prose across the window.
+- Sidebar, page, and panel transitions suppress nonessential spatial motion when Reduce Motion is
+  on; pointer hover feedback is limited to short, non-spatial color fades.
+- Native Liquid Glass is reserved for genuinely elevated navigation and transient controls so
+  Reduce Transparency and Increased Contrast can use the system treatment; static content stays on
+  flat neutral planes separated by spacing and semantic hairlines.
+
 ## Shelf review
 
 Shelf's implemented accessibility surface includes:
@@ -24,8 +39,11 @@ Shelf's implemented accessibility surface includes:
   Selection also has Select All and Clear Selection controls.
 - AirDrop, Messages, and Mail targets retain explicit names and hints while displaying their native
   macOS service artwork.
-- The initial content reveal uses a subtle fade/scale only when Reduce Motion is off; reduced-motion
-  presentations reveal immediately. Board and direct-action transitions follow the same preference.
+- A newly opened empty board delays its decorative drop prompt for about one second, then uses a
+  slow fade with a slight vertical settle only when Reduce Motion is off. The hidden prompt is also
+  hidden from assistive technology, while the board continues to expose its Empty value. Incoming
+  drop feedback and reduced-motion presentations reveal immediately. Board and direct-action
+  transitions follow the same preference.
 - The board can be repositioned from any unoccupied surface area without taking precedence over its
   buttons, menus, or staged-item drag sources. An outgoing item drag also keeps the window fixed.
 - `⌥⇧Space` and `⌥⇧A` provide system-wide keyboard routes to a new empty or clipboard-seeded Shelf.

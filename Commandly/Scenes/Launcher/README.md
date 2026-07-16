@@ -37,7 +37,7 @@ user-authorized folders. It supports indexed-content search, type filters, Quick
 and file actions.
 See `docs/FILE_SEARCH.md` for architecture, privacy, and current limitations.
 
-Root search shows a footer with an app-menu (Settings, Quit) and **Actions**. Right-click an installed macOS application row (or press Actions / ⌘K with one selected) to open a searchable application-actions panel: open, Finder reveal / Get Info / package contents, favorites, copy name/path/bundle ID, auto-quit, disable, uninstall, and reset ranking. **Uninstall** opens a review surface that lists the app plus related support files (filter/sort/select) and moves the selected items to the Trash. Registered Commandly application surfaces keep their own footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
+Root search shows contextual **Actions** at the footer's leading edge and one persistent Settings gear menu at the trailing edge. The gear menu contains Documentation, Settings, and Quit without adding a separate Commandly button. Right-click an installed macOS application row (or press Actions / ⌘K with one selected) to open a searchable application-actions panel: open, Finder reveal / Get Info / package contents, favorites, copy name/path/bundle ID, auto-quit, disable, uninstall, and reset ranking. **Uninstall** opens a review surface that lists the app plus related support files (filter/sort/select) and moves the selected items to the Trash. Registered Commandly application surfaces keep their own footer chrome driven by `CommandActionDescriptor` values so actions (Copy, Actions menu, etc.) stay consistent.
 
 ## Clipboard History
 

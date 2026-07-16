@@ -13,13 +13,16 @@ display before taking focus, then opens the single floating board in that displa
 on the active macOS Space, including over another application's full-screen Space. Shelf configures
 that cross-application overlay role and its captured display placement before Commandly activates.
 The same live board follows every Space until it is explicitly closed, preserving its items,
-selection, and detail state. Repeating either command replaces the current board with a fresh empty or
-clipboard-seeded board, respectively.
+selection, and detail state. Its active behind-window material and clear Liquid Glass surface keep
+sampling the desktop when another application has focus instead of becoming a solid inactive panel.
+Repeating either command replaces the current board with a fresh empty or clipboard-seeded board,
+respectively.
 
 Drag the board from any unoccupied part of its surface. Buttons, menus, and staged-item interactions
 keep their own behavior, and window movement is disabled while a staged item or selection is being
-dragged out. A newly presented board fades and scales its initial content into place; Reduce Motion
-shows that content immediately.
+dragged out. A newly presented empty board stays visually quiet for about one second, then fades its
+drop icon and prompt into place. Clipboard-seeded content is not delayed, and incoming drop feedback
+appears immediately. Reduce Motion shows the content immediately.
 
 ### Stage content
 
@@ -97,8 +100,9 @@ Shelf stays visible across application focus and Space changes until explicitly 
 - **Close when empty** dismisses a board after its last staged item is explicitly removed or
   trashed. Copy-only drag-out does not empty the board. A newly opened empty board does not
   immediately close.
-- **Preferred corner** selects the initial Bottom right, Bottom left, Top right, or Top left anchor.
-  It does not prevent manually repositioning the board afterward.
+- **Preferred corner** selects the initial Top right, Top left, Bottom right, or Bottom left anchor.
+  When no selection has been saved, Shelf defaults to Top right; an existing selection remains
+  respected. The setting does not prevent manually repositioning the board afterward.
 - **Play drop sound** plays a local system sound after Shelf accepts new staged content.
 
 These values are non-secret preferences. They do not contain paths or staged content.
@@ -148,8 +152,9 @@ and mutation contracts live in `Infrastructure` with in-memory implementations f
   controls, selection, unavailable items, progress, and clipboard controls have VoiceOver labels or
   values.
 - Item cells identify their selection state and explain that they can be dragged to another app.
-- Shelf honors Reduce Motion for its initial fade/scale reveal, board transitions, and direct-action
-  transitions.
+- Shelf honors Reduce Motion for its delayed empty-prompt reveal, board transitions, and
+  direct-action transitions. The delayed prompt is hidden from assistive technology until visible;
+  the board's Empty accessibility value remains available throughout.
 - Whole-surface window movement yields to controls and staged-item drag sources. While an outgoing
   item drag is active, the board remains fixed in place.
 - All core board operations have keyboard routes or menu/button equivalents. Native drag-and-drop is

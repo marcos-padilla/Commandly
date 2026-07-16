@@ -320,7 +320,7 @@ struct DocumentationTests {
         #expect(exampleCount >= 150)
     }
 
-    @Test func rootAppMenuOpensDocumentationFirstAndDismissesLauncher() throws {
+    @Test func settingsMenuIncludesDocumentationAndDismissesBeforeOpeningIt() throws {
         var events: [String] = []
         let viewModel = LauncherViewModel(
             onDismiss: { events.append("dismiss") },
@@ -328,11 +328,15 @@ struct DocumentationTests {
         )
 
         #expect(viewModel.appMenuActions.map(\.id) == [
-            BuiltInCommandActionID.documentation,
             BuiltInCommandActionID.settings,
+            BuiltInCommandActionID.documentation,
             BuiltInCommandActionID.quit
         ])
-        let documentationAction = try #require(viewModel.appMenuActions.first)
+        let documentationAction = try #require(
+            viewModel.appMenuActions.first(where: {
+                $0.id == BuiltInCommandActionID.documentation
+            })
+        )
         #expect(documentationAction.title == "Documentation")
         #expect(documentationAction.keyHint == CommandKeyHint(symbols: ["⌘", "?"]))
 

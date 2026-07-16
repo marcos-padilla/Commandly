@@ -9,6 +9,7 @@ struct LauncherHomeView: View {
 
     @State private var lastPointerLocation: CGPoint?
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,10 +23,6 @@ struct LauncherHomeView: View {
                 onAcceptAutocomplete: viewModel.acceptAutocomplete,
                 onCancel: handleCancel
             )
-
-            Rectangle()
-                .fill(LauncherPalette.separator)
-                .frame(height: 1)
 
             results
         }
@@ -42,10 +39,11 @@ struct LauncherHomeView: View {
                         resultSections
                     }
                 }
-                .padding(.vertical, density.spacing(.xxs))
+                .padding(.top, density.spacing(.xxs))
                 .padding(.bottom, density.spacing(.xs))
             }
             .frame(maxHeight: .infinity)
+            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y
             } action: { oldOffset, newOffset in
@@ -65,7 +63,7 @@ struct LauncherHomeView: View {
             }
             .onChange(of: viewModel.selectedID) { _, newValue in
                 guard let newValue, viewModel.shouldScrollToSelection else { return }
-                withAnimation(.easeOut(duration: MotionDuration.fast.rawValue)) {
+                withAnimation(reduceMotion ? nil : CommandlyMotion.hover) {
                     proxy.scrollTo(newValue, anchor: .center)
                 }
             }

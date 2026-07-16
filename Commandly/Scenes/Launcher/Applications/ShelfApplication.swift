@@ -49,7 +49,7 @@ struct ShelfApplication: LauncherApplication {
             title: "Preferred corner",
             description: "Default placement on the display active when a new Shelf opens.",
             kind: .selection,
-            defaultValue: .text(ShelfPreferredCorner.bottomRight.rawValue),
+            defaultValue: .text(ShelfPreferredCorner.defaultValue.rawValue),
             options: ShelfPreferredCorner.allCases.map { corner in
                 LauncherConfigurationOption(
                     id: corner.rawValue,

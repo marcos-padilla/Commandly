@@ -22,6 +22,7 @@ struct ApplicationHotkeyRecorder: View {
 
     @State private var isRecording = false
     @State private var eventMonitor: Any?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 5) {
@@ -35,29 +36,11 @@ struct ApplicationHotkeyRecorder: View {
                         .commandlyFont(size: 10, weight: .medium)
                         .lineLimit(1)
                 }
-                .foregroundStyle(isRecording ? BrandPalette.accentSoft : Color.secondary)
-                .padding(.horizontal, 7)
-                .frame(minWidth: 84)
-                .frame(height: 26)
-                .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(
-                            isRecording
-                                ? BrandPalette.accent.opacity(0.11)
-                                : Color.primary.opacity(0.035)
-                        )
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(
-                            isRecording
-                                ? BrandPalette.accent.opacity(0.42)
-                                : SettingsPalette.border,
-                            lineWidth: 1
-                        )
-                }
+                .foregroundStyle(isRecording ? Color.accentColor : Color.secondary)
+                .frame(minWidth: 72)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
             .disabled(isDisabled)
             .opacity(isDisabled ? 0.55 : 1)
             .accessibilityLabel(
@@ -73,15 +56,14 @@ struct ApplicationHotkeyRecorder: View {
                 } label: {
                     Image(systemName: "xmark")
                         .commandlyFont(size: 9, weight: .semibold)
-                        .frame(width: 20, height: 20)
-                        .background(Color.primary.opacity(0.04), in: Circle())
+                        .frame(width: 18, height: 18)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Clear shortcut for \(accessibilityTitle)")
             }
         }
-        .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isRecording)
+        .animation(reduceMotion ? nil : CommandlyMotion.control, value: isRecording)
         .onDisappear { stopRecording() }
     }
 

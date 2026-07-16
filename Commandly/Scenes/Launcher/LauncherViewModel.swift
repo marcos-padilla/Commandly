@@ -211,18 +211,18 @@ final class LauncherViewModel {
         }
     }
 
-    /// App-icon dropdown on the root footer (Documentation, Settings, Quit).
+    /// Root utility descriptors presented together from the trailing Settings gear menu.
     var appMenuActions: [CommandActionDescriptor] {
         [
-            CommandActionDescriptor(
-                id: BuiltInCommandActionID.documentation,
-                title: "Documentation",
-                keyHint: CommandKeyHint(symbols: ["⌘", "?"])
-            ),
             CommandActionDescriptor(
                 id: BuiltInCommandActionID.settings,
                 title: "Settings…",
                 keyHint: CommandKeyHint(symbols: ["⌘", ","])
+            ),
+            CommandActionDescriptor(
+                id: BuiltInCommandActionID.documentation,
+                title: "Documentation",
+                keyHint: CommandKeyHint(symbols: ["⌘", "?"])
             ),
             CommandActionDescriptor(
                 id: BuiltInCommandActionID.quit,

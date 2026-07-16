@@ -12,75 +12,80 @@ struct DocumentationRootView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if isSidebarVisible {
-                DocumentationSidebar(
-                    viewModel: viewModel,
-                    isSearchFocused: $isSearchFocused
-                )
-                .frame(width: LayoutConstants.documentationSidebarWidth)
-                .transition(.move(edge: .leading).combined(with: .opacity))
-            }
+        ZStack {
+            CommandlyWindowVisualEffectBackground()
+                .ignoresSafeArea()
+            DocumentationVisualStyle.canvas
+                .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: DocumentationTopBar.titlebarInset)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+            HStack(spacing: 0) {
+                if isSidebarVisible {
+                    DocumentationSidebar(
+                        viewModel: viewModel,
+                        isSearchFocused: $isSearchFocused
+                    )
+                    .frame(width: LayoutConstants.documentationSidebarWidth)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                }
 
-                DocumentationTopBar(
-                    article: viewModel.selectedArticle,
-                    isSidebarVisible: isSidebarVisible,
-                    onToggleSidebar: toggleSidebar,
-                    onFocusSearch: focusSearch
-                )
+                VStack(spacing: 0) {
+                    DocumentationTopBar()
 
-                Group {
-                    if let article = viewModel.selectedArticle {
-                        DocumentationArticleView(article: article)
-                            .id(article.id)
-                            .transition(.opacity.combined(with: .offset(x: 8)))
-                    } else {
-                        DocumentationEmptyState(query: viewModel.query) {
-                            viewModel.clearSearch()
-                            isSearchFocused = true
+                    Group {
+                        if let article = viewModel.selectedArticle {
+                            DocumentationArticleView(article: article)
+                                .id(article.id)
+                                .transition(.opacity.combined(with: .offset(x: 4)))
+                        } else {
+                            DocumentationEmptyState(query: viewModel.query) {
+                                viewModel.clearSearch()
+                                isSearchFocused = true
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+                .background(DocumentationVisualStyle.detail)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(
             minWidth: LayoutConstants.documentationMinWidth,
             minHeight: LayoutConstants.documentationMinHeight
         )
-        .background {
-            ZStack {
-                CommandlyWindowVisualEffectBackground()
-                SettingsPalette.canvas
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.055),
-                        Color.clear,
-                        BrandPalette.accent.opacity(0.055),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-            .ignoresSafeArea()
-        }
-        .ignoresSafeArea()
-        .compactWindowChrome(hidesZoomButton: false)
+        .background(
+            CommandlySidebarTitlebarAccessory(
+                isSidebarVisible: isSidebarVisible,
+                accessibilityIdentifier: "documentation.sidebar.toggle",
+                navigationName: "Documentation",
+                supplementaryAction: .init(
+                    title: "Find in Documentation",
+                    systemImage: "magnifyingglass",
+                    accessibilityIdentifier: "documentation.find",
+                    accessibilityHelp: "Focuses Documentation search",
+                    onPerform: focusSearch
+                ),
+                onToggleSidebar: toggleSidebar
+            )
+        )
+        .compactWindowChrome(
+            hidesZoomButton: false,
+            accessibilityLabel: "Commandly Documentation"
+        )
         .commandlyWindowMaterial()
         .bringHostingWindowToFront(identifier: CommandlyWindowIdentifier.documentation)
         .background {
             DocumentationEscapeKeyInterceptor(onEscape: clearSearchForEscape)
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88), value: isSidebarVisible)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: viewModel.selectedArticleID)
+        .animation(
+            reduceMotion ? nil : CommandlyMotion.navigation,
+            value: isSidebarVisible
+        )
+        .animation(
+            reduceMotion ? nil : CommandlyMotion.navigation,
+            value: viewModel.selectedArticleID
+        )
         .onAppear { viewModel.refresh() }
         .onKeyPress(keys: [KeyEquivalent("f")], phases: .down) { press in
             guard press.modifiers.contains(.command) else { return .ignored }
@@ -93,16 +98,14 @@ struct DocumentationRootView: View {
     }
 
     private func toggleSidebar() {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88)) {
+        withAnimation(reduceMotion ? nil : CommandlyMotion.navigation) {
             isSidebarVisible.toggle()
         }
     }
 
     private func focusSearch() {
         if isSidebarVisible == false {
-            withAnimation(
-                reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.88)
-            ) {
+            withAnimation(reduceMotion ? nil : CommandlyMotion.navigation) {
                 isSidebarVisible = true
             }
         }
@@ -129,7 +132,8 @@ private struct DocumentationEmptyState: View {
             Text("No article contains “\(query)”. Try a feature name, shortcut, or example.")
         } actions: {
             Button("Clear Search", action: onClear)
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
         }
         .accessibilityIdentifier("documentation.empty-state")
     }

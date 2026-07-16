@@ -10,7 +10,7 @@ struct ShelfConfiguration: Sendable, Equatable {
 
     static let `default` = ShelfConfiguration(
         clearWhenEmpty: false,
-        preferredCorner: .bottomRight,
+        preferredCorner: ShelfPreferredCorner.defaultValue,
         playDropSound: false
     )
 }

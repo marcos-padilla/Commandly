@@ -6,6 +6,8 @@ struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
     private let presentationRequest: WindowPresentationRequest
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     init(
         viewModel: LauncherViewModel,
@@ -49,7 +51,7 @@ struct LauncherRootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, density.spacing(.md))
                     .padding(.bottom, density.spacing(.xs))
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(statusTransition)
             }
 
             switch viewModel.route {
@@ -82,30 +84,24 @@ struct LauncherRootView: View {
         )
         .background {
             ZStack {
-                LauncherVisualEffectBackground(material: .hudWindow)
-                LauncherPalette.canvas
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.055),
-                        Color.clear,
-                        BrandPalette.accent.opacity(0.035),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                if reduceTransparency == false {
+                    LauncherVisualEffectBackground(material: .underWindowBackground)
+                }
+                SemanticColors.color(for: .background)
+                    .opacity(reduceTransparency ? 1 : 0.66)
             }
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous))
         }
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: CornerRadius.xl.rawValue, style: .continuous)
-                .strokeBorder(LauncherPalette.separator, lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(reduceTransparency ? 0.16 : 0.11), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.42), radius: 32, y: 16)
+        .shadow(color: .black.opacity(0.24), radius: 24, y: 10)
         .ignoresSafeArea()
         .overlay {
             if viewModel.showsApplicationActionsPanel {
-                ZStack(alignment: .bottomTrailing) {
+                ZStack(alignment: .bottomLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -120,15 +116,14 @@ struct LauncherRootView: View {
                         onDismiss: { viewModel.dismissApplicationActionsPanel() },
                         onBack: nil
                     )
-                    .padding(.trailing, density.spacing(.md))
-                    .padding(.bottom, 52)
-                    .transition(
-                        .opacity.combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
+                    .padding(.leading, density.spacing(.md))
+                    .padding(.bottom, LauncherChromeMetrics.actionPanelBottomInset)
+                    .transition(actionPanelTransition)
                 }
             }
         }
         .animation(
-            .easeInOut(duration: MotionDuration.fast.rawValue),
+            reduceMotion ? nil : CommandlyMotion.control,
             value: viewModel.showsApplicationActionsPanel
         )
         .launcherWindowChrome(
@@ -165,10 +160,20 @@ struct LauncherRootView: View {
         .onAppear {
             viewModel.prepareForPresentation()
         }
-        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: viewModel.route)
-        .animation(.easeInOut(duration: MotionDuration.fast.rawValue), value: activeStatusMessage)
+        .animation(reduceMotion ? nil : CommandlyMotion.navigation, value: viewModel.route)
+        .animation(reduceMotion ? nil : CommandlyMotion.hover, value: activeStatusMessage)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Commandly launcher")
+    }
+
+    private var statusTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
+    }
+
+    private var actionPanelTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .scale(scale: 0.98, anchor: .bottomLeading))
     }
 
     private var activeStatusMessage: String? {

@@ -7,15 +7,16 @@ struct CommandlyWindowVisualEffectBackground: NSViewRepresentable {
         let view = NSVisualEffectView()
         view.material = .underWindowBackground
         view.blendingMode = .behindWindow
-        view.state = .active
-        view.isEmphasized = true
+        view.state = .followsWindowActiveState
+        view.isEmphasized = false
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = .underWindowBackground
         nsView.blendingMode = .behindWindow
-        nsView.state = .active
+        nsView.state = .followsWindowActiveState
+        nsView.isEmphasized = false
     }
 }
 
@@ -60,4 +61,3 @@ extension View {
         background(CommandlyWindowMaterialConfigurator())
     }
 }
-

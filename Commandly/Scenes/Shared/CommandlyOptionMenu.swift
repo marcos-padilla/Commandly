@@ -33,6 +33,7 @@ struct CommandlyOptionMenu: View {
     @State private var searchQuery = ""
     @State private var hoveredItemID: String?
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
 
     private var selectedTitle: String {
@@ -46,40 +47,42 @@ struct CommandlyOptionMenu: View {
     }
 
     var body: some View {
-        trigger
-            .overlay(alignment: .topTrailing) {
-                if isExpanded {
-                    menuPanel
-                        .offset(y: 40)
-                        .transition(
-                            .opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing))
-                        )
-                }
-            }
-            .background {
-                OutsideMouseDownMonitor(isActive: isExpanded) {
-                    dismissMenu()
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isExpanded)
-            .onChange(of: isExpanded) { _, expanded in
-                if expanded {
-                    if allowsSearch {
-                        isSearchFocused = true
+        GlassEffectContainer(spacing: 12) {
+            trigger
+                .overlay(alignment: .topTrailing) {
+                    if isExpanded {
+                        menuPanel
+                            .offset(y: 40)
+                            .transition(
+                                .opacity.combined(with: .scale(scale: 0.98, anchor: .topTrailing))
+                            )
                     }
-                } else {
-                    searchQuery = ""
-                    hoveredItemID = nil
-                    isSearchFocused = false
                 }
-            }
+                .background {
+                    OutsideMouseDownMonitor(isActive: isExpanded) {
+                        dismissMenu()
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+                .animation(reduceMotion ? nil : CommandlyMotion.navigation, value: isExpanded)
+                .onChange(of: isExpanded) { _, expanded in
+                    if expanded {
+                        if allowsSearch {
+                            isSearchFocused = true
+                        }
+                    } else {
+                        searchQuery = ""
+                        hoveredItemID = nil
+                        isSearchFocused = false
+                    }
+                }
+        }
     }
 
     private var trigger: some View {
         Button {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            withAnimation(reduceMotion ? nil : CommandlyMotion.navigation) {
                 isExpanded.toggle()
             }
         } label: {
@@ -95,22 +98,11 @@ struct CommandlyOptionMenu: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.primary.opacity(isHovered || isExpanded ? 0.10 : 0.06))
-            )
-            .overlay {
-                Capsule(style: .continuous)
-                    .strokeBorder(
-                        Color.primary.opacity(isHovered || isExpanded ? 0.22 : 0.12),
-                        lineWidth: 1
-                    )
-            }
-            .scaleEffect(isHovered && isExpanded == false ? 1.03 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
         .onHover { hovering in
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
+            withAnimation(reduceMotion ? nil : CommandlyMotion.hover) {
                 isHovered = hovering
             }
         }
@@ -164,13 +156,14 @@ struct CommandlyOptionMenu: View {
         .fixedSize(horizontal: true, vertical: true)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color.clear)
         }
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                .strokeBorder(LauncherPalette.separator, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.32), radius: 20, y: 10)
+        .shadow(color: Color.black.opacity(0.24), radius: 20, y: 10)
         .onKeyPress(.escape) {
             dismissMenu()
             return .handled
@@ -215,7 +208,7 @@ struct CommandlyOptionMenu: View {
     }
 
     private func dismissMenu() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
+        withAnimation(reduceMotion ? nil : CommandlyMotion.navigation) {
             isExpanded = false
         }
     }

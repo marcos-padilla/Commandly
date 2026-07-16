@@ -6,12 +6,15 @@
 - Corner radius
 - Typography roles
 - Text scale (`CommandlyTextScale` + `commandlyFont` / `commandlyTextScale`)
-- Motion durations
+- Motion durations and shared control/navigation curves
 - Layout constants (including onboarding, settings, launcher, and documentation window sizes)
 - Semantic color roles (system-mapped for light/dark)
 - `BrandPalette` blue accents for branded moments such as onboarding
-- `LauncherPalette` adaptive launcher canvas, chrome, sidebar, detail, selection, and separator roles
-- `SettingsPalette` adaptive Settings canvas, sidebar, card, and border tints
+- `CommandlyTint` semantic color families for status, warning, success, and destructive meaning
+- `LauncherPalette` neutral adaptive launcher canvas, chrome, sidebar, detail, selection, and
+  separator roles
+- `SettingsPalette` neutral adaptive utility-window canvas, sidebar, detail, fields, selection,
+  focus, and separator roles shared by Settings and Documentation
 
 ## Text size
 
@@ -31,18 +34,34 @@ User preference (`AppViewModePreference`) maps to `CommandlyLayoutDensity` via `
 
 Launcher and settings chrome read `\.commandlyLayoutDensity` for paddings and sizes. Launcher result rows are single-line (title plus optional muted inline subtitle and trailing kind label) in both densities.
 
-The launcher layers a translucent near-black navy tint over a native behind-window blur in Dark appearance. This preserves enough desktop color and luminance to feel integrated with macOS while keeping text legible. Light appearance uses the same material structure with a brighter adaptive tint. Header/footer chrome, sidebar/detail separation, selection, and hairlines must use `LauncherPalette` instead of feature-local dark-mode constants.
+The launcher layers a neutral adaptive tint over a native behind-window material. It stays
+achromatic so search, selection, and real application artwork provide the hierarchy. Settings uses
+one translucent neutral sidebar and one quieter detail plane; section spacing and hairlines replace
+decorative cards. Documentation uses the same material foundation with a wider searchable sidebar
+and constrained reading canvas.
 
-Settings and Documentation use the same native material foundation with `SettingsPalette` tints.
-Documentation adds a wider searchable sidebar and resizable reading canvas while keeping its article
-cards feature-specific. Native Liquid Glass is reserved for grouped cards and interactive
-choice/action controls; it should not be stacked across every row or used as decoration without a
-hierarchy purpose. Launcher, Settings, and Documentation windows must remain non-opaque so their
-behind-window materials can sample the desktop.
+Native Liquid Glass is limited to the navigation and transient-control layer. It may be used for a
+sidebar toggle, a floating menu, or another genuinely elevated control, but not as a background for
+every row or section. Search fields remain transparent or use an untinted system treatment. Static
+settings groups, result rows, and detail content stay flat. Launcher, Settings, and Documentation
+windows remain non-opaque so system materials can respond to the desktop, Reduce Transparency, and
+active-window state.
+
+Shelf is a single transient floating staging surface, so its board may use one clear Liquid Glass
+shape rather than nested glass cards. Its behind-window material deliberately remains optically
+active while another application has focus because the board stays visible across applications.
+
+The root launcher treats search as an embedded canvas row with no independent border or fill. Its
+footer keeps contextual Actions at the leading edge and one labeled Settings gear menu at the
+trailing edge for Documentation, Settings, and Quit.
+
+Navigation and content glyphs are monochrome. `CommandlyTint` is reserved for semantic status such
+as success, warning, error, or destructive actions. Standard selection and focus follow the user's
+macOS accent color and never carry meaning without labels, weight, or selected-state traits.
 
 ## Launcher artwork
 
-`Commandly/Scenes/Launcher/Components/LauncherGlyph.swift` owns the compact filled-glyph treatment shared by root commands, File Search, and Clipboard History. Glyphs use SF Symbols inside a consistent rounded tile so they remain crisp and accessible at compact sizes. File artwork covers folders, images, audio, video, archives, source code, spreadsheets, presentations, PDFs, text, web links, fonts, and generic documents. Clipboard file entries reuse the same file classification.
+`Commandly/Scenes/Launcher/Components/LauncherGlyph.swift` owns the compact monochrome glyph treatment shared by root commands, File Search, and Clipboard History. Glyphs use filled SF Symbols in a consistent alignment frame so they remain crisp and accessible at compact sizes without decorative tiles. File artwork covers folders, images, audio, video, archives, source code, spreadsheets, presentations, PDFs, text, web links, fonts, and generic documents. Clipboard file entries reuse the same file classification.
 
 The original app-icon master lives at `Artwork/CommandlyAppIcon-master.png`; the macOS renditions live in `Assets.xcassets/AppIcon.appiconset`. Keeping the master outside the app-target resources avoids shipping the large production source alongside the compiled asset catalog.
 

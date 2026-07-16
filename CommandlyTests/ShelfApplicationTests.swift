@@ -21,6 +21,11 @@ struct ShelfApplicationTests {
             "preferredCorner",
             "playDropSound"
         ])
+        #expect(
+            definition?.configurationFields
+                .first { $0.variable == "preferredCorner" }?
+                .defaultValue == .text(ShelfPreferredCorner.topRight.rawValue)
+        )
         #expect(registry.application(for: ShelfApplication.applicationID) != nil)
         #expect(
             registry.allManifests().contains { $0.id == ShelfApplication.applicationID }
@@ -71,8 +76,39 @@ struct ShelfApplicationTests {
 
     @Test @MainActor func preferredCornerResolvesConfiguredAndDefaultValues() {
         #expect(ShelfPreferredCorner.resolve("topLeft") == .topLeft)
-        #expect(ShelfPreferredCorner.resolve("unknown") == .bottomRight)
-        #expect(ShelfPreferredCorner.resolve(nil) == .bottomRight)
+        #expect(ShelfPreferredCorner.resolve("bottomRight") == .bottomRight)
+        #expect(ShelfPreferredCorner.resolve("unknown") == .topRight)
+        #expect(ShelfPreferredCorner.resolve(nil) == .topRight)
+        #expect(ShelfConfiguration.default.preferredCorner == .topRight)
+    }
+
+    @Test @MainActor func shelfWindowDefaultsToTopRightOfCapturedScreen() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let visibleFrame = NSRect(x: -1_800, y: 40, width: 1_800, height: 1_000)
+        let target = WindowPresentationTarget(visibleFrame: visibleFrame)
+
+        ShelfWindowConfigurator.place(
+            window,
+            in: ShelfPreferredCorner.defaultValue,
+            screenTarget: target
+        )
+
+        let expectedOrigin = NSPoint(
+            x: visibleFrame.maxX
+                - LayoutConstants.shelfBoardSize
+                - LayoutConstants.shelfScreenMargin,
+            y: visibleFrame.maxY
+                - LayoutConstants.shelfBoardSize
+                - LayoutConstants.shelfScreenMargin
+        )
+        #expect(window.frame.origin == expectedOrigin)
+        #expect(window.frame.maxX == visibleFrame.maxX - LayoutConstants.shelfScreenMargin)
+        #expect(window.frame.maxY == visibleFrame.maxY - LayoutConstants.shelfScreenMargin)
     }
 
     @Test @MainActor func presentationRequestsAdvanceForRepeatedOpensAndCaptureTheirScreen() {

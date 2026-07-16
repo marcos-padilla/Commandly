@@ -9,28 +9,26 @@ struct DocumentationArticleView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                GlassEffectContainer(spacing: 18) {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        articleHeader
+                LazyVStack(alignment: .leading, spacing: Spacing.xl.rawValue) {
+                    articleHeader
 
-                        if article.documentation.sections.count > 1 {
-                            sectionNavigation(proxy: proxy)
-                        }
+                    if article.documentation.sections.count > 1 {
+                        sectionNavigation(proxy: proxy)
+                    }
 
-                        if showsApplicationMetadata {
-                            applicationMetadata
-                        }
+                    if showsApplicationMetadata {
+                        applicationMetadata
+                    }
 
-                        ForEach(article.documentation.sections) { section in
-                            DocumentationSectionCard(section: section)
-                                .id(section.id)
-                        }
+                    ForEach(article.documentation.sections) { section in
+                        DocumentationSectionCard(section: section)
+                            .id(section.id)
                     }
                 }
-                .frame(maxWidth: 840, alignment: .leading)
-                .padding(.horizontal, 34)
-                .padding(.top, 28)
-                .padding(.bottom, 44)
+                .frame(maxWidth: 720, alignment: .leading)
+                .padding(.horizontal, Spacing.xl.rawValue + Spacing.xxs.rawValue)
+                .padding(.top, Spacing.md.rawValue)
+                .padding(.bottom, Spacing.xxl.rawValue)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
             .scrollIndicators(.automatic)
@@ -39,75 +37,78 @@ struct DocumentationArticleView: View {
     }
 
     private var articleHeader: some View {
-        HStack(alignment: .top, spacing: 18) {
-            Image(systemName: article.systemImage)
-                .symbolVariant(.fill)
-                .commandlyFont(size: 25, weight: .semibold)
-                .foregroundStyle(BrandPalette.accentSoft)
-                .frame(width: 54, height: 54)
-                .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(BrandPalette.accent.opacity(0.12))
-                }
-                .glassEffect(
-                    .regular.tint(BrandPalette.accent.opacity(0.08)),
-                    in: .rect(cornerRadius: 16)
+        VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+            HStack(spacing: Spacing.xs.rawValue) {
+                DocumentationGlyph(
+                    systemImage: article.systemImage,
+                    size: 20,
+                    symbolSize: 12
                 )
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 6) {
                 Text(article.category.title.uppercased())
                     .commandlyFont(size: 9, weight: .semibold)
-                    .foregroundStyle(BrandPalette.accentSoft)
-                    .tracking(1.05)
+                    .foregroundStyle(.tertiary)
+                    .tracking(0.9)
 
-                HStack(alignment: .firstTextBaseline, spacing: 9) {
-                    Text(article.title)
-                        .commandlyFont(size: 25, weight: .semibold)
-                        .accessibilityAddTraits(.isHeader)
-
-                    if let statusLabel = article.statusLabel {
-                        DocumentationBadge(
-                            label: statusLabel,
-                            color: article.isEnabled ? .green : .orange
-                        )
-                    }
+                if let statusLabel = article.statusLabel {
+                    Spacer(minLength: Spacing.xs.rawValue)
+                    DocumentationBadge(
+                        label: statusLabel,
+                        color: article.isEnabled
+                            ? Color.secondary
+                            : CommandlyTint.orange.color
+                    )
                 }
-
-                if let subtitle = article.subtitle {
-                    Text(subtitle)
-                        .commandlyFont(size: 12.5, weight: .medium)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text(article.documentation.overview)
-                    .commandlyFont(size: 12)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
             }
+
+            Text(article.title)
+                .commandlyFont(size: 27, weight: .semibold)
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
+
+            if let subtitle = article.subtitle {
+                Text(subtitle)
+                    .commandlyFont(size: 12.5, weight: .medium)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(article.documentation.overview)
+                .commandlyFont(size: 12.5)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(3)
+                .padding(.top, Spacing.xxs.rawValue)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func sectionNavigation(proxy: ScrollViewProxy) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 7) {
+            HStack(spacing: Spacing.xxs.rawValue) {
                 ForEach(article.documentation.sections) { section in
-                    Button(section.title) {
-                        withAnimation(
-                            reduceMotion
-                                ? nil
-                                : .easeInOut(duration: MotionDuration.normal.rawValue)
-                        ) {
+                    Button {
+                        withAnimation(reduceMotion ? nil : CommandlyMotion.navigation) {
                             proxy.scrollTo(section.id, anchor: .top)
                         }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(section.title)
+                            Image(systemName: "arrow.down")
+                                .commandlyFont(size: 8, weight: .semibold)
+                                .accessibilityHidden(true)
+                        }
+                        .commandlyFont(size: 10.5, weight: .medium)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, Spacing.xs.rawValue)
+                        .frame(height: 26)
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.borderless)
                     .controlSize(.small)
+                    .help("Jump to \(section.title)")
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, Spacing.xxs.rawValue)
         }
         .scrollIndicators(.hidden)
         .accessibilityLabel("Article sections")
@@ -123,8 +124,8 @@ struct DocumentationArticleView: View {
     }
 
     private var applicationMetadata: some View {
-        DocumentationGlassCard {
-            VStack(alignment: .leading, spacing: 13) {
+        DocumentationSurfaceCard {
+            VStack(alignment: .leading, spacing: Spacing.md.rawValue) {
                 DocumentationSectionHeading(icon: "slider.horizontal.3", title: "Your setup")
 
                 if article.isEnabled == false {
@@ -136,7 +137,7 @@ struct DocumentationArticleView: View {
                 }
 
                 if article.alias != nil || article.globalHotKey != nil {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Spacing.xl.rawValue) {
                         if let alias = article.alias {
                             DocumentationMetadataPill(icon: "text.cursor", label: "Alias", value: alias)
                         }
@@ -147,7 +148,7 @@ struct DocumentationArticleView: View {
                 }
 
                 if article.defaultActions.isEmpty == false {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                         Text("DEFAULT ACTIONS")
                             .commandlyFont(size: 8.5, weight: .semibold)
                             .tracking(0.8)
@@ -164,7 +165,7 @@ struct DocumentationArticleView: View {
                 }
 
                 if article.configurationFields.isEmpty == false {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
                         Text("CONFIGURATION")
                             .commandlyFont(size: 8.5, weight: .semibold)
                             .tracking(0.8)

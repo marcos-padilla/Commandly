@@ -436,15 +436,16 @@ struct LauncherVisualEffectBackground: NSViewRepresentable {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = blendingMode
-        view.state = .active
-        view.isEmphasized = true
+        view.state = .followsWindowActiveState
+        view.isEmphasized = false
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
-        nsView.state = .active
+        nsView.state = .followsWindowActiveState
+        nsView.isEmphasized = false
     }
 }
 

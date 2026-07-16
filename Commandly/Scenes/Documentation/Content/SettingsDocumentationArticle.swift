@@ -8,7 +8,7 @@ enum SettingsDocumentationArticle {
         order: 300,
         documentation: LauncherApplicationDocumentation(
             category: .settingsAndPrivacy,
-            overview: "Settings is Commandly’s control center for everyday preferences and every registered Commandly application. Open it from the launcher’s bottom-left Commandly menu or with Command–Comma.",
+            overview: "Settings is Commandly’s control center for everyday preferences and every registered Commandly application. Open it from the launcher’s bottom-right Settings gear menu or with Command–Comma.",
             sections: [
                 DocumentationSection(
                     id: "settings-open",
@@ -22,7 +22,7 @@ enum SettingsDocumentationArticle {
                             ),
                         ]),
                         .bullets("settings-open-methods", [
-                            "Choose Settings… from the Commandly icon at the bottom-left of the launcher.",
+                            "Choose Settings… from the gear menu at the bottom-right of the launcher.",
                             "Choose Settings… from Commandly’s menu bar menu.",
                             "Search for and run Open Settings in the launcher.",
                         ]),

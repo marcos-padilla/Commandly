@@ -10,9 +10,13 @@ struct ApplicationSettingsInspector: View {
             if let definition = model.selectedDefinition,
                let settings = model.selectedSettings {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: Spacing.lg.rawValue) {
                         ApplicationInspectorHeader(definition: definition)
                         coreSettings(definition: definition, settings: settings)
+
+                        if definition.kind != .group {
+                            discoverySettings(definition: definition, settings: settings)
+                        }
 
                         if definition.configurationFields.isEmpty == false {
                             configurationFields(definition)
@@ -24,13 +28,16 @@ struct ApplicationSettingsInspector: View {
                             Label("Restore Defaults", systemImage: "arrow.counterclockwise")
                                 .commandlyFont(size: 10.5, weight: .medium)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 2)
                         .help("Restore this application's default settings")
                     }
-                    .padding(20)
+                    .frame(maxWidth: 660, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(Spacing.lg.rawValue)
                 }
+                .id(definition.id)
             } else {
                 ContentUnavailableView(
                     "Select an application",
@@ -39,7 +46,44 @@ struct ApplicationSettingsInspector: View {
                 )
             }
         }
-        .background(Color.primary.opacity(0.012))
+        .background(SettingsVisualStyle.detailBackground)
+    }
+
+    private func discoverySettings(
+        definition: LauncherApplicationDefinition,
+        settings: LauncherApplicationResolvedSettings
+    ) -> some View {
+        InspectorSection(title: "Discovery & Shortcut") {
+            InspectorAliasEditor(
+                applicationTitle: definition.title,
+                alias: settings.alias,
+                onCommit: { model.setAlias($0, for: definition.id) }
+            )
+
+            InspectorFieldDivider()
+
+            InspectorFieldRow(
+                title: "Global shortcut",
+                description: "Open this application directly from anywhere."
+            ) {
+                HStack(spacing: 6) {
+                    ApplicationHotkeyRecorder(
+                        hotKey: settings.hotKey,
+                        isDisabled: settings.isEnabled == false,
+                        accessibilityTitle: definition.title,
+                        onChange: { model.setHotKey($0, for: definition.id) }
+                    )
+
+                    if let issue = model.hotkeyIssue(for: definition.id) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .commandlyFont(size: 9.5, weight: .semibold)
+                            .foregroundStyle(.orange)
+                            .help(issue)
+                            .accessibilityLabel(issue)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -63,7 +107,9 @@ struct ApplicationSettingsInspector: View {
 
     private func configurationFields(_ definition: LauncherApplicationDefinition) -> some View {
         InspectorSection(title: "Configuration") {
-            ForEach(definition.configurationFields) { field in
+            ForEach(Array(definition.configurationFields.enumerated()), id: \.element.id) {
+                index, field in
+                if index > 0 { InspectorFieldDivider() }
                 LauncherConfigurationFieldEditor(
                     field: field,
                     value: model.selectedSettings?.value(for: field.variable) ?? field.defaultValue,
@@ -80,34 +126,20 @@ private struct ApplicationInspectorHeader: View {
     let definition: LauncherApplicationDefinition
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            Image(systemName: definition.systemImage)
-                .symbolRenderingMode(.hierarchical)
-                .commandlyFont(size: 20, weight: .semibold)
-                .foregroundStyle(BrandPalette.accentSoft)
-                .frame(width: 44, height: 44)
-                .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(BrandPalette.accent.opacity(0.12))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(BrandPalette.accent.opacity(0.18), lineWidth: 1)
-                }
+        HStack(alignment: .top, spacing: Spacing.sm.rawValue) {
+            settingsGlyph(
+                definition.systemImage,
+                emphasized: true,
+                size: 32
+            )
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(definition.title)
                     .commandlyFont(size: 16, weight: .semibold)
                     .accessibilityAddTraits(.isHeader)
                 Text(definition.kind.title)
-                    .commandlyFont(size: 9, weight: .semibold)
-                    .foregroundStyle(BrandPalette.accentSoft)
-                    .padding(.horizontal, 7)
-                    .frame(height: 19)
-                    .background {
-                        Capsule()
-                            .fill(BrandPalette.accent.opacity(0.1))
-                    }
+                    .commandlyFont(size: 9.5, weight: .medium)
+                    .foregroundStyle(.secondary)
                 if let subtitle = definition.subtitle {
                     Text(subtitle)
                         .commandlyFont(size: 10.5)
@@ -125,26 +157,74 @@ private struct InspectorSection<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased())
-                .commandlyFont(size: 9, weight: .semibold)
-                .foregroundStyle(.tertiary)
-                .tracking(0.7)
+        VStack(alignment: .leading, spacing: Spacing.xs.rawValue) {
+            Text(title)
+                .commandlyFont(size: 10.5, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
 
-            VStack(alignment: .leading, spacing: 14) {
+            Divider()
+                .overlay(SettingsVisualStyle.separator)
+
+            VStack(alignment: .leading, spacing: Spacing.sm.rawValue) {
                 content()
             }
-            .padding(12)
+            .padding(.horizontal, Spacing.xs.rawValue)
+            .padding(.top, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Color.primary.opacity(0.028))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(SettingsPalette.border.opacity(0.78), lineWidth: 1)
-            }
         }
+    }
+}
+
+private struct InspectorFieldDivider: View {
+    var body: some View {
+        Divider()
+            .overlay(SettingsVisualStyle.separator)
+    }
+}
+
+private struct InspectorAliasEditor: View {
+    let applicationTitle: String
+    let alias: String
+    let onCommit: (String) -> Void
+
+    @State private var draft: String
+    @FocusState private var isFocused: Bool
+
+    init(
+        applicationTitle: String,
+        alias: String,
+        onCommit: @escaping (String) -> Void
+    ) {
+        self.applicationTitle = applicationTitle
+        self.alias = alias
+        self.onCommit = onCommit
+        _draft = State(initialValue: alias)
+    }
+
+    var body: some View {
+        InspectorFieldRow(
+            title: "Alias",
+            description: "Use this alternate name when searching Commandly."
+        ) {
+            TextField("Alias", text: $draft)
+                .textFieldStyle(.plain)
+                .inspectorInputStyle(width: 150)
+                .focused($isFocused)
+                .onSubmit(commit)
+                .onChange(of: isFocused) { _, focused in
+                    if focused == false { commit() }
+                }
+                .onChange(of: alias) { _, newValue in
+                    if isFocused == false { draft = newValue }
+                }
+                .accessibilityLabel("Alias for \(applicationTitle)")
+        }
+    }
+
+    private func commit() {
+        guard draft != alias else { return }
+        onCommit(draft)
     }
 }
 
@@ -155,7 +235,7 @@ private struct InspectorToggleRow: View {
 
     var body: some View {
         InspectorFieldRow(title: title, description: description) {
-            Toggle("", isOn: $isOn)
+            Toggle(title, isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -169,11 +249,11 @@ private struct InspectorFieldRow<Control: View>: View {
     @ViewBuilder let control: () -> Control
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center, spacing: Spacing.xs.rawValue) {
                 Text(title)
                     .commandlyFont(size: 11.5, weight: .medium)
-                Spacer(minLength: 8)
+                Spacer(minLength: Spacing.xs.rawValue)
                 control()
             }
             if let description {
@@ -210,9 +290,10 @@ private struct LauncherConfigurationFieldEditor: View {
             )
             .textFieldStyle(.plain)
             .inspectorInputStyle(width: 140)
+            .accessibilityLabel(field.title)
         case .toggle:
             Toggle(
-                "",
+                field.title,
                 isOn: Binding(
                     get: { value.booleanValue ?? false },
                     set: { onChange(.boolean($0)) }
@@ -232,6 +313,7 @@ private struct LauncherConfigurationFieldEditor: View {
             )
             .textFieldStyle(.plain)
             .inspectorInputStyle(width: 88)
+            .accessibilityLabel(field.title)
         case .decimal:
             TextField(
                 field.placeholder ?? "0",
@@ -243,6 +325,7 @@ private struct LauncherConfigurationFieldEditor: View {
             )
             .textFieldStyle(.plain)
             .inspectorInputStyle(width: 88)
+            .accessibilityLabel(field.title)
         case .selection:
             Picker(
                 field.title,
@@ -265,10 +348,13 @@ private extension View {
     func inspectorInputStyle(width: CGFloat) -> some View {
         padding(.horizontal, 8)
             .frame(width: width, height: 27)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
+            .background(
+                SettingsVisualStyle.fieldBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue, style: .continuous)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(SettingsPalette.border, lineWidth: 1)
+                RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue, style: .continuous)
+                    .strokeBorder(SettingsVisualStyle.separator, lineWidth: 1)
             }
     }
 }
