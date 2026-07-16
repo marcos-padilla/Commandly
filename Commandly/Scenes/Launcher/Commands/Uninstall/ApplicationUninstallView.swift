@@ -44,20 +44,24 @@ struct ApplicationUninstallView: View {
                 viewModel.goBack()
             }
 
-            HStack(spacing: density.spacing(.xs)) {
+            HStack(spacing: density.spacing(.sm)) {
                 Image(systemName: "magnifyingglass")
-                    .commandlyFont(size: 12, weight: .medium)
-                    .foregroundStyle(.tertiary)
+                    .symbolVariant(.none)
+                    .commandlyFont(size: 15, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .frame(width: density.iconSize, height: density.iconSize)
+                    .accessibilityHidden(true)
                 TextField("Filter files and folders by name…", text: $viewModel.filterQuery)
                     .textFieldStyle(.plain)
-                    .commandlyFont(size: 13, weight: .medium)
+                    .commandlyFont(size: 16, weight: .medium)
+                    .accessibilityLabel("Filter related files and folders")
+                    .accessibilityValue(viewModel.filterQuery)
+                    .accessibilityIdentifier("application-uninstall-query")
             }
-            .padding(.horizontal, density.spacing(.sm))
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
-            )
+            .padding(.vertical, density.searchVerticalPadding)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .layoutPriority(1)
 
             CommandlyOptionMenu(
                 items: ApplicationUninstallSort.allCases.map {
@@ -74,7 +78,8 @@ struct ApplicationUninstallView: View {
             .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.sm))
+        .padding(.top, density.spacing(.xs))
+        .padding(.bottom, density.spacing(.xxs))
         .zIndex(20)
     }
 

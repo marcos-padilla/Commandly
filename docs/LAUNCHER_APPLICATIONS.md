@@ -142,9 +142,11 @@ application contract. See `docs/AI.md` and ADR-0006.
 ## Reusing screens
 
 Browser-style applications may use `LauncherApplicationScreen`, which supplies the established
-Commandly search/filter/sidebar/detail structure. Its companion components provide shared selection
-rows, empty states, and metadata rows. The application supplies feature-specific list, preview,
-filter, and action content.
+Commandly search/filter/sidebar/detail structure. Search is embedded directly into the transparent
+top canvas without its own card, outline, or fill; compact native Liquid Glass is reserved for the
+Back and filter/sort controls. Its companion components provide shared selection rows, empty states,
+and metadata rows. The application supplies feature-specific list, preview, filter, and action
+content.
 
 An application with a different layout should provide its own SwiftUI surface. Reuse is opt-in;
 the registry does not require every application to look alike.

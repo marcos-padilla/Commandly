@@ -110,21 +110,26 @@ struct SystemActivityView: View {
             .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.xs))
-        .background(LauncherPalette.chrome)
+        .padding(.top, density.spacing(.xs))
+        .padding(.bottom, density.spacing(.xxs))
         .zIndex(20)
     }
 
     private var applicationSearchField: some View {
-        HStack(spacing: density.spacing(.xs)) {
+        HStack(spacing: density.spacing(.sm)) {
             Image(systemName: "magnifyingglass")
-                .commandlyFont(size: 13, weight: .medium)
-                .foregroundStyle(.tertiary)
+                .symbolVariant(.none)
+                .commandlyFont(size: 15, weight: .medium)
+                .foregroundStyle(.secondary)
+                .frame(width: density.iconSize, height: density.iconSize)
+                .accessibilityHidden(true)
 
             TextField("Filter running applications…", text: $viewModel.query)
                 .textFieldStyle(.plain)
-                .commandlyFont(size: 14, weight: .medium)
+                .commandlyFont(size: 16, weight: .medium)
                 .focused($isSearchFocused)
+                .accessibilityLabel("Filter running applications")
+                .accessibilityValue(viewModel.query)
                 .accessibilityIdentifier("system-activity-application-query")
                 .onSubmit {
                     viewModel.activateSelectedApplication()
@@ -144,16 +149,11 @@ struct SystemActivityView: View {
                     return .handled
                 }
         }
-        .padding(.horizontal, density.spacing(.sm))
-        .padding(.vertical, 8)
-        .background {
-            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .fill(Color.primary.opacity(isSearchFocused ? 0.09 : 0.05))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                .strokeBorder(Color.primary.opacity(isSearchFocused ? 0.18 : 0), lineWidth: 1)
-        }
+        .padding(.vertical, density.searchVerticalPadding)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { isSearchFocused = true }
+        .layoutPriority(1)
     }
 
     @ViewBuilder

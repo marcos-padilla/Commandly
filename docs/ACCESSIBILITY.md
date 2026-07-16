@@ -18,6 +18,10 @@ Accessibility review is part of the definition of done for UI changes (`AGENTS.m
 - Search fields, sidebar toggles, article navigation, launcher results, and footer actions retain
   keyboard and VoiceOver labels. The native Settings titlebar toggle exposes a stable identifier,
   a current Hide/Show label, and help text while the visible scene title remains suppressed.
+- Embedded launcher-application search retains its feature-specific label and identifier, clear
+  action, Return behavior, arrow-key selection, and Escape handling. Compact glass Back and filter
+  controls retain labels, current values, hints, and pointer help even though their visible chrome
+  is intentionally quieter.
 - Settings and Documentation honor the shared Larger Text preference, and documentation maintains a
   constrained reading measure rather than stretching prose across the window.
 - Sidebar, page, and panel transitions suppress nonessential spatial motion when Reduce Motion is

@@ -55,6 +55,12 @@ The root launcher treats search as an embedded canvas row with no independent bo
 footer keeps contextual Actions at the leading edge and one labeled Settings gear menu at the
 trailing edge for Documentation, Settings, and Quit.
 
+Browser-style launcher applications—and custom application headers that place a query at the
+top—use the same embedded search treatment. Search remains a flat, transparent part of the
+application canvas, while the compact Back and filter/sort controls use native Liquid Glass to
+communicate that they are elevated interactive chrome. Do not place the search field itself inside
+glass, a card, or a decorative outline.
+
 Navigation and content glyphs are monochrome. `CommandlyTint` is reserved for semantic status such
 as success, warning, error, or destructive actions. Standard selection and focus follow the user's
 macOS accent color and never carry meaning without labels, weight, or selected-state traits.
@@ -69,12 +75,12 @@ The original app-icon master lives at `Artwork/CommandlyAppIcon-master.png`; the
 
 Reusable interactive chrome lives in the app target under `Commandly/Scenes/Shared/` (not in the DesignSystem package, which stays tokens-only):
 
-- `CommandlyBackButton` — top-leading back control with hover/press motion
-- `CommandlyOptionMenu` — searchable sort/filter menu; screens supply `CommandlyOptionItem` values and selection handling
+- `CommandlyBackButton` — compact circular Liquid Glass back control with restrained hover feedback
+- `CommandlyOptionMenu` — compact Liquid Glass sort/filter trigger and searchable overlay; screens supply `CommandlyOptionItem` values and selection handling
 
 Reusable launcher-application composition lives under `Commandly/Scenes/Launcher/Applications/`:
 
-- `LauncherApplicationScreen` — opt-in search/filter/sidebar/detail layout with shared focus and keyboard behavior
+- `LauncherApplicationScreen` — opt-in search/filter/sidebar/detail layout with a transparent embedded search row and shared focus and keyboard behavior
 - `LauncherApplicationRow` — selection, hover, double-click, and contextual-action row foundation
 - `LauncherApplicationEmptyState` and `LauncherApplicationMetadataRow` — consistent browser-surface states and detail rows
 

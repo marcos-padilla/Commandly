@@ -52,7 +52,7 @@ struct CommandlyOptionMenu: View {
                 .overlay(alignment: .topTrailing) {
                     if isExpanded {
                         menuPanel
-                            .offset(y: 40)
+                            .offset(y: 32)
                             .transition(
                                 .opacity.combined(with: .scale(scale: 0.98, anchor: .topTrailing))
                             )
@@ -69,7 +69,13 @@ struct CommandlyOptionMenu: View {
                 .onChange(of: isExpanded) { _, expanded in
                     if expanded {
                         if allowsSearch {
-                            isSearchFocused = true
+                            // The overlay is inserted by the same state change. Reapply focus on
+                            // the next main-queue turn so the menu field exists before focus moves.
+                            isSearchFocused = false
+                            DispatchQueue.main.async {
+                                guard isExpanded else { return }
+                                isSearchFocused = true
+                            }
                         }
                     } else {
                         searchQuery = ""
@@ -86,21 +92,23 @@ struct CommandlyOptionMenu: View {
                 isExpanded.toggle()
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Text(selectedTitle)
-                    .commandlyFont(size: 12, weight: .medium)
+                    .commandlyFont(size: 11, weight: .medium)
                     .foregroundStyle(isHovered || isExpanded ? Color.primary : Color.secondary)
                     .lineLimit(1)
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .commandlyFont(size: 9, weight: .semibold)
+                Image(systemName: "chevron.down")
+                    .symbolVariant(.none)
+                    .commandlyFont(size: 8, weight: .semibold)
                     .foregroundStyle(isHovered || isExpanded ? Color.primary : Color.secondary)
-                    .contentTransition(.symbolEffect(.replace))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.capsule)
+        .controlSize(.mini)
+        .fixedSize(horizontal: true, vertical: false)
         .onHover { hovering in
             withAnimation(reduceMotion ? nil : CommandlyMotion.hover) {
                 isHovered = hovering
@@ -109,6 +117,7 @@ struct CommandlyOptionMenu: View {
         .accessibilityLabel(accessibilityLabelText)
         .accessibilityValue(selectedTitle)
         .accessibilityHint(isExpanded ? "Expanded" : "Collapsed")
+        .help("\(accessibilityLabelText): \(selectedTitle)")
     }
 
     private var menuPanel: some View {

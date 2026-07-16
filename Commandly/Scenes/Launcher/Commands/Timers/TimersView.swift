@@ -10,7 +10,6 @@ struct TimersView: View {
 
     @Bindable var viewModel: TimersViewModel
     @FocusState private var headerFocus: HeaderFocus?
-    @State private var isHeaderFieldHovered = false
     @Environment(\.commandlyLayoutDensity) private var density
 
     var body: some View {
@@ -48,29 +47,23 @@ struct TimersView: View {
         HStack(spacing: density.spacing(.sm)) {
             CommandlyBackButton(action: viewModel.goBack)
 
-            HStack(spacing: density.spacing(.xs)) {
+            HStack(spacing: density.spacing(.sm)) {
                 Image(systemName: viewModel.isCreating ? "timer" : "magnifyingglass")
-                    .commandlyFont(size: 13, weight: .medium)
-                    .foregroundStyle(.tertiary)
+                    .symbolVariant(.none)
+                    .commandlyFont(size: 15, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .frame(width: density.iconSize, height: density.iconSize)
+                    .accessibilityHidden(true)
 
                 headerTextField
             }
-            .padding(.horizontal, density.spacing(.sm))
-            .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(Color.primary.opacity(headerFocus == nil ? 0.05 : 0.09))
+            .padding(.vertical, density.searchVerticalPadding)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                headerFocus = viewModel.isCreating ? .name : .search
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .strokeBorder(
-                        Color.primary.opacity(headerFocus == nil && isHeaderFieldHovered == false ? 0 : 0.18),
-                        lineWidth: 1
-                    )
-            }
-            .onHover { isHeaderFieldHovered = $0 }
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: isHeaderFieldHovered)
-            .animation(.easeOut(duration: MotionDuration.fast.rawValue), value: headerFocus)
+            .layoutPriority(1)
 
             if viewModel.isCreating {
                 if viewModel.allTimers.isEmpty == false {
@@ -110,8 +103,8 @@ struct TimersView: View {
             }
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.vertical, density.spacing(.xs))
-        .background(LauncherPalette.chrome)
+        .padding(.top, density.spacing(.xs))
+        .padding(.bottom, density.spacing(.xxs))
         .zIndex(20)
     }
 
@@ -120,7 +113,7 @@ struct TimersView: View {
         if viewModel.isCreating {
             TextField("Name this timer…", text: $viewModel.draftName)
                 .textFieldStyle(.plain)
-                .commandlyFont(size: 14, weight: .medium)
+                .commandlyFont(size: 16, weight: .medium)
                 .focused($headerFocus, equals: .name)
                 .accessibilityLabel("Timer name")
                 .accessibilityIdentifier("timer-name")
@@ -132,7 +125,7 @@ struct TimersView: View {
         } else {
             TextField("Search timers…", text: $viewModel.query)
                 .textFieldStyle(.plain)
-                .commandlyFont(size: 14, weight: .medium)
+                .commandlyFont(size: 16, weight: .medium)
                 .focused($headerFocus, equals: .search)
                 .accessibilityLabel("Search timers")
                 .accessibilityIdentifier("timers-query")

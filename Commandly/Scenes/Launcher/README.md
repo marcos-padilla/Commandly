@@ -28,7 +28,9 @@ Built-in capabilities register once through `LauncherApplicationRegistry` / `Lau
 - `launch(in:)` — runs an action immediately or constructs a strongly typed `LauncherApplicationSession`
 - `LauncherApplicationSession` — the small type-erased shell boundary for content, status, selection, lifecycle, and footer actions
 - `LauncherRootView` — dynamically hosts the active session with no Clipboard/File Search branches
-- `LauncherApplicationScreen` — optional reusable search/filter/sidebar/detail composition for browser-style applications
+- `LauncherApplicationScreen` — optional reusable search/filter/sidebar/detail composition for
+  browser-style applications, with search embedded into the transparent top canvas and compact
+  Liquid Glass navigation/filter controls
 
 See `docs/LAUNCHER_APPLICATIONS.md` for the extension workflow and ADR-0004 for the boundary decision.
 

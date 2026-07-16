@@ -9,7 +9,6 @@ import SwiftUI
 struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: View>: View {
     @Binding private var query: String
     @FocusState private var isSearchFocused: Bool
-    @State private var isSearchHovered = false
 
     private let searchPlaceholder: String
     private let searchAccessibilityIdentifier: String
@@ -55,7 +54,6 @@ struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: Vie
                 searchPlaceholder: searchPlaceholder,
                 searchAccessibilityIdentifier: searchAccessibilityIdentifier,
                 isSearchFocused: $isSearchFocused,
-                isSearchHovered: $isSearchHovered,
                 onBack: onBack,
                 onSubmit: onSubmit,
                 onMoveSelection: onMoveSelection,
@@ -93,7 +91,6 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
     let searchPlaceholder: String
     let searchAccessibilityIdentifier: String
     let isSearchFocused: FocusState<Bool>.Binding
-    @Binding var isSearchHovered: Bool
     let onBack: () -> Void
     let onSubmit: () -> Void
     let onMoveSelection: (Int) -> Void
@@ -101,24 +98,25 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
     let filterControl: FilterControl
 
     @Environment(\.commandlyLayoutDensity) private var density
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: density.spacing(.sm)) {
             CommandlyBackButton(action: onBack)
 
-            HStack(spacing: density.spacing(.xs)) {
+            HStack(spacing: density.spacing(.sm)) {
                 Image(systemName: "magnifyingglass")
                     .symbolVariant(.none)
-                    .commandlyFont(size: 13, weight: .medium)
-                    .foregroundStyle(
-                        isSearchFocused.wrappedValue ? Color.primary : Color.secondary
-                    )
+                    .commandlyFont(size: 15, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .frame(width: density.iconSize, height: density.iconSize)
+                    .accessibilityHidden(true)
 
                 TextField(searchPlaceholder, text: $query)
                     .textFieldStyle(.plain)
-                    .commandlyFont(size: 14, weight: .medium)
+                    .commandlyFont(size: 16, weight: .medium)
                     .focused(isSearchFocused)
+                    .accessibilityLabel(searchPlaceholder)
+                    .accessibilityValue(query)
                     .accessibilityIdentifier(searchAccessibilityIdentifier)
                     .onSubmit(onSubmit)
                     .onKeyPress(.upArrow) {
@@ -139,32 +137,21 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
                         query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .commandlyFont(size: 12)
-                            .foregroundStyle(.tertiary)
+                            .commandlyFont(size: 14, weight: .regular)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, density.spacing(.sm))
-            .padding(.vertical, 9)
+            // Search belongs to the application canvas. Keeping it unfilled and borderless
+            // matches the root launcher while the full row remains a generous focus target.
+            .padding(.vertical, density.searchVerticalPadding)
             .frame(maxWidth: .infinity)
-            .contentShape(
-                RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                    .strokeBorder(searchStroke, lineWidth: 1)
-            }
-            .onHover { isSearchHovered = $0 }
+            .contentShape(Rectangle())
             .onTapGesture {
                 isSearchFocused.wrappedValue = true
             }
-            .animation(reduceMotion ? nil : CommandlyMotion.hover, value: isSearchHovered)
-            .animation(
-                reduceMotion ? nil : CommandlyMotion.hover,
-                value: isSearchFocused.wrappedValue
-            )
             .accessibilityElement(children: .contain)
             .layoutPriority(1)
 
@@ -173,21 +160,14 @@ private struct LauncherApplicationHeader<FilterControl: View>: View {
                 .zIndex(30)
         }
         .padding(.horizontal, density.spacing(.md))
-        .padding(.top, density.spacing(.sm))
-        .padding(.bottom, density.spacing(.xs))
+        .padding(.top, density.spacing(.xs))
+        .padding(.bottom, density.spacing(.xxs))
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.primary.opacity(0.075))
                 .frame(height: 1)
         }
         .zIndex(20)
-    }
-
-    private var searchStroke: Color {
-        if isSearchFocused.wrappedValue {
-            return Color.primary.opacity(0.28)
-        }
-        return Color.primary.opacity(isSearchHovered ? 0.16 : 0.09)
     }
 }
 

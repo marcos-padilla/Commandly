@@ -11,15 +11,16 @@ struct CommandlyBackButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "chevron.left")
-                .commandlyFont(size: 13, weight: .semibold)
+            Image(systemName: "chevron.backward")
+                .symbolVariant(.none)
+                .commandlyFont(size: 11, weight: .semibold)
                 .foregroundStyle(isHovered ? Color.primary : Color.secondary)
-                .frame(width: 28, height: 28)
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
         }
         .buttonStyle(.glass)
-        .buttonBorderShape(.roundedRectangle(radius: 9))
-        .controlSize(.small)
+        .buttonBorderShape(.circle)
+        .controlSize(.mini)
         .onHover { hovering in
             withAnimation(reduceMotion ? nil : CommandlyMotion.hover) {
                 isHovered = hovering
