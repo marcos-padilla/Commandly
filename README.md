@@ -6,7 +6,8 @@ Commandly is intended to become a fast, keyboard-first productivity launcher for
 
 **Active native implementation.** The foundation now includes a working launcher, application and
 file search, recent downloads, calculator, clipboard history, application actions, window layouts, timers, local
-productivity items, system activity, and focused offline utilities. Some planned capabilities remain
+productivity items, system activity, focused offline utilities, and a configurable icon-only Command
+Wheel that runs the same registered commands and installed-app references as launcher search. Some planned capabilities remain
 unimplemented; the native feature matrix documents the exact boundary without placeholder claims.
 
 ## Technology stack
@@ -82,6 +83,11 @@ AGENTS.md                  Rules for future AI agents and contributors
 ## Architecture summary
 
 The app target is a thin composition root. Domain and infrastructure contracts live in local Swift packages with one-directional dependencies. Concrete services are assembled in `Commandly/Composition`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/NATIVE_FEATURES.md](docs/NATIVE_FEATURES.md), and [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md).
+
+Command Wheel is a radial presentation layer over Commandly's shared resolver and executor, not a
+second command engine. Start with the [user guide](docs/COMMAND_WHEEL.md), then see its
+[architecture](docs/COMMAND_WHEEL_ARCHITECTURE.md), [extension guide](docs/COMMAND_WHEEL_EXTENDING.md),
+and [testing matrix](docs/COMMAND_WHEEL_TESTING.md).
 
 ## Roadmap
 

@@ -9,7 +9,7 @@ Commandly uses a thin macOS app target and a local Swift package of focused modu
 | Module | Responsibility | May depend on |
 |--------|----------------|---------------|
 | AppCore | Environment, metadata, typed errors, date/UUID/clock | — |
-| CommandKit | Command descriptors and registry contracts | AppCore |
+| CommandKit | Command descriptors, typed references/invocations, registry resolution, execution results, and usage-history contracts | AppCore |
 | SearchKit | Search query/result/provider contracts | AppCore |
 | CalculatorKit | Calculator classify/parse/evaluate engine | AppCore |
 | AIKit | Provider/model contracts, normalized conversations and tools, HTTP transport, and reviewed provider adapters | — |
@@ -53,6 +53,10 @@ Rules:
 - `AppDependencies` holds the dependency graph values
 - `AppContainer` owns `AppState`, `AppRouter`, and factory helpers
 - `LauncherApplicationRegistry` is the single source of truth for applications discoverable in the launcher
+- `SharedCommandExecutionCoordinator` resolves and executes search, application-hotkey, and Command
+  Wheel invocations through one CommandKit registry and records bounded privacy-safe outcomes
+- `AppRuntime` owns the unified Carbon shortcut plan, one cached Command Wheel profile store, and
+  the active radial-panel coordinator
 
 Prefer initializer injection. Do not introduce a DI framework.
 
@@ -64,7 +68,16 @@ Prefer initializer injection. Do not introduce a DI framework.
 - First-run onboarding lives under `Commandly/Scenes/Onboarding` and opens when `OnboardingStatusStoring` reports incomplete. Completion persists via a non-secret preference store and routes to `.root`.
 - Onboarding permissions use `PermissionServicing` (mocked in tests; `SystemPermissionService` in production) and never block finishing the flow.
 - After onboarding, Commandly runs as a **menu bar agent** (`MenuBarExtra` + `LSUIElement` / accessory activation policy): no persistent center-screen window, Dock icon hidden. An ordered-out, one-pixel scene-action host keeps SwiftUI's launcher/Shelf `openWindow` actions registered even when the optional menu-bar item is disabled; owner-scoped registration prevents a stale disappearing bridge from clearing a replacement. Settings open via the standard Settings scene; Documentation opens in its own resizable standard window; Quit is available from the status item menu. Opening either utility window activates the app and orders that window front without using a permanent floating window level.
-- The **launcher** is a floating, draggable SwiftUI `Window` (`AppWindowID.launcher`) opened by ⌥Space (`OptionSpaceHotkeyMonitor` via Carbon) or **Open Commandly** in the status item menu. Every built-in capability has a typed `LauncherApplicationDefinition` registered once in `LauncherApplicationRegistry`; launchable definitions attach a `LauncherApplication` implementation that creates a strongly typed session. Definitions form a hierarchy and declare kind, hotkey/enablement defaults, discovery metadata, optional non-secret configuration fields, and required structured documentation. `LauncherApplicationPreferencesStoring` persists user aliases and other overrides; aliases begin empty and feed command search only after the user sets them. Effective enablement inherits from groups, and `ApplicationHotkeyMonitor` registers conflict-safe Carbon shortcuts without an Accessibility prompt. `LauncherRootView` hosts the active session without feature-specific branches. Root search uses SearchKit providers (`CommandSearchProvider`, `ApplicationSearchProvider`, placeholders) merged by `CompositeSearchService` with cancellation on query change. **CalculatorKit** evaluates calculator-shaped queries in parallel and pins a Calculator section above other results. Installed macOS apps open through `ApplicationOpening` and remain distinct from Commandly's registered launcher applications. Root search keeps contextual Actions on the footer's left and one persistent Settings gear menu on the right for Documentation, Settings, and Quit; right-clicking an installed application (or Actions / ⌘K) opens a searchable application-actions panel (open, Finder, copy, favorites, ranking, auto-quit, disable, uninstall review with related files). Active application sessions expose footer actions through `CommandActionDescriptor`. **Clipboard History** is a fully implemented registered application (`ClipboardHistoryStore` + surface UI). Pasteboard monitoring runs headlessly after launch; image/file entries are enriched once at capture time via on-device Vision/PDFKit (OCR, labels, readable file text) so search never re-indexes while typing. Store updates must not activate the app or order the launcher front. Each explicit launcher presentation captures the active display before focus changes, applies the shared cross-application overlay role and captured geometry, and only then orders and activates the window so it joins the user's current desktop or full-screen Space. The same live launcher follows keyboard-only Space changes with its query, route, selection, and active application state intact; clicking outside, pressing Escape through the current navigation stack, or toggling the hotkey dismisses it.
+- The **launcher** is a floating, draggable SwiftUI `Window` (`AppWindowID.launcher`) opened by ⌥Space (registered through the unified Carbon `GlobalShortcutMonitor`) or **Open Commandly** in the status item menu. Every built-in capability has a typed `LauncherApplicationDefinition` registered once in `LauncherApplicationRegistry`; launchable definitions attach a `LauncherApplication` implementation that creates a strongly typed session. Definitions form a hierarchy and declare kind, hotkey/enablement defaults, discovery metadata, optional non-secret configuration fields, and required structured documentation. `LauncherApplicationPreferencesStoring` persists user aliases and other overrides; aliases begin empty and feed command search only after the user sets them. Effective enablement inherits from groups, and the unified shortcut plan registers conflict-safe launcher, Shelf, registered-application, and Command Wheel shortcuts without an Accessibility prompt. `LauncherRootView` hosts the active session without feature-specific branches. Root search uses SearchKit providers (`CommandSearchProvider`, `ApplicationSearchProvider`, placeholders) merged by `CompositeSearchService` with cancellation on query change. **CalculatorKit** evaluates calculator-shaped queries in parallel and pins a Calculator section above other results. Installed macOS apps open through `ApplicationOpening` and remain distinct from Commandly's registered launcher applications. Root search keeps contextual Actions on the footer's left and one persistent Settings gear menu on the right for Documentation, Settings, and Quit; right-clicking an installed application (or Actions / ⌘K) opens a searchable application-actions panel (open, Finder, copy, favorites, ranking, auto-quit, disable, uninstall review with related files). Active application sessions expose footer actions through `CommandActionDescriptor`. **Clipboard History** is a fully implemented registered application (`ClipboardHistoryStore` + surface UI). Pasteboard monitoring runs headlessly after launch; image/file entries are enriched once at capture time via on-device Vision/PDFKit (OCR, labels, readable file text) so search never re-indexes while typing. Store updates must not activate the app or order the launcher front. Each explicit launcher presentation captures the active display before focus changes, applies the shared cross-application overlay role and captured geometry, and only then orders and activates the window so it joins the user's current desktop or full-screen Space. The same live launcher follows keyboard-only Space changes with its query, route, selection, and active application state intact; clicking outside, pressing Escape through the current navigation stack, or toggling the hotkey dismisses it.
+- **Command Wheel** is a cursor-centered radial presentation over the same CommandKit registry and
+  app-level executor used by launcher search and registered-application hotkeys. Profiles persist
+  stable `CommandReference` values, pages, slot positions, typed reusable arguments, shortcuts,
+  context rules, placement, and appearance/interaction preferences. The feature owns pure radial
+  geometry, session state, a cached profile snapshot, active-invocation pointer/click/keyboard
+  input, and a borderless AppKit panel; it never owns command implementations. Installed apps use
+  the shared parameterized open-application command. Recent/frequent wheel providers freeze a
+  bounded view of shared successful-command history per session. See
+  `docs/COMMAND_WHEEL_ARCHITECTURE.md` and ADR-0007.
 - **File Search** is a registered launcher application backed by `FileSearching` contracts in SearchKit and a persistent local SQLite FTS5 index in the app target. A direct filesystem snapshot makes names, paths, types, dates, sizes, and Finder tags searchable in bounded batches; a second phase adds bounded text/PDF extraction, optional Spotlight metadata, and on-device image OCR. FSEvents refresh changed paths without querying the disk on each keystroke. Search remains limited to security-scoped folders selected by the user and supports UTType-based filters. Native file actions are isolated behind `FileActionServicing`; they include Open With, sharing services, Finder integration, clipboard export, duplicate/copy/move/trash, and Commandly `.webloc` shortcuts. See `docs/FILE_SEARCH.md` and ADR-0003.
 - The **BYOK AI vertical slice** introduces a dependency-free `AIKit` package and a dedicated app
   boundary for provider connections. The explicit initial catalog is OpenAI, Anthropic, Google
@@ -129,8 +142,11 @@ Prefer initializer injection. Do not introduce a DI framework.
 
 `Persistence` defines general store/repository contracts and ships an in-memory implementation for
 tests. Its general-purpose durable backend remains intentionally undecided. Feature-owned stores may
-choose a reviewed format behind a narrow contract: File Search uses local SQLite FTS5, while
-Productivity Library uses versioned JSON in Application Support. See
+choose a reviewed format behind a narrow contract. File Search uses local SQLite FTS5; Productivity
+Library and Command Wheel profiles use focused versioned JSON in Application Support. The wheel
+repository validates and atomically replaces complete configuration snapshots. A separate bounded
+UserDefaults history stores only command ID, invocation source, outcome, record ID, and timestamp so
+it can rank recent/frequent commands without retaining queries or arguments. See
 `docs/decisions/OPEN_QUESTIONS.md`.
 
 AI credentials are outside this general persistence boundary: cloud keys use Keychain through
@@ -140,7 +156,11 @@ persisted.
 
 ## System integration boundary
 
-`Infrastructure` exposes protocols for opening apps/URLs, filesystem checks, pasteboard, notifications, and workspace introspection. Implementations must live behind these protocols and must not execute arbitrary shell strings.
+`Infrastructure` exposes protocols for opening apps/URLs, filesystem checks, pasteboard,
+notifications, and workspace/frontmost-application introspection. Implementations must live behind
+these protocols and must not execute arbitrary shell strings. The app target owns Carbon shortcut
+registration and active-session AppKit window/input adapters; Command Wheel does not install an
+event tap or global keyboard monitor.
 
 ## Extension boundary
 
@@ -156,6 +176,10 @@ permissions, sandboxing, and crash isolation. See `docs/EXTENSIONS.md`.
 - App tests cover composition and navigation wiring.
 - UI tests exist but are skipped by default in the shared scheme because they require GUI automation.
 - Tests must not touch real clipboard, Keychain, network, user files, or macOS permission prompts.
+- Command Wheel tests cover typed command parity, profile validation/migration/import, radial and
+  multi-display geometry, hysteresis, session tokens, shortcut generations, input teardown,
+  execution-once behavior, presentation semantics, and Settings editing with injected adapters.
+  The exact automated and manual matrix is in `docs/COMMAND_WHEEL_TESTING.md`.
 - AI provider tests use deterministic injected HTTP fixtures and fake credentials. Finder AI tests
   use in-memory secure storage and isolated authorized roots; they must cover opaque-handle scope,
   approval invalidation, cancellation, and prohibited operations without contacting a provider.

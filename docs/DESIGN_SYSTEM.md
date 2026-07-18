@@ -40,12 +40,20 @@ one translucent neutral sidebar and one quieter detail plane; section spacing an
 decorative cards. Documentation uses the same material foundation with a wider searchable sidebar
 and constrained reading canvas.
 
+Command Wheel is a single transient radial overlay. It uses one adaptive material foundation,
+subtle sector/petal separation, monochrome command symbols, and the user's system accent for current
+selection. It must not become a ring of unrelated glass cards. Available, unavailable, missing,
+loading, error, submenu, and empty states combine compact symbols, state glyphs, outlines, and
+opacity so color is never the only signal. Command and application names are deliberately absent
+from the radial surface; Settings and accessibility retain the full text. Its Settings live preview
+belongs on the normal flat Settings detail plane.
+
 Native Liquid Glass is limited to the navigation and transient-control layer. It may be used for a
-sidebar toggle, a floating menu, or another genuinely elevated control, but not as a background for
-every row or section. Search fields remain transparent or use an untinted system treatment. Static
-settings groups, result rows, and detail content stay flat. Launcher, Settings, and Documentation
-windows remain non-opaque so system materials can respond to the desktop, Reduce Transparency, and
-active-window state.
+sidebar toggle, a floating menu, the Command Wheel's one transient panel, or another genuinely
+elevated control, but not as a background for every row, wedge, or section. Search fields remain
+transparent or use an untinted system treatment. Static settings groups, result rows, and detail
+content stay flat. Launcher, Settings, Documentation, and Command Wheel surfaces remain non-opaque
+so system materials can respond to the desktop, Reduce Transparency, and active-window state.
 
 Shelf is a single transient floating staging surface, so its board may use one clear Liquid Glass
 shape rather than nested glass cards. Its behind-window material deliberately remains optically
@@ -93,3 +101,5 @@ These components encode the existing Commandly visual language; feature-specific
 - Prefer semantic roles over one-off magic numbers in features.
 - Use `BrandPalette` only where a Commandly blue identity is intentional; prefer `SemanticColors` for standard chrome.
 - Keep the foundation accessible and native.
+- Keep Command Wheel animation out of hit-testing geometry and preserve stable segment identity
+  across selection changes.

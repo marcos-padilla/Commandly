@@ -77,9 +77,11 @@ lifecycle cleanup.
    `launch(in:)` reads resolved configuration from the context, creates the model with
    initializer-injected dependencies, and returns a session.
 4. Register that application in `LauncherApplicationRegistry.makeBuiltIn()`.
-5. Add a registry/session test and focused model tests. No `LauncherRootView`, documentation-screen,
-   or route switch change should be necessary. The live documentation catalog includes the new
-   application automatically.
+5. Add a registry/session test and focused model tests. Resolve and execute its manifest through
+   `SharedCommandExecutionCoordinator`; include search/Command Wheel parity coverage when the
+   command can be assigned to a profile. No `LauncherRootView`, Command Wheel executor,
+   documentation-screen, or route switch change should be necessary. The live documentation
+   catalog includes the new application automatically.
 
 See `docs/DOCUMENTATION.md` for the structured content contract, validation rules, and article
 maintenance checklist.
@@ -119,6 +121,26 @@ Only non-secret values belong in this schema or UserDefaults store. AI credentia
 not add a credential field: they use the dedicated AI settings flow and Keychain-backed
 `SecureStoring`, while only provider/model selection metadata is persisted as a non-secret
 preference.
+
+## Shared command execution and Command Wheel
+
+`LauncherApplicationRegistry` continues to own feature definitions and implementations. The
+composition root atomically synchronizes effectively enabled manifests into the existing CommandKit
+`CommandRegistry`; it does not create a wheel registry. Launcher search, registered-application
+hotkeys, and Command Wheel submit a typed `CommandReference` plus a distinct invocation source to
+`SharedCommandExecutionCoordinator`. That actor resolves availability and arguments, invokes the
+shared executor once, and records only a bounded privacy-safe result summary.
+
+A saved wheel assignment remains a reference even when its definition is disabled, removed, or no
+longer accepts its stored argument shape. Settings and presentation mark it unavailable rather than
+silently deleting or replacing it. Adding a normal registered application should require no wheel
+execution branch; expose reusable metadata in its manifest and keep behavior in the existing
+`LauncherApplication` implementation. Installed macOS apps are the deliberate exception to the
+surface model: both search and wheel use the shared parameterized `applications.open-installed`
+manifest with a typed bundle-identifier argument and the existing `ApplicationOpening` adapter.
+
+See [Command Wheel Architecture](COMMAND_WHEEL_ARCHITECTURE.md),
+[Extending Command Wheel](COMMAND_WHEEL_EXTENDING.md), and ADR-0007.
 
 ## Built-in AI extensions
 
@@ -161,6 +183,8 @@ launcher shell genuinely needs to coordinate it.
   search results opened through `ApplicationOpening`.
 - `CommandManifest` remains the discovery contract from CommandKit; app-target presentation stays in
   the launcher application layer.
+- Command Wheel stores `CommandReference` values and presentation configuration only; it must not
+  switch on application IDs, create sessions directly, or call native feature services.
 - Registration must reject duplicate identifiers.
 - Closing or leaving an application session must call its lifecycle cleanup.
 - Applications must not log queries, clipboard contents, file paths, previews, or indexed contents.

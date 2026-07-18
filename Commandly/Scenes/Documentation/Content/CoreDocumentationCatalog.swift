@@ -3,6 +3,7 @@ enum CoreDocumentationCatalog {
         WelcomeDocumentationArticle.article,
         FirstRunDocumentationArticle.article,
         LauncherDocumentationArticle.article,
+        CommandWheelDocumentationArticle.article,
         DocumentationHelpArticle.article,
         InstalledApplicationsDocumentationArticle.article,
         CalculatorDocumentationArticle.article,

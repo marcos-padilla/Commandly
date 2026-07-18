@@ -73,20 +73,32 @@ public struct CommandActionDescriptor: Sendable, Equatable, Identifiable, Hashab
 }
 
 /// Describes an argument a command may accept.
-public struct CommandArgument: Sendable, Equatable, Codable {
+public struct CommandArgument: Sendable, Equatable, Hashable, Codable {
     public let name: String
     public let description: String
     public let isRequired: Bool
+    /// Runtime value type accepted for this argument.
+    public let valueType: CommandArgumentValueType
+    /// Value used when a reference omits this argument.
+    public let defaultValue: CommandArgumentValue?
 
-    public init(name: String, description: String, isRequired: Bool) {
+    public init(
+        name: String,
+        description: String,
+        isRequired: Bool,
+        valueType: CommandArgumentValueType = .string,
+        defaultValue: CommandArgumentValue? = nil
+    ) {
         self.name = name
         self.description = description
         self.isRequired = isRequired
+        self.valueType = valueType
+        self.defaultValue = defaultValue
     }
 }
 
 /// Descriptive metadata for a command. Does not execute anything.
-public struct CommandDescriptor: Sendable, Equatable, Identifiable {
+public struct CommandDescriptor: Sendable, Equatable, Hashable, Identifiable {
     public let id: CommandID
     public let title: String
     public let subtitle: String?
@@ -112,7 +124,7 @@ public struct CommandDescriptor: Sendable, Equatable, Identifiable {
 }
 
 /// Full registration payload for a launcher command (metadata + presentation mode).
-public struct CommandManifest: Sendable, Equatable, Identifiable {
+public struct CommandManifest: Sendable, Equatable, Hashable, Identifiable {
     public let id: CommandID
     public let title: String
     public let subtitle: String?
@@ -120,6 +132,10 @@ public struct CommandManifest: Sendable, Equatable, Identifiable {
     public let category: CommandCategory
     public let mode: CommandMode
     public let keywords: [String]
+    /// Serializable invocation argument schema shared by every presentation surface.
+    public let arguments: [CommandArgument]
+    /// Non-secret capabilities that must be available before the command can execute.
+    public let availabilityRequirements: [CommandAvailabilityRequirement]
     public let badgeTitle: String
     /// Default footer actions when the command surface first appears.
     public let defaultActions: [CommandActionDescriptor]
@@ -130,7 +146,8 @@ public struct CommandManifest: Sendable, Equatable, Identifiable {
             title: title,
             subtitle: subtitle,
             category: category,
-            keywords: keywords
+            keywords: keywords,
+            arguments: arguments
         )
     }
 
@@ -142,6 +159,8 @@ public struct CommandManifest: Sendable, Equatable, Identifiable {
         category: CommandCategory,
         mode: CommandMode,
         keywords: [String] = [],
+        arguments: [CommandArgument] = [],
+        availabilityRequirements: [CommandAvailabilityRequirement] = [],
         badgeTitle: String = "Command",
         defaultActions: [CommandActionDescriptor] = []
     ) {
@@ -152,32 +171,46 @@ public struct CommandManifest: Sendable, Equatable, Identifiable {
         self.category = category
         self.mode = mode
         self.keywords = keywords
+        self.arguments = arguments
+        self.availabilityRequirements = availabilityRequirements
         self.badgeTitle = badgeTitle
         self.defaultActions = defaultActions
     }
 }
 
-/// Outcome of a command execution attempt.
-public enum CommandResult: Sendable, Equatable {
-    case success(message: String?)
-    case failure(message: String)
-    case cancelled
-}
-
-/// Contract for executing a command. No concrete executors are provided yet.
-public protocol CommandExecuting: Sendable {
-    func execute(id: CommandID, arguments: [String: String]) async throws -> CommandResult
+/// A declarative, non-secret requirement evaluated by the application availability service.
+public enum CommandAvailabilityRequirement: Sendable, Equatable, Hashable {
+    /// A permission identified by the owning platform permission service.
+    case permission(identifier: String)
 }
 
 /// Errors specific to command registration.
 public enum CommandRegistryError: Error, Sendable, Equatable {
     case duplicateCommand(CommandID)
     case commandNotFound(CommandID)
+    case duplicateArgument(commandID: CommandID, name: String)
+    case invalidDefaultValue(
+        commandID: CommandID,
+        name: String,
+        expected: CommandArgumentValueType,
+        actual: CommandArgumentValueType
+    )
+    /// A decimal argument cannot be persisted because it is NaN or infinite.
+    case nonFiniteDecimal(commandID: CommandID, name: String)
+    case missingRequiredArgument(commandID: CommandID, name: String)
+    case unknownArgument(commandID: CommandID, name: String)
+    case invalidArgumentType(
+        commandID: CommandID,
+        name: String,
+        expected: CommandArgumentValueType,
+        actual: CommandArgumentValueType
+    )
 }
 
 /// In-memory registry of command manifests and legacy descriptors.
 public actor CommandRegistry {
     private var manifests: [CommandID: CommandManifest] = [:]
+    private var availabilitySnapshot: CommandAvailabilitySnapshot = .allAvailable
 
     public init() {}
 
@@ -186,6 +219,7 @@ public actor CommandRegistry {
         if manifests[manifest.id] != nil {
             throw CommandRegistryError.duplicateCommand(manifest.id)
         }
+        try Self.validateSchema(of: manifest)
         manifests[manifest.id] = manifest
     }
 
@@ -199,6 +233,7 @@ public actor CommandRegistry {
             category: descriptor.category,
             mode: .action,
             keywords: descriptor.keywords,
+            arguments: descriptor.arguments,
             badgeTitle: "Command",
             defaultActions: []
         )
@@ -215,7 +250,11 @@ public actor CommandRegistry {
 
     public func allManifests() -> [CommandManifest] {
         manifests.values.sorted {
-            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            let titleOrder = $0.title.localizedCaseInsensitiveCompare($1.title)
+            if titleOrder != .orderedSame {
+                return titleOrder == .orderedAscending
+            }
+            return $0.id.rawValue < $1.id.rawValue
         }
     }
 
@@ -226,13 +265,181 @@ public actor CommandRegistry {
     public var count: Int {
         manifests.count
     }
+
+    /// Atomically replaces the complete metadata catalog after validating every entry.
+    ///
+    /// If validation fails, the previous catalog remains unchanged.
+    public func replaceCatalog(with newManifests: [CommandManifest]) throws {
+        try replaceCatalog(with: newManifests, availability: .allAvailable)
+    }
+
+    /// Atomically replaces metadata and availability from the same evaluated generation.
+    ///
+    /// If validation fails, both parts of the previous catalog remain unchanged.
+    public func replaceCatalog(
+        with newManifests: [CommandManifest],
+        availability: CommandAvailabilitySnapshot
+    ) throws {
+        var replacement: [CommandID: CommandManifest] = [:]
+        for manifest in newManifests {
+            guard replacement[manifest.id] == nil else {
+                throw CommandRegistryError.duplicateCommand(manifest.id)
+            }
+            try Self.validateSchema(of: manifest)
+            replacement[manifest.id] = manifest
+        }
+        manifests = replacement
+        availabilitySnapshot = availability
+    }
+
+    /// Returns one immutable generation for presentation surfaces such as Settings.
+    public func catalogSnapshot() -> CommandCatalogSnapshot {
+        CommandCatalogSnapshot(
+            manifests: allManifests(),
+            availability: availabilitySnapshot
+        )
+    }
+
+    /// Resolves and validates a persisted command reference against the current catalog.
+    public func resolve(reference: CommandReference) async throws -> ResolvedCommand {
+        guard let manifest = manifests[reference.commandID] else {
+            throw CommandRegistryError.commandNotFound(reference.commandID)
+        }
+
+        let schemaByName = Dictionary(uniqueKeysWithValues: manifest.arguments.map { ($0.name, $0) })
+        for name in reference.arguments.values.keys.sorted() where schemaByName[name] == nil {
+            throw CommandRegistryError.unknownArgument(commandID: manifest.id, name: name)
+        }
+
+        var normalizedValues = reference.arguments.values
+        for argument in manifest.arguments {
+            if let value = normalizedValues[argument.name] {
+                guard value.valueType == argument.valueType else {
+                    throw CommandRegistryError.invalidArgumentType(
+                        commandID: manifest.id,
+                        name: argument.name,
+                        expected: argument.valueType,
+                        actual: value.valueType
+                    )
+                }
+                try Self.validatePersistable(
+                    value,
+                    commandID: manifest.id,
+                    argumentName: argument.name
+                )
+            } else if let defaultValue = argument.defaultValue {
+                normalizedValues[argument.name] = defaultValue
+            } else if argument.isRequired {
+                throw CommandRegistryError.missingRequiredArgument(
+                    commandID: manifest.id,
+                    name: argument.name
+                )
+            }
+        }
+
+        let normalizedReference = CommandReference(
+            commandID: reference.commandID,
+            arguments: CommandArguments(normalizedValues)
+        )
+        return ResolvedCommand(
+            reference: normalizedReference,
+            manifest: manifest,
+            availability: availabilitySnapshot.availability(for: normalizedReference)
+        )
+    }
+
+    private static func validateSchema(of manifest: CommandManifest) throws {
+        var names: Set<String> = []
+        for argument in manifest.arguments {
+            guard names.insert(argument.name).inserted else {
+                throw CommandRegistryError.duplicateArgument(
+                    commandID: manifest.id,
+                    name: argument.name
+                )
+            }
+            if let defaultValue = argument.defaultValue,
+               defaultValue.valueType != argument.valueType {
+                throw CommandRegistryError.invalidDefaultValue(
+                    commandID: manifest.id,
+                    name: argument.name,
+                    expected: argument.valueType,
+                    actual: defaultValue.valueType
+                )
+            }
+            if let defaultValue = argument.defaultValue {
+                try validatePersistable(
+                    defaultValue,
+                    commandID: manifest.id,
+                    argumentName: argument.name
+                )
+            }
+        }
+    }
+
+    private static func validatePersistable(
+        _ value: CommandArgumentValue,
+        commandID: CommandID,
+        argumentName: String
+    ) throws {
+        guard case .decimal(let decimal) = value, decimal.isFinite == false else { return }
+        throw CommandRegistryError.nonFiniteDecimal(
+            commandID: commandID,
+            name: argumentName
+        )
+    }
 }
+
+extension CommandRegistry: CommandResolving {}
 
 /// Well-known built-in command identifiers.
 public enum BuiltInCommandID {
     public static let clipboardHistory = CommandID(rawValue: "clipboard.history")
     public static let searchFiles = CommandID(rawValue: "files.search")
     public static let openSettings = CommandID(rawValue: "settings.open")
+    /// Opens an installed macOS application supplied by bundle identifier.
+    public static let openInstalledApplication = CommandID(rawValue: "applications.open-installed")
+}
+
+/// Well-known argument names used by shared built-in commands.
+public enum BuiltInCommandArgumentName {
+    /// Bundle identifier accepted by ``BuiltInCommandID/openInstalledApplication``.
+    public static let bundleIdentifier = "bundleIdentifier"
+}
+
+/// Reusable built-in command manifests that are not launcher application surfaces.
+public enum BuiltInCommandManifest {
+    /// Parameterized installed-application command shared by search, shortcuts, and Command Wheel.
+    public static let openInstalledApplication = CommandManifest(
+        id: BuiltInCommandID.openInstalledApplication,
+        title: "Open Installed Application",
+        subtitle: "Open a macOS application by bundle identifier",
+        systemImage: "app.fill",
+        category: .application,
+        mode: .action,
+        keywords: ["application", "launch", "open"],
+        arguments: [
+            CommandArgument(
+                name: BuiltInCommandArgumentName.bundleIdentifier,
+                description: "The installed application's bundle identifier.",
+                isRequired: true,
+                valueType: .string
+            )
+        ],
+        badgeTitle: "Application"
+    )
+}
+
+/// Factories for references to shared built-in commands.
+public enum BuiltInCommandReference {
+    /// Creates a reference that opens the installed application with `bundleIdentifier`.
+    public static func openInstalledApplication(bundleIdentifier: String) -> CommandReference {
+        CommandReference(
+            commandID: BuiltInCommandID.openInstalledApplication,
+            arguments: CommandArguments([
+                BuiltInCommandArgumentName.bundleIdentifier: .string(bundleIdentifier)
+            ])
+        )
+    }
 }
 
 /// Well-known action identifiers shared across surfaces.

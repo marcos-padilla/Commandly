@@ -11,6 +11,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     case general
     case ai
     case applications
+    case commandWheel
     case permissions
     case about
 
@@ -21,6 +22,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .general: return "General"
         case .ai: return "AI"
         case .applications: return "Applications"
+        case .commandWheel: return "Command Wheel"
         case .permissions: return "Permissions"
         case .about: return "About"
         }
@@ -34,6 +36,8 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
             return "Connect your provider account, validate its credential, and choose a model."
         case .applications:
             return "Manage application discovery, shortcuts, and declared configuration."
+        case .commandWheel:
+            return "Create radial command profiles, pages, slots, shortcuts, and app rules."
         case .permissions:
             return "Review access Commandly uses for calendar, files, and automation."
         case .about:
@@ -46,6 +50,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .general: return "gearshape"
         case .ai: return "sparkles"
         case .applications: return "square.grid.2x2"
+        case .commandWheel: return "circle.hexagongrid"
         case .permissions: return "lock.shield"
         case .about: return "info.circle"
         }
@@ -62,6 +67,7 @@ final class SettingsViewModel {
     let metadata: ApplicationMetadata
     let applications: LauncherApplicationsSettingsModel
     let ai: AISettingsModel
+    let commandWheel: CommandWheelSettingsModel
 
     var selectedPane: SettingsPane = .general
     var opensAtLogin: Bool
@@ -86,6 +92,14 @@ final class SettingsViewModel {
         metadata: ApplicationMetadata,
         aiSettingsModel: AISettingsModel? = nil,
         applicationRegistry: LauncherApplicationRegistry? = nil,
+        commandWheelProfileStore: CommandWheelProfileStore? = nil,
+        commandWheelCatalog: CommandWheelCommandCatalogSnapshot? = nil,
+        commandWheelCatalogProvider:
+            (@MainActor @Sendable () async -> CommandCatalogSnapshot)? = nil,
+        commandWheelInstalledApplicationQuery: any InstalledApplicationQuerying =
+            InMemoryInstalledApplicationQuery(),
+        commandWheelShortcutIssues:
+            (@MainActor () -> [UUID: GlobalShortcutRegistrationIssue])? = nil,
         onApplicationPreferencesChange: @escaping () -> Void = {},
         applicationHotkeyIssues: @escaping () -> [CommandID: ApplicationHotkeyRegistrationIssue] = { [:] },
         onMenuBarIconChange: ((Bool) -> Void)? = nil,
@@ -98,10 +112,25 @@ final class SettingsViewModel {
         self.privacySettingsOpener = privacySettingsOpener
         self.metadata = metadata
         self.ai = aiSettingsModel ?? AISettingsModel()
+        let resolvedRegistry = applicationRegistry ?? .makeBuiltIn()
         self.applications = LauncherApplicationsSettingsModel(
-            registry: applicationRegistry ?? .makeBuiltIn(),
+            registry: resolvedRegistry,
             onPreferencesChange: onApplicationPreferencesChange,
             hotkeyIssues: applicationHotkeyIssues
+        )
+        let resolvedCommandWheelStore = commandWheelProfileStore
+            ?? CommandWheelProfileStore(
+                repository: InMemoryCommandWheelProfileRepository()
+            )
+        self.commandWheel = CommandWheelSettingsModel(
+            store: resolvedCommandWheelStore,
+            catalog: commandWheelCatalog
+                ?? CommandWheelCommandCatalogSnapshot(
+                    manifests: resolvedRegistry.allManifests()
+                ),
+            catalogProvider: commandWheelCatalogProvider,
+            installedApplicationQuery: commandWheelInstalledApplicationQuery,
+            shortcutIssues: commandWheelShortcutIssues
         )
         self.onMenuBarIconChange = onMenuBarIconChange
         self.onTextSizeChange = onTextSizeChange
@@ -122,6 +151,7 @@ final class SettingsViewModel {
 
     func onAppear() {
         Task {
+            await commandWheel.load()
             await refreshPermissions()
             await refreshLoginItem()
         }
@@ -185,6 +215,7 @@ final class SettingsViewModel {
             states[kind] = await permissionService.state(for: kind)
         }
         permissionStates = states
+        await commandWheel.refreshCatalog()
     }
 
     func requestPermission(_ kind: PermissionKind) {

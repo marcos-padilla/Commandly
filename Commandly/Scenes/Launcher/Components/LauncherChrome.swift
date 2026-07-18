@@ -722,13 +722,24 @@ func launcherIcon(systemName: String, emphasized: Bool, size: CGFloat = 28) -> s
 
 /// Renders an installed application's real icon from its `.app` bundle path.
 struct ApplicationLauncherIcon: View {
-    let path: String
+    private let request: ApplicationIconRequest?
     var size: CGFloat = 28
+    @State private var image: CGImage?
+
+    init(path: String, size: CGFloat = 28) {
+        self.request = ApplicationIconRequest(path: path)
+        self.size = size
+    }
+
+    init(bundleIdentifier: String, size: CGFloat = 28) {
+        self.request = ApplicationIconRequest(bundleIdentifier: bundleIdentifier)
+        self.size = size
+    }
 
     var body: some View {
         Group {
-            if let image = ApplicationIconCache.shared.icon(forPath: path) {
-                Image(nsImage: image)
+            if let image {
+                Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
@@ -741,26 +752,305 @@ struct ApplicationLauncherIcon: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
         .accessibilityHidden(true)
+        .task(id: request) {
+            guard let request else {
+                image = nil
+                return
+            }
+            image = nil
+            let loadedImage = await ApplicationIconCache.shared.image(for: request)
+            guard Task.isCancelled == false else { return }
+            image = loadedImage
+        }
     }
 }
 
-/// Small in-memory cache for workspace app icons (paths only — never logs contents).
-@MainActor
-final class ApplicationIconCache {
+nonisolated enum ApplicationIconRequest: Hashable, Sendable {
+    case path(String)
+    case bundleIdentifier(String)
+
+    init?(path: String) {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+        self = .path(URL(fileURLWithPath: trimmed).standardizedFileURL.path)
+    }
+
+    init?(bundleIdentifier: String) {
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+        self = .bundleIdentifier(trimmed)
+    }
+}
+
+nonisolated struct LoadedApplicationIcon: Sendable {
+    let canonicalPath: String
+    let image: CGImage
+}
+
+/// Shared bounded cache for fully rasterized workspace icons (paths only — never logs contents).
+///
+/// File-system access, bundle lookup, AppKit icon retrieval, and rasterization are confined to
+/// this actor's executor. SwiftUI receives only the resulting sendable `CGImage` value.
+actor ApplicationIconCache {
+    typealias Loader = @Sendable (ApplicationIconRequest) -> LoadedApplicationIcon?
+
     static let shared = ApplicationIconCache()
 
-    private var images: [String: NSImage] = [:]
+    private nonisolated struct CachedImage {
+        let image: CGImage
+        let loadedAt: Date
+        var lastAccessSequence: UInt64
+    }
 
-    func icon(forPath path: String) -> NSImage? {
-        if let cached = images[path] {
-            return cached
+    private let cacheLifetime: TimeInterval
+    private let failureRetryInterval: TimeInterval
+    private let maximumEntryCount: Int
+    private let now: @Sendable () -> Date
+    private let loader: Loader
+    private var imagesByCanonicalPath: [String: CachedImage] = [:]
+    private var canonicalPathsByRequest: [ApplicationIconRequest: String] = [:]
+    private var failedLoadsAt: [ApplicationIconRequest: Date] = [:]
+    private var accessSequence: UInt64 = 0
+
+    init(
+        cacheLifetime: TimeInterval = 5 * 60,
+        failureRetryInterval: TimeInterval = 15,
+        maximumEntryCount: Int = 128,
+        now: @escaping @Sendable () -> Date = Date.init,
+        loader: @escaping Loader = ApplicationIconCache.loadWorkspaceIcon
+    ) {
+        self.cacheLifetime = max(0, cacheLifetime)
+        self.failureRetryInterval = max(0, failureRetryInterval)
+        self.maximumEntryCount = max(1, maximumEntryCount)
+        self.now = now
+        self.loader = loader
+    }
+
+    func image(for request: ApplicationIconRequest) -> CGImage? {
+        guard Task.isCancelled == false else { return nil }
+        let currentDate = now()
+        evictExpiredEntries(at: currentDate)
+
+        if let canonicalPath = canonicalPathsByRequest[request],
+           var cached = imagesByCanonicalPath[canonicalPath] {
+            if Self.isFresh(
+                cached.loadedAt,
+                at: currentDate,
+                lifetime: cacheLifetime
+            ) {
+                cached.lastAccessSequence = nextAccessSequence()
+                imagesByCanonicalPath[canonicalPath] = cached
+                return cached.image
+            }
+            removeCanonicalPath(canonicalPath)
         }
-        guard FileManager.default.fileExists(atPath: path) else {
+
+        if case .path(let path) = request,
+           var cached = imagesByCanonicalPath[path] {
+            if Self.isFresh(
+                cached.loadedAt,
+                at: currentDate,
+                lifetime: cacheLifetime
+            ) {
+                cached.lastAccessSequence = nextAccessSequence()
+                imagesByCanonicalPath[path] = cached
+                canonicalPathsByRequest[request] = path
+                return cached.image
+            }
+            removeCanonicalPath(path)
+        }
+
+        if let failedAt = failedLoadsAt[request],
+           Self.isFresh(
+               failedAt,
+               at: currentDate,
+               lifetime: failureRetryInterval
+           ) {
             return nil
         }
-        let icon = NSWorkspace.shared.icon(forFile: path)
-        icon.size = NSSize(width: 128, height: 128)
-        images[path] = icon
-        return icon
+
+        guard let loaded = loader(request) else {
+            failedLoadsAt[request] = currentDate
+            evictExcessFailures()
+            return nil
+        }
+
+        let canonicalPath = URL(fileURLWithPath: loaded.canonicalPath)
+            .standardizedFileURL.path
+        imagesByCanonicalPath[canonicalPath] = CachedImage(
+            image: loaded.image,
+            loadedAt: currentDate,
+            lastAccessSequence: nextAccessSequence()
+        )
+        canonicalPathsByRequest[request] = canonicalPath
+        if let pathRequest = ApplicationIconRequest(path: canonicalPath) {
+            canonicalPathsByRequest[pathRequest] = canonicalPath
+            failedLoadsAt.removeValue(forKey: pathRequest)
+        }
+        failedLoadsAt.removeValue(forKey: request)
+        evictExcessImages()
+        return loaded.image
+    }
+
+    /// Invalidates one bundle identifier so an install, removal, or update can be reflected now.
+    func invalidate(bundleIdentifier: String) {
+        guard let request = ApplicationIconRequest(bundleIdentifier: bundleIdentifier) else {
+            return
+        }
+        invalidate(request)
+    }
+
+    /// Invalidates one application path so an install, removal, or update can be reflected now.
+    func invalidate(path: String) {
+        guard let request = ApplicationIconRequest(path: path) else { return }
+        invalidate(request)
+    }
+
+    /// Clears all positive and negative icon entries, for example after an application scan.
+    func invalidateAll() {
+        imagesByCanonicalPath.removeAll(keepingCapacity: true)
+        canonicalPathsByRequest.removeAll(keepingCapacity: true)
+        failedLoadsAt.removeAll(keepingCapacity: true)
+        accessSequence = 0
+    }
+
+    private func invalidate(_ request: ApplicationIconRequest) {
+        failedLoadsAt.removeValue(forKey: request)
+        guard let canonicalPath = canonicalPathsByRequest[request] else { return }
+        removeCanonicalPath(canonicalPath)
+    }
+
+    private func removeCanonicalPath(_ canonicalPath: String) {
+        imagesByCanonicalPath.removeValue(forKey: canonicalPath)
+        let aliases = canonicalPathsByRequest.compactMap { request, path in
+            path == canonicalPath ? request : nil
+        }
+        for alias in aliases {
+            canonicalPathsByRequest.removeValue(forKey: alias)
+        }
+    }
+
+    /// Sweeps TTL-expired positive and negative entries on each cache access. The cache is small
+    /// and capacity-limited, so this keeps aliases fresh without a background timer.
+    private func evictExpiredEntries(at currentDate: Date) {
+        let expiredPaths = imagesByCanonicalPath.compactMap { path, cached in
+            Self.isFresh(cached.loadedAt, at: currentDate, lifetime: cacheLifetime)
+                ? nil : path
+        }
+        for path in expiredPaths {
+            removeCanonicalPath(path)
+        }
+        failedLoadsAt = failedLoadsAt.filter { _, failedAt in
+            Self.isFresh(
+                failedAt,
+                at: currentDate,
+                lifetime: failureRetryInterval
+            )
+        }
+    }
+
+    private func evictExcessImages() {
+        guard imagesByCanonicalPath.count > maximumEntryCount else { return }
+        let excessCount = imagesByCanonicalPath.count - maximumEntryCount
+        let leastRecentlyUsedPaths = imagesByCanonicalPath
+            .sorted { lhs, rhs in
+                if lhs.value.lastAccessSequence != rhs.value.lastAccessSequence {
+                    return lhs.value.lastAccessSequence < rhs.value.lastAccessSequence
+                }
+                return lhs.key < rhs.key
+            }
+            .prefix(excessCount)
+            .map(\.key)
+        for path in leastRecentlyUsedPaths {
+            removeCanonicalPath(path)
+        }
+    }
+
+    private func nextAccessSequence() -> UInt64 {
+        accessSequence &+= 1
+        return accessSequence
+    }
+
+    private func evictExcessFailures() {
+        guard failedLoadsAt.count > maximumEntryCount else { return }
+        let excessCount = failedLoadsAt.count - maximumEntryCount
+        let oldestRequests = failedLoadsAt
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value < rhs.value }
+                return String(describing: lhs.key) < String(describing: rhs.key)
+            }
+            .prefix(excessCount)
+            .map(\.key)
+        for request in oldestRequests {
+            failedLoadsAt.removeValue(forKey: request)
+        }
+    }
+
+    nonisolated private static func isFresh(
+        _ cachedAt: Date,
+        at currentDate: Date,
+        lifetime: TimeInterval
+    ) -> Bool {
+        let age = currentDate.timeIntervalSince(cachedAt)
+        return age >= 0 && age < lifetime
+    }
+
+    nonisolated private static func loadWorkspaceIcon(
+        for request: ApplicationIconRequest
+    ) -> LoadedApplicationIcon? {
+        autoreleasepool {
+            let path: String
+            switch request {
+            case .path(let requestedPath):
+                guard FileManager.default.fileExists(atPath: requestedPath) else {
+                    return nil
+                }
+                path = requestedPath
+            case .bundleIdentifier(let bundleIdentifier):
+                guard let applicationURL = NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: bundleIdentifier
+                ) else {
+                    return nil
+                }
+                path = applicationURL.standardizedFileURL.path
+            }
+
+            let icon = NSWorkspace.shared.icon(forFile: path)
+            var proposedRect = NSRect(x: 0, y: 0, width: 128, height: 128)
+            guard let sourceImage = icon.cgImage(
+                forProposedRect: &proposedRect,
+                context: nil,
+                hints: nil
+            ), let decodedImage = decodedImage(sourceImage, size: 128) else {
+                return nil
+            }
+            return LoadedApplicationIcon(
+                canonicalPath: path,
+                image: decodedImage
+            )
+        }
+    }
+
+    nonisolated private static func decodedImage(
+        _ sourceImage: CGImage,
+        size: Int
+    ) -> CGImage? {
+        guard let context = CGContext(
+            data: nil,
+            width: size,
+            height: size,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .high
+        context.draw(
+            sourceImage,
+            in: CGRect(x: 0, y: 0, width: size, height: size)
+        )
+        return context.makeImage()
     }
 }

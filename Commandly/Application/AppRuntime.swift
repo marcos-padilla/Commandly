@@ -1,4 +1,5 @@
 import AIKit
+import AppCore
 import Foundation
 import Observation
 import Infrastructure
@@ -32,12 +33,38 @@ final class AppRuntime {
     private var cachedSettingsViewModel: SettingsViewModel?
     private var cachedDocumentationViewModel: DocumentationViewModel?
     private var cachedLauncherViewModel: LauncherViewModel?
-    private let hotkeyMonitor = OptionSpaceHotkeyMonitor()
-    private let applicationHotkeyMonitor = ApplicationHotkeyMonitor()
+    @ObservationIgnored
+    private let globalShortcutMonitor = GlobalShortcutMonitor()
+    @ObservationIgnored
+    private var globalShortcutRoutes: [GlobalShortcutID: RuntimeGlobalShortcutRoute] = [:]
+    @ObservationIgnored
+    private var activeWheelShortcutSessions: [GlobalShortcutID: CommandWheelSessionToken] = [:]
+    @ObservationIgnored
+    private var commandCatalogIsReadyForWheel = false
+    @ObservationIgnored
+    private var applicationTerminationObserver: NSObjectProtocol?
     private var pendingApplicationID: CommandID?
+    private var pendingDirectPresentationApplicationID: CommandID?
+    private var pendingCommandWheelStatusMessage: String?
     private(set) var applicationHotkeyIssues: [CommandID: ApplicationHotkeyRegistrationIssue] = [:]
+    private(set) var commandWheelShortcutIssues: [UUID: GlobalShortcutRegistrationIssue] = [:]
     @ObservationIgnored
     let applicationRegistry: LauncherApplicationRegistry
+    @ObservationIgnored
+    private let commandAvailabilityEvaluator: ProductionCommandAvailabilityEvaluator
+    @ObservationIgnored
+    private let installedApplicationQuery: any InstalledApplicationQuerying
+    @ObservationIgnored
+    let commandCoordinator: SharedCommandExecutionCoordinator
+    @ObservationIgnored
+    let commandWheelProfileStore: CommandWheelProfileStore
+    @ObservationIgnored
+    private let commandWheelCoordinator: CommandWheelCoordinator
+    @ObservationIgnored
+    private let commandWheelFeedbackRelay: CommandWheelResultFeedbackRelay
+    @ObservationIgnored
+    private let registeredApplicationPresentationHandler:
+        RegisteredLauncherApplicationPresentationHandler
     /// Pasteboard monitoring must not invalidate scene/`@Bindable` runtime UI.
     /// Views that need history observe the store through application models.
     @ObservationIgnored
@@ -66,14 +93,20 @@ final class AppRuntime {
     private let shelfApplicationServices: ShelfApplicationServices
     @ObservationIgnored
     private let windowPresentationTargetProvider: @MainActor () -> WindowPresentationTarget?
+    @ObservationIgnored
+    private let frontmostApplicationContextProvider: any FrontmostApplicationContextProviding
+    private var launcherFrontmostApplicationContext: FrontmostApplicationContext?
 
     init(
         container: AppContainer = .bootstrap(),
+        frontmostApplicationContextProvider: any FrontmostApplicationContextProviding =
+            WorkspaceFrontmostApplicationContextProvider(),
         windowPresentationTargetProvider: @escaping @MainActor () -> WindowPresentationTarget? = {
             WindowPresentationTargetResolver.activeTarget()
         }
     ) {
         self.container = container
+        self.frontmostApplicationContextProvider = frontmostApplicationContextProvider
         self.windowPresentationTargetProvider = windowPresentationTargetProvider
         let settings = container.dependencies.appSettingsStore.load()
         self.showsOnboarding = CommandlyDebugLaunchOptions.skipsOnboarding
@@ -176,7 +209,7 @@ final class AppRuntime {
         self.systemActivityProtectionTracker = systemActivityProtectionTracker
         let shelfLaunchController = ShelfLaunchController()
         self.shelfLaunchController = shelfLaunchController
-        self.applicationRegistry = .makeBuiltIn(
+        let applicationRegistry = LauncherApplicationRegistry.makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: fileSearchApplicationServices,
             calculatorSessionStore: calculatorSessionStore,
@@ -191,12 +224,92 @@ final class AppRuntime {
             preferencesStore: container.dependencies.launcherApplicationPreferencesStore,
             shelfLaunchController: shelfLaunchController
         )
+        self.applicationRegistry = applicationRegistry
+        let installedApplicationQuery = WorkspaceInstalledApplicationQuery()
+        self.installedApplicationQuery = installedApplicationQuery
+        let commandAvailabilityEvaluator = ProductionCommandAvailabilityEvaluator(
+            applicationRegistry: applicationRegistry,
+            permissionService: container.dependencies.permissionService,
+            installedApplicationQuery: installedApplicationQuery
+        )
+        self.commandAvailabilityEvaluator = commandAvailabilityEvaluator
+        let registeredApplicationPresentationHandler =
+            RegisteredLauncherApplicationPresentationHandler()
+        self.registeredApplicationPresentationHandler = registeredApplicationPresentationHandler
+        let commandCoordinator = container.makeSharedCommandExecutionCoordinator(
+            applicationRegistry: applicationRegistry,
+            presentationHandler: registeredApplicationPresentationHandler,
+            availabilityEvaluator: commandAvailabilityEvaluator
+        )
+        self.commandCoordinator = commandCoordinator
+        let commandWheelProfileStore: CommandWheelProfileStore
+        #if DEBUG
+        if CommandWheelDebugFixture.isSettingsPresentationRequested {
+            let fixtureConfiguration = CommandWheelDebugFixture.settingsConfiguration
+            commandWheelProfileStore = CommandWheelProfileStore(
+                repository: InMemoryCommandWheelProfileRepository(
+                    configuration: fixtureConfiguration,
+                    uuidProvider: container.dependencies.uuidProvider
+                ),
+                initialConfiguration: fixtureConfiguration,
+                uuidProvider: container.dependencies.uuidProvider
+            )
+        } else {
+            commandWheelProfileStore = CommandWheelProfileStore(
+                repository: JSONCommandWheelProfileRepository(
+                    uuidProvider: container.dependencies.uuidProvider
+                ),
+                uuidProvider: container.dependencies.uuidProvider
+            )
+        }
+        #else
+        commandWheelProfileStore = CommandWheelProfileStore(
+            repository: JSONCommandWheelProfileRepository(
+                uuidProvider: container.dependencies.uuidProvider
+            ),
+            uuidProvider: container.dependencies.uuidProvider
+        )
+        #endif
+        self.commandWheelProfileStore = commandWheelProfileStore
+        let commandWheelFeedbackRelay = CommandWheelResultFeedbackRelay()
+        self.commandWheelFeedbackRelay = commandWheelFeedbackRelay
+        self.commandWheelCoordinator = CommandWheelCoordinator(
+            configuration: commandWheelProfileStore.configurationSnapshot(),
+            frontmostContextProvider: frontmostApplicationContextProvider,
+            resolver: container.dependencies.commandRegistry,
+            usageHistory: container.dependencies.commandUsageHistory,
+            installedApplicationQuery: installedApplicationQuery,
+            commandCoordinator: commandCoordinator,
+            resultFeedback: commandWheelFeedbackRelay
+        )
         let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
         self.autoQuitService = AutoQuitService(preferencesStore: applicationPreferencesStore)
-        startHotkeyMonitor()
-        refreshApplicationHotkeys()
-        registerApplicationManifests()
+        registeredApplicationPresentationHandler.install { [weak self] commandID in
+            self?.handleRegisteredApplicationPresentation(commandID)
+        }
+        commandWheelFeedbackRelay.install(
+            onCompletion: { [weak self] result, context in
+                self?.handleCommandWheelCompletion(result, context: context)
+            },
+            onFailure: { [weak self] error, context in
+                self?.handleCommandWheelFailure(error, context: context)
+            }
+        )
+        commandWheelProfileStore.onConfigurationChange = { [weak self] configuration in
+            self?.commandWheelConfigurationDidChange(configuration)
+        }
+        refreshGlobalShortcuts()
+        prepareCommandWheelRuntime()
+        applicationTerminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.tearDown()
+            }
+        }
         shelfLaunchController.onPresent = { [weak self] mode in
             self?.showFloatingShelf(entryMode: mode)
         }
@@ -216,6 +329,7 @@ final class AppRuntime {
         if let cachedSettingsViewModel {
             return cachedSettingsViewModel
         }
+        let availabilityEvaluator = commandAvailabilityEvaluator
         let viewModel = container.makeSettingsViewModel(
             aiSettingsModel: AISettingsModel(
                 connectionStore: container.dependencies.aiConnectionStore,
@@ -235,6 +349,17 @@ final class AppRuntime {
                 self?.viewMode = viewMode
             },
             applicationRegistry: applicationRegistry,
+            commandWheelProfileStore: commandWheelProfileStore,
+            commandWheelCatalog: CommandWheelCommandCatalogSnapshot(
+                availabilityEvaluator.initialSnapshot()
+            ),
+            commandWheelCatalogProvider: {
+                await availabilityEvaluator.snapshot()
+            },
+            commandWheelInstalledApplicationQuery: installedApplicationQuery,
+            commandWheelShortcutIssues: { [weak self] in
+                self?.commandWheelShortcutIssues ?? [:]
+            },
             onApplicationPreferencesChange: { [weak self] in
                 self?.applicationPreferencesDidChange()
             },
@@ -275,6 +400,12 @@ final class AppRuntime {
                 self?.makeSettingsViewModel().selectedPane = .permissions
                 onOpenSettings()
             }
+            cachedLauncherViewModel.onOpenCommandWheelSettings = { [weak self] location in
+                self?.openCommandWheelSettings(
+                    at: location,
+                    onOpenSettings: onOpenSettings
+                )
+            }
             cachedLauncherViewModel.onOpenDocumentation = onOpenDocumentation
             cachedLauncherViewModel.onQuit = quit
             return cachedLauncherViewModel
@@ -284,8 +415,14 @@ final class AppRuntime {
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchService: fileSearchService,
             urlOpener: fileSearchApplicationServices.urlOpener,
-            applicationOpener: WorkspaceApplicationOpener(),
-            applicationQuery: WorkspaceInstalledApplicationQuery(),
+            applicationOpener: container.dependencies.applicationOpener,
+            commandCoordinator: commandCoordinator,
+            commandWheelAssignmentStore: commandWheelProfileStore,
+            invocationContextProvider: { [weak self] source in
+                self?.makeCommandInvocationContext(source: source)
+                    ?? CommandInvocationContext(source: source)
+            },
+            applicationQuery: installedApplicationQuery,
             applicationPreferencesStore: applicationPreferencesStore,
             fileRevealer: fileSearchApplicationServices.fileRevealer,
             fileActionService: fileSearchApplicationServices.fileActionService,
@@ -307,16 +444,94 @@ final class AppRuntime {
                 self?.makeSettingsViewModel().selectedPane = .permissions
                 onOpenSettings()
             },
+            onOpenCommandWheelSettings: { [weak self] location in
+                self?.openCommandWheelSettings(
+                    at: location,
+                    onOpenSettings: onOpenSettings
+                )
+            },
             onQuit: quit
         )
         cachedLauncherViewModel = viewModel
         return viewModel
     }
 
+    private func openCommandWheelSettings(
+        at location: CommandWheelSlotLocation,
+        onOpenSettings: () -> Void
+    ) {
+        let settingsViewModel = makeSettingsViewModel()
+        settingsViewModel.selectedPane = .commandWheel
+        _ = settingsViewModel.commandWheel.reveal(location)
+        onOpenSettings()
+    }
+
+    private func handleRegisteredApplicationPresentation(
+        _ commandID: CommandID
+    ) -> CommandResult? {
+        if showsLauncher, let cachedLauncherViewModel {
+            return cachedLauncherViewModel.presentRegisteredApplication(commandID)
+        }
+        guard showsOnboarding == false,
+              applicationRegistry.enabledApplication(for: commandID) != nil else {
+            return nil
+        }
+        pendingDirectPresentationApplicationID = commandID
+        showLauncher()
+        if let cachedLauncherViewModel {
+            // A reused ordered-out SwiftUI window may not emit `onAppear`. Consume after the
+            // presentation turn as a fallback; the pending-ID clear keeps this idempotent with UI.
+            DispatchQueue.main.async { [weak self, weak cachedLauncherViewModel] in
+                guard let self, let cachedLauncherViewModel else { return }
+                self.consumePendingApplicationLaunch(using: cachedLauncherViewModel)
+            }
+        }
+        return .success(message: nil)
+    }
+
+    private func makeCommandInvocationContext(
+        source: CommandInvocationSource
+    ) -> CommandInvocationContext {
+        CommandInvocationContext(
+            source: source,
+            frontmostApplicationBundleIdentifier:
+                launcherFrontmostApplicationContext?.bundleIdentifier,
+            timestamp: container.dependencies.dateProvider.now()
+        )
+    }
+
     func consumePendingApplicationLaunch(using viewModel: LauncherViewModel) {
-        guard let pendingApplicationID else { return }
-        self.pendingApplicationID = nil
-        viewModel.launch(pendingApplicationID)
+        if let pendingDirectPresentationApplicationID {
+            self.pendingDirectPresentationApplicationID = nil
+            // Defer until the presentation/onAppear turn completes so
+            // `prepareForPresentation()` cannot reset the newly-created session.
+            DispatchQueue.main.async { [weak self, weak viewModel] in
+                guard let self, self.showsLauncher, let viewModel else { return }
+                _ = viewModel.presentRegisteredApplication(
+                    pendingDirectPresentationApplicationID
+                )
+            }
+        }
+        if let pendingApplicationID {
+            self.pendingApplicationID = nil
+            Task { @MainActor [weak viewModel] in
+                await viewModel?.executeRegisteredApplication(
+                    pendingApplicationID,
+                    source: .applicationHotKey
+                )
+            }
+        }
+
+        consumePendingCommandWheelStatus(using: viewModel)
+    }
+
+    private func consumePendingCommandWheelStatus(using viewModel: LauncherViewModel) {
+        guard let pendingCommandWheelStatusMessage else { return }
+        self.pendingCommandWheelStatusMessage = nil
+        DispatchQueue.main.async { [weak self, weak viewModel] in
+            guard let self, self.showsLauncher, let viewModel else { return }
+            viewModel.statusMessage = pendingCommandWheelStatusMessage
+        }
     }
 
     func toggleLauncher() {
@@ -332,6 +547,7 @@ final class AppRuntime {
 
     func showLauncher() {
         guard showsOnboarding == false else { return }
+        launcherFrontmostApplicationContext = frontmostApplicationContextProvider.snapshot()
         systemActivityProtectionTracker.captureFrontmostApplication()
         windowLayoutService.captureTargetApplication()
         // Capture before Commandly becomes active so reused windows can move to the user's
@@ -455,6 +671,9 @@ final class AppRuntime {
         // Drop command-surface observation (e.g. clipboard entries) so background
         // pasteboard polls cannot refresh a dismissed launcher view hierarchy.
         cachedLauncherViewModel?.resetAfterDismiss()
+        pendingApplicationID = nil
+        pendingDirectPresentationApplicationID = nil
+        pendingCommandWheelStatusMessage = nil
         guard showsLauncher else {
             dismissLauncherWindow?()
             return
@@ -497,24 +716,43 @@ final class AppRuntime {
         autoQuitService.start()
     }
 
-    private func startHotkeyMonitor() {
-        hotkeyMonitor.start { [weak self] in
+    private func applicationPreferencesDidChange() {
+        refreshCommandCatalog()
+        if let cachedSettingsViewModel {
             Task { @MainActor in
-                self?.toggleLauncher()
+                await cachedSettingsViewModel.commandWheel.refreshCatalog()
             }
         }
-    }
-
-    private func applicationPreferencesDidChange() {
-        refreshApplicationHotkeys()
         cachedLauncherViewModel?.applicationPreferencesDidChange()
         cachedDocumentationViewModel?.refresh()
     }
 
-    private func refreshApplicationHotkeys() {
-        let fixedShelfHotKeys = ShelfGlobalShortcut.allCases.map {
-            ($0.commandID, $0.hotKey)
+    private func prepareCommandWheelRuntime() {
+        let store = commandWheelProfileStore
+        let logger = container.dependencies.logger
+        Task { @MainActor [weak self] in
+            await store.preload()
+            guard let self else { return }
+            commandWheelCoordinator.updateConfiguration(store.configurationSnapshot())
+            do {
+                try await synchronizeCommandCatalog()
+                commandCatalogIsReadyForWheel = true
+            } catch {
+                commandCatalogIsReadyForWheel = false
+                logger.error("The shared command catalog could not be prepared for Command Wheel")
+            }
+            refreshGlobalShortcuts()
         }
+    }
+
+    private func commandWheelConfigurationDidChange(
+        _ configuration: CommandWheelConfiguration
+    ) {
+        commandWheelCoordinator.updateConfiguration(configuration)
+        refreshGlobalShortcuts()
+    }
+
+    private func refreshGlobalShortcuts() {
         let applicationHotKeys: [(CommandID, LauncherHotKey)] = applicationRegistry
             .allDefinitions()
             .compactMap { definition -> (CommandID, LauncherHotKey)? in
@@ -525,15 +763,112 @@ final class AppRuntime {
                 }
                 return (definition.id, hotKey)
             }
-        let hotKeys = fixedShelfHotKeys + applicationHotKeys
-        applicationHotkeyIssues = applicationHotkeyMonitor.replace(hotKeys) { [weak self] id in
-            guard let self else { return }
-            if let shortcut = ShelfGlobalShortcut.resolve(id) {
-                self.showFloatingShelf(entryMode: shortcut.entryMode)
-            } else {
-                self.openApplicationFromHotKey(id)
+
+        var wheelConfiguration = commandWheelProfileStore.configurationSnapshot()
+        if commandCatalogIsReadyForWheel == false {
+            wheelConfiguration.isEnabled = false
+        }
+        let bindings = RuntimeGlobalShortcutCatalog.bindings(
+            applicationHotKeys: applicationHotKeys,
+            wheelConfiguration: wheelConfiguration
+        )
+        let routes = Dictionary(
+            uniqueKeysWithValues: bindings.map { ($0.registration.id, $0.route) }
+        )
+        let issues = globalShortcutMonitor.replace(
+            bindings.map(\.registration)
+        ) { [weak self] event in
+            self?.handleGlobalShortcutEvent(event)
+        }
+        globalShortcutRoutes = routes
+        activeWheelShortcutSessions = activeWheelShortcutSessions.filter { id, token in
+            routes[id] != nil && commandWheelCoordinator.activeSessionToken == token
+        }
+        mapGlobalShortcutIssues(issues, routes: routes)
+    }
+
+    private func handleGlobalShortcutEvent(_ event: GlobalShortcutEvent) {
+        guard event.generation == globalShortcutMonitor.generation,
+              let route = globalShortcutRoutes[event.id] else {
+            return
+        }
+
+        switch route {
+        case .launcher:
+            if event.phase == .pressed { toggleLauncher() }
+
+        case .shelf(let shortcut):
+            if event.phase == .pressed {
+                showFloatingShelf(entryMode: shortcut.entryMode)
+            }
+
+        case .application(let commandID):
+            if event.phase == .pressed { openApplicationFromHotKey(commandID) }
+
+        case .commandWheel(let profileID, let allowsContextOverride):
+            handleCommandWheelShortcutEvent(
+                event,
+                profileID: profileID,
+                allowsContextOverride: allowsContextOverride
+            )
+        }
+    }
+
+    private func handleCommandWheelShortcutEvent(
+        _ event: GlobalShortcutEvent,
+        profileID: UUID,
+        allowsContextOverride: Bool
+    ) {
+        switch event.phase {
+        case .pressed:
+            let token = commandWheelCoordinator.shortcutPressed(
+                explicitProfileID: profileID,
+                allowsContextOverride: allowsContextOverride
+            )
+            activeWheelShortcutSessions[event.id] = token
+
+        case .released:
+            guard let token = activeWheelShortcutSessions[event.id] else { return }
+            commandWheelCoordinator.shortcutReleased(sessionToken: token)
+            if commandWheelCoordinator.activeSessionToken != token {
+                activeWheelShortcutSessions[event.id] = nil
+            }
+
+        case .cancelled:
+            guard let token = activeWheelShortcutSessions.removeValue(
+                forKey: event.id
+            ) else {
+                return
+            }
+            commandWheelCoordinator.shortcutCancelled(sessionToken: token)
+        }
+    }
+
+    private func mapGlobalShortcutIssues(
+        _ issues: [GlobalShortcutID: GlobalShortcutRegistrationIssue],
+        routes: [GlobalShortcutID: RuntimeGlobalShortcutRoute]
+    ) {
+        var applicationIssues = [CommandID: ApplicationHotkeyRegistrationIssue]()
+        var wheelIssues = [UUID: GlobalShortcutRegistrationIssue]()
+
+        for (registrationID, issue) in issues {
+            guard let route = routes[registrationID] else { continue }
+            switch route {
+            case .application(let commandID):
+                if case .duplicate(let ownerID) = issue,
+                   case .application(let ownerCommandID)? = routes[ownerID] {
+                    applicationIssues[commandID] = .duplicate(ownerCommandID)
+                } else {
+                    applicationIssues[commandID] = .unavailable
+                }
+            case .commandWheel(let profileID, _):
+                wheelIssues[profileID] = issue
+            case .launcher, .shelf:
+                break
             }
         }
+        applicationHotkeyIssues = applicationIssues
+        commandWheelShortcutIssues = wheelIssues
     }
 
     private func openApplicationFromHotKey(_ id: CommandID) {
@@ -550,18 +885,77 @@ final class AppRuntime {
         }
     }
 
-    private func registerApplicationManifests() {
-        let registry = container.dependencies.commandRegistry
-        let manifests = applicationRegistry.allManifests()
+    /// Replaces the shared command catalog atomically from current effective application settings.
+    func synchronizeCommandCatalog() async throws {
+        try await commandCoordinator.refreshCatalog()
+    }
+
+    private func refreshCommandCatalog() {
         let logger = container.dependencies.logger
-        Task {
+        commandCatalogIsReadyForWheel = false
+        if let token = commandWheelCoordinator.activeSessionToken {
+            commandWheelCoordinator.shortcutCancelled(sessionToken: token)
+        }
+        activeWheelShortcutSessions.removeAll()
+        refreshGlobalShortcuts()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
-                for manifest in manifests {
-                    try await registry.register(manifest)
-                }
+                try await synchronizeCommandCatalog()
+                commandCatalogIsReadyForWheel = true
+                refreshGlobalShortcuts()
             } catch {
-                logger.error("A built-in launcher application manifest failed registration")
+                logger.error("The shared command catalog could not be refreshed")
             }
+        }
+    }
+
+    private func handleCommandWheelCompletion(
+        _ result: CommandResult,
+        context _: CommandInvocationContext
+    ) {
+        switch result {
+        case .success(let message):
+            if let message { presentCommandWheelStatus(message) }
+        case .failure(let message):
+            presentCommandWheelStatus(message)
+        case .cancelled:
+            presentCommandWheelStatus("Command cancelled.")
+        }
+    }
+
+    private func handleCommandWheelFailure(
+        _ error: any Error,
+        context _: CommandInvocationContext
+    ) {
+        let message = (error as? SharedCommandExecutionCoordinatorError)?
+            .userFacingMessage ?? "Command couldn’t be completed."
+        presentCommandWheelStatus(message)
+    }
+
+    private func presentCommandWheelStatus(_ message: String) {
+        pendingCommandWheelStatusMessage = message
+        showLauncher()
+        if let cachedLauncherViewModel {
+            DispatchQueue.main.async { [weak self, weak cachedLauncherViewModel] in
+                guard let self, let cachedLauncherViewModel else { return }
+                self.consumePendingApplicationLaunch(using: cachedLauncherViewModel)
+            }
+        }
+    }
+
+    /// Explicitly stops app-lifetime shortcut, wheel, and feedback resources at termination.
+    func tearDown() {
+        globalShortcutMonitor.stop()
+        globalShortcutRoutes.removeAll()
+        activeWheelShortcutSessions.removeAll()
+        commandWheelCoordinator.tearDown()
+        commandWheelFeedbackRelay.tearDown()
+        clipboardHistoryStore.stopMonitoring()
+        autoQuitService.stop()
+        if let applicationTerminationObserver {
+            NotificationCenter.default.removeObserver(applicationTerminationObserver)
+            self.applicationTerminationObserver = nil
         }
     }
 

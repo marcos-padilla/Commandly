@@ -10,6 +10,15 @@ import SecurityKit
 /// `@unchecked Sendable`: wraps thread-safe system frameworks and a Sendable folder-access store;
 /// all prompting APIs are invoked from cooperative async contexts / MainActor where required.
 final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
+    struct FilesAccessPanelConfiguration: Equatable, Sendable {
+        let canChooseFiles: Bool
+        let canChooseDirectories: Bool
+        let allowsMultipleSelection: Bool
+        let prompt: String
+        let message: String
+        let directoryURL: URL
+    }
+
     private let folderAccessStore: any FolderAccessStoring
     private let eventStoreFactory: @Sendable () -> EKEventStore
     private let contactStoreFactory: @Sendable () -> CNContactStore
@@ -121,17 +130,29 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
 
     @MainActor
     static func makeFilesAccessPanel() -> NSOpenPanel {
+        let configuration = filesAccessPanelConfiguration
         let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.prompt = "Choose Folders"
-        panel.message = "Choose one or more specific folders Commandly can search and manage. "
-            + "For safety, Finder AI cannot use your Home folder, folders above Home, or an "
-            + "entire volume as a scope. Choose narrower folders for Finder AI; you can change "
-            + "scopes later in Settings."
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        panel.canChooseFiles = configuration.canChooseFiles
+        panel.canChooseDirectories = configuration.canChooseDirectories
+        panel.allowsMultipleSelection = configuration.allowsMultipleSelection
+        panel.prompt = configuration.prompt
+        panel.message = configuration.message
+        panel.directoryURL = configuration.directoryURL
         return panel
+    }
+
+    static var filesAccessPanelConfiguration: FilesAccessPanelConfiguration {
+        FilesAccessPanelConfiguration(
+            canChooseFiles: false,
+            canChooseDirectories: true,
+            allowsMultipleSelection: true,
+            prompt: "Choose Folders",
+            message: "Choose one or more specific folders Commandly can search and manage. "
+                + "For safety, Finder AI cannot use your Home folder, folders above Home, or an "
+                + "entire volume as a scope. Choose narrower folders for Finder AI; you can change "
+                + "scopes later in Settings.",
+            directoryURL: FileManager.default.homeDirectoryForCurrentUser
+        )
     }
 
     private func mapEventKitStatus(_ status: EKAuthorizationStatus) -> PermissionState {

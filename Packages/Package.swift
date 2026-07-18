@@ -81,6 +81,10 @@ let package = Package(
             dependencies: ["Persistence"]
         ),
         .testTarget(
+            name: "InfrastructureTests",
+            dependencies: ["Infrastructure"]
+        ),
+        .testTarget(
             name: "SecurityKitTests",
             dependencies: ["SecurityKit"]
         ),

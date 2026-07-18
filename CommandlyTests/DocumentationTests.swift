@@ -5,6 +5,30 @@ import Testing
 
 @MainActor
 struct DocumentationTests {
+    @Test func coreDocumentationIncludesCommandWheelWorkflowsAndPrivacy() throws {
+        let article = try #require(
+            CoreDocumentationCatalog.articles.first { $0.id == "core.command-wheel" }
+        )
+
+        #expect(article.documentation.sections.map(\.id) == [
+            "command-wheel-start",
+            "command-wheel-select-cancel",
+            "command-wheel-submenus",
+            "command-wheel-profiles",
+            "command-wheel-search",
+            "command-wheel-contexts",
+            "command-wheel-transfer-accessibility",
+            "command-wheel-troubleshooting",
+        ])
+        #expect(article.documentation.keywords.contains("hold flick release"))
+        let searchableContent = article.documentation.sections
+            .flatMap(\.blocks)
+            .map { String(describing: $0.content) }
+            .joined(separator: " ")
+        #expect(searchableContent.contains("Add to Command Wheel"))
+        #expect(searchableContent.contains("do not require Accessibility access"))
+    }
+
     @Test func coreDocumentationIncludesTheCompleteFirstRunFlow() throws {
         let article = try #require(
             CoreDocumentationCatalog.articles.first { $0.id == "core.first-run" }

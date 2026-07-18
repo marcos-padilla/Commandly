@@ -22,22 +22,66 @@ struct WorkspaceApplicationOpener: ApplicationOpening {
 
 /// Discovers `.app` bundles under standard Applications directories.
 ///
-/// Work runs off the main actor. Results are lightly cached in-process.
+/// Work runs off the main actor. Results use a bounded in-process cache so installations and
+/// removals become visible during a long-running process without rescanning on every query.
 actor WorkspaceInstalledApplicationQuery: InstalledApplicationQuerying {
-    private var cached: [InstalledApplication]?
-    private let fileManager: FileManager
+    typealias Scanner = @Sendable () -> [InstalledApplication]
 
-    init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
+    private struct CacheEntry {
+        let applications: [InstalledApplication]
+        let refreshedAt: Date
+    }
+
+    private let cacheLifetime: TimeInterval
+    private let now: @Sendable () -> Date
+    private let scanner: Scanner
+    private var cacheEntry: CacheEntry?
+
+    init(
+        cacheLifetime: TimeInterval = 60,
+        now: @escaping @Sendable () -> Date = Date.init,
+        scanner: @escaping Scanner = WorkspaceInstalledApplicationQuery.scanWorkspace
+    ) {
+        self.cacheLifetime = max(0, cacheLifetime)
+        self.now = now
+        self.scanner = scanner
     }
 
     func installedApplications() async -> [InstalledApplication] {
-        if let cached {
-            return cached
+        let currentDate = now()
+        if let cacheEntry,
+           Self.isFresh(
+               cacheEntry.refreshedAt,
+               at: currentDate,
+               lifetime: cacheLifetime
+           ) {
+            return cacheEntry.applications
         }
-        let apps = Self.scan(fileManager: fileManager)
-        cached = apps
-        return apps
+
+        let applications = scanner()
+        cacheEntry = CacheEntry(
+            applications: applications,
+            refreshedAt: now()
+        )
+        return applications
+    }
+
+    /// Forces the next query to rescan, for callers that already know application state changed.
+    func invalidateCache() {
+        cacheEntry = nil
+    }
+
+    nonisolated private static func isFresh(
+        _ cachedAt: Date,
+        at currentDate: Date,
+        lifetime: TimeInterval
+    ) -> Bool {
+        let age = currentDate.timeIntervalSince(cachedAt)
+        return age >= 0 && age < lifetime
+    }
+
+    nonisolated private static func scanWorkspace() -> [InstalledApplication] {
+        scan(fileManager: .default)
     }
 
     nonisolated private static func scan(fileManager: FileManager) -> [InstalledApplication] {

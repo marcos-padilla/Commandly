@@ -40,6 +40,8 @@ enum AppBootstrapper {
             dateProvider: SystemDateProvider(),
             uuidProvider: SystemUUIDProvider(),
             commandRegistry: CommandRegistry(),
+            commandUsageHistory: UserDefaultsCommandUsageHistoryStore(),
+            applicationOpener: WorkspaceApplicationOpener(),
             persistenceStore: InMemoryPersistenceStore(),
             secureStore: secureStore,
             aiConnectionStore: UserDefaultsAIConnectionStore(),

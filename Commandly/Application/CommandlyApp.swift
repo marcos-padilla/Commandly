@@ -128,11 +128,19 @@ enum CommandlyDebugLaunchOptions {
     static let skipsOnboarding = ProcessInfo.processInfo.arguments.contains(
         "--commandly-skip-onboarding"
     )
+    static let usesCommandWheelFixture = ProcessInfo.processInfo.arguments.contains(
+        CommandWheelDebugFixture.wheelArgument
+    )
+    static let usesCommandWheelSettingsFixture = ProcessInfo.processInfo.arguments.contains(
+        CommandWheelDebugFixture.settingsArgument
+    )
     #else
     static let showsLauncherAtLaunch = false
     static let fileSearchQuery: String? = nil
     static let usesFileSearchFixture = false
     static let skipsOnboarding = false
+    static let usesCommandWheelFixture = false
+    static let usesCommandWheelSettingsFixture = false
     #endif
 }
 
@@ -168,6 +176,9 @@ private struct DocumentationCommands: Commands {
 private struct WindowPresentationHost: View {
     @Bindable var runtime: AppRuntime
     @State private var hasInstalledActions = false
+    #if DEBUG
+    @State private var commandWheelFixturePresenter = CommandWheelDebugFixturePresenter()
+    #endif
 
     var body: some View {
         ZStack {
@@ -181,11 +192,55 @@ private struct WindowPresentationHost: View {
             if hasInstalledActions {
                 PresentationHostWindowHider()
             }
+
+            #if DEBUG
+            CommandWheelDebugLaunchBridge(
+                runtime: runtime,
+                presenter: commandWheelFixturePresenter
+            )
+            #endif
         }
         .frame(width: 1, height: 1)
         .accessibilityHidden(true)
     }
 }
+
+#if DEBUG
+/// Opens deterministic UI-validation surfaces after SwiftUI has installed its scene actions.
+private struct CommandWheelDebugLaunchBridge: View {
+    @Bindable var runtime: AppRuntime
+    let presenter: CommandWheelDebugFixturePresenter
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear {
+                if CommandlyDebugLaunchOptions.usesCommandWheelSettingsFixture {
+                    runtime.makeSettingsViewModel().selectedPane = .commandWheel
+                    NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
+                    DispatchQueue.main.async {
+                        BringHostingWindowToFront.raiseWindows(
+                            with: CommandlyWindowIdentifier.settings
+                        )
+                    }
+                }
+                if CommandlyDebugLaunchOptions.usesCommandWheelFixture {
+                    // Present after the hidden app-lifetime host has ordered itself out so the
+                    // real toggle-mode panel remains the key window for native keyboard events.
+                    DispatchQueue.main.async {
+                        presenter.presentIfRequested()
+                    }
+                }
+            }
+            .onDisappear {
+                presenter.tearDown()
+            }
+    }
+}
+#endif
 
 /// Opens / dismisses the launcher and Shelf windows for runtime presentation requests.
 private struct LauncherPresentationBridge: View {

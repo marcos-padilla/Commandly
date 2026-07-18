@@ -27,6 +27,38 @@ final class AppContainer {
         RootViewModel(metadata: dependencies.metadata)
     }
 
+    /// Builds the single shared command execution path used by every invocation surface.
+    func makeSharedCommandExecutionCoordinator(
+        applicationRegistry: LauncherApplicationRegistry,
+        presentationHandler: RegisteredLauncherApplicationPresentationHandler,
+        availabilityEvaluator: ProductionCommandAvailabilityEvaluator
+    ) -> SharedCommandExecutionCoordinator {
+        let commandRegistry = dependencies.commandRegistry
+        let executor = SharedCommandExecutor(
+            applicationOpener: dependencies.applicationOpener,
+            registeredApplicationPresenter: presentationHandler,
+            installedApplicationUsageRecorder:
+                ApplicationPreferencesInstalledApplicationUsageRecorder(
+                    preferencesStore: dependencies.applicationPreferencesStore
+                )
+        )
+        let catalogSynchronizer: SharedCommandExecutionCoordinator.CatalogSynchronizer = {
+            @MainActor in
+            let snapshot = await availabilityEvaluator.snapshot()
+            try await commandRegistry.replaceCatalog(
+                with: snapshot.manifests,
+                availability: snapshot.availability
+            )
+        }
+        return SharedCommandExecutionCoordinator(
+            resolver: commandRegistry,
+            executor: executor,
+            usageHistory: dependencies.commandUsageHistory,
+            dateProvider: dependencies.dateProvider,
+            catalogSynchronizer: catalogSynchronizer
+        )
+    }
+
     func makeOnboardingViewModel(onFinished: @escaping () -> Void = {}) -> OnboardingViewModel {
         if let cachedOnboardingViewModel {
             return cachedOnboardingViewModel
@@ -57,6 +89,14 @@ final class AppContainer {
         onTextSizeChange: @escaping (AppTextSizePreference) -> Void = { _ in },
         onViewModeChange: @escaping (AppViewModePreference) -> Void = { _ in },
         applicationRegistry: LauncherApplicationRegistry? = nil,
+        commandWheelProfileStore: CommandWheelProfileStore? = nil,
+        commandWheelCatalog: CommandWheelCommandCatalogSnapshot? = nil,
+        commandWheelCatalogProvider:
+            (@MainActor @Sendable () async -> CommandCatalogSnapshot)? = nil,
+        commandWheelInstalledApplicationQuery: any InstalledApplicationQuerying =
+            InMemoryInstalledApplicationQuery(),
+        commandWheelShortcutIssues:
+            (@MainActor () -> [UUID: GlobalShortcutRegistrationIssue])? = nil,
         onApplicationPreferencesChange: @escaping () -> Void = {},
         applicationHotkeyIssues: @escaping () -> [CommandID: ApplicationHotkeyRegistrationIssue] = { [:] }
     ) -> SettingsViewModel {
@@ -68,6 +108,11 @@ final class AppContainer {
             metadata: dependencies.metadata,
             aiSettingsModel: aiSettingsModel,
             applicationRegistry: applicationRegistry,
+            commandWheelProfileStore: commandWheelProfileStore,
+            commandWheelCatalog: commandWheelCatalog,
+            commandWheelCatalogProvider: commandWheelCatalogProvider,
+            commandWheelInstalledApplicationQuery: commandWheelInstalledApplicationQuery,
+            commandWheelShortcutIssues: commandWheelShortcutIssues,
             onApplicationPreferencesChange: onApplicationPreferencesChange,
             applicationHotkeyIssues: applicationHotkeyIssues,
             onMenuBarIconChange: onMenuBarIconChange,

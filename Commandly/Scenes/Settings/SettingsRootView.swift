@@ -98,6 +98,12 @@ struct SettingsRootView: View {
             AISettingsPage(model: viewModel.ai)
         case .applications:
             ApplicationsSettingsPage(model: viewModel.applications)
+        case .commandWheel:
+            CommandWheelSettingsPage(
+                model: viewModel.commandWheel,
+                permissionState: viewModel.state(for: .accessibility),
+                onOpenPermissions: { viewModel.selectedPane = .permissions }
+            )
         case .permissions:
             PermissionsSettingsPage(viewModel: viewModel)
         case .about:

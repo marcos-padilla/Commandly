@@ -62,6 +62,27 @@ make test
 swift test --package-path Packages
 ```
 
+For Command Wheel changes, follow the focused automated, GUI, manual, accessibility, multi-display,
+and performance matrix in [Command Wheel Testing](COMMAND_WHEEL_TESTING.md), then run
+`make verify`. Geometry and state tests are not a substitute for checking the temporary panel,
+focus restoration, Spaces/full-screen behavior, and VoiceOver on macOS.
+
+## Change commands or Command Wheel
+
+- Add reusable command metadata and behavior through the shared CommandKit/launcher-application
+  path. Do not add an execution switch, AppKit closure, or native service call to Command Wheel.
+- Keep persisted command arguments typed, schema-validated, reusable, and non-secret. Usage history
+  must never retain their values.
+- Keep radial geometry and display positioning pure. Use the returned clamped center for rendering
+  and hit testing.
+- Treat input, timer, provider-task, panel, and shortcut registrations as lifecycle-owned resources;
+  teardown must be explicit and testable.
+- Update the typed in-app article and repository user/architecture/extension/testing docs whenever
+  behavior changes.
+
+Read [Command Wheel Architecture](COMMAND_WHEEL_ARCHITECTURE.md),
+[Extending Command Wheel](COMMAND_WHEEL_EXTENDING.md), and ADR-0007 before editing the feature.
+
 ## Add a new module
 
 1. Add a target + product in `Packages/Package.swift`.

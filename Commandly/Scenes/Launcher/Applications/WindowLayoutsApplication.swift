@@ -1,4 +1,5 @@
 import CommandKit
+import SecurityKit
 import SwiftUI
 
 @MainActor
@@ -19,6 +20,9 @@ struct WindowLayoutsApplication: LauncherApplication {
         category: .system,
         mode: .view,
         keywords: ["window", "tile", "resize", "position", "custom", "grid"],
+        availabilityRequirements: [
+            .permission(identifier: PermissionKind.accessibility.rawValue),
+        ],
         badgeTitle: "Application",
         defaultActions: [
             CommandActionDescriptor(

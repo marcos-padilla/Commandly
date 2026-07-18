@@ -126,9 +126,7 @@ struct LauncherHomeView: View {
     }
 
     private func presentActions(for item: LauncherItem) {
-        guard case .openInstalledApplication(let bundleID) = item.action else { return }
-        viewModel.select(item.id)
-        viewModel.presentApplicationActions(forBundleID: bundleID)
+        viewModel.presentContextActions(for: item)
     }
 
     private func activate(_ item: LauncherItem) {

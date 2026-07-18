@@ -100,22 +100,35 @@ struct LauncherRootView: View {
         .shadow(color: .black.opacity(0.24), radius: 24, y: 10)
         .ignoresSafeArea()
         .overlay {
-            if viewModel.showsApplicationActionsPanel {
+            if showsContextActionsPanel {
                 ZStack(alignment: .bottomLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            viewModel.dismissApplicationActionsPanel()
+                            dismissContextActionsPanel()
                         }
 
-                    LauncherActionPanel(
-                        title: viewModel.applicationActionsPanelTitle,
-                        actions: viewModel.filteredApplicationActions.map(\.panelItem),
-                        query: $viewModel.applicationActionsQuery,
-                        onSelect: { viewModel.performApplicationAction($0) },
-                        onDismiss: { viewModel.dismissApplicationActionsPanel() },
-                        onBack: nil
-                    )
+                    Group {
+                        if viewModel.showsApplicationActionsPanel {
+                            LauncherActionPanel(
+                                title: viewModel.applicationActionsPanelTitle,
+                                actions: viewModel.filteredApplicationActions.map(\.panelItem),
+                                query: $viewModel.applicationActionsQuery,
+                                onSelect: { viewModel.performApplicationAction($0) },
+                                onDismiss: { viewModel.dismissApplicationActionsPanel() },
+                                onBack: nil
+                            )
+                        } else {
+                            LauncherActionPanel(
+                                title: viewModel.registeredCommandActionsPanelTitle,
+                                actions: viewModel.filteredRegisteredCommandActions,
+                                query: $viewModel.registeredCommandActionsQuery,
+                                onSelect: { viewModel.performRegisteredCommandAction($0) },
+                                onDismiss: { viewModel.dismissRegisteredCommandActionsPanel() },
+                                onBack: nil
+                            )
+                        }
+                    }
                     .padding(.leading, density.spacing(.md))
                     .padding(.bottom, LauncherChromeMetrics.actionPanelBottomInset)
                     .transition(actionPanelTransition)
@@ -124,8 +137,11 @@ struct LauncherRootView: View {
         }
         .animation(
             reduceMotion ? nil : CommandlyMotion.control,
-            value: viewModel.showsApplicationActionsPanel
+            value: showsContextActionsPanel
         )
+        .sheet(item: $viewModel.commandWheelAssignmentModel) { model in
+            CommandWheelAssignmentSheet(model: model)
+        }
         .launcherWindowChrome(
             presentationRequest: presentationRequest,
             onRequestClose: { closeLauncher() },
@@ -150,6 +166,13 @@ struct LauncherRootView: View {
             return .ignored
         }
         .onKeyPress(phases: .down) { press in
+            if viewModel.showsRegisteredCommandActionsPanel {
+                if press.characters == "\r" || press.characters == "\n" {
+                    viewModel.performRegisteredCommandAction(LauncherCommandWheelActionID.add)
+                    return .handled
+                }
+                return .ignored
+            }
             guard viewModel.showsApplicationActionsPanel else { return .ignored }
             let handled = viewModel.handleApplicationActionsKeyPress(
                 characters: press.characters,
@@ -178,6 +201,15 @@ struct LauncherRootView: View {
 
     private var activeStatusMessage: String? {
         viewModel.activeApplication?.statusMessage ?? viewModel.statusMessage
+    }
+
+    private var showsContextActionsPanel: Bool {
+        viewModel.showsApplicationActionsPanel || viewModel.showsRegisteredCommandActionsPanel
+    }
+
+    private func dismissContextActionsPanel() {
+        viewModel.dismissApplicationActionsPanel()
+        viewModel.dismissRegisteredCommandActionsPanel()
     }
 
     private func closeLauncher() {

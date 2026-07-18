@@ -27,5 +27,8 @@ Status legend: ✅ done · 🚧 in progress · 🔜 next · ⏳ later
 20. ✅ **Shelf staging board** — one active-display temporary board with file/folder drag-in,
     multi-item drag-out, clipboard URL/text/image import, native sharing and file actions, global and
     menu-bar entry points, whole-surface movement, details, and settings
+21. ✅ **Command Wheel** — configurable radial profiles over the shared command engine, with
+    hold/release and toggle input, keyboard navigation, submenus, context rules, dynamic
+    recent/frequent commands, multi-display placement, accessible Settings, and versioned transfer
 
 Do not implement later phases under the guise of foundation work.

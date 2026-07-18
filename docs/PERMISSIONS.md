@@ -9,7 +9,7 @@ Commandly uses the App Sandbox. Permissions are requested only after explicit us
 | Calendar | Reserved for a future schedule application; Commandly does not currently surface calendar events | Onboarding Grant Access (optional) | System Settings → Privacy & Security → Calendars |
 | Contacts | Reserved for a future people application; Commandly does not currently surface contacts | Onboarding Grant Access (optional) | System Settings → Privacy & Security → Contacts |
 | Files and Folders | Search, preview, open, copy, move, duplicate, create shortcuts for, or trash files inside folders the user selects; let Finder AI query eligible selected scopes and propose confirmed operations; temporarily stage explicitly dropped/pasted file URLs in Shelf; list and open recent files from Downloads read-only | Onboarding Grant Access or Settings Manage Folders shows a multi-folder picker and asks for specific folders. Versioned security-scoped bookmarks are stored. Finder AI excludes Home, folders above Home, and whole-volume roots even if general File Search can use such a bookmark; select narrower folders for Finder AI. It receives no authority until the user submits a request and never inherits Downloads, uninstall, or Automation access. Shelf receives temporary access when the user explicitly drops or pastes a file URL and does not store a bookmark. Recent Downloads uses a narrow read-only Downloads entitlement and does not mutate files. | Re-run Settings → Permissions → Manage Folders and select one or more specific folders, re-drop the item into Shelf, or use System Settings → Files and Folders |
-| Accessibility | Window layouts and deeper keyboard automation | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
+| Accessibility | Window layouts and deeper keyboard automation; Command Wheel itself does not use this grant | Onboarding Grant Access (system trust prompt) | System Settings → Privacy & Security → Accessibility |
 | Open at Login | Launch Commandly at sign-in | Setup toggle during onboarding | System Settings → General → Login Items |
 | Clipboard History | Browse and re-copy recent pasteboard items from the launcher; on-device Vision/PDFKit indexes images and readable files for search | Activating the Clipboard History command (no TCC prompt for pasteboard monitoring or on-device analysis) | Clear history from the command Actions menu |
 | Automation (Finder) | Show an Info window from File Search or an installed application's actions panel | First use of **Show Info in Finder** in either workflow | System Settings → Privacy & Security → Automation → Commandly → Finder |
@@ -51,6 +51,18 @@ Screen Recording, Notifications, Camera, Microphone, and Location remain unimple
 
 ## Native features without a new permission
 
+- Command Wheel's unified Carbon profile shortcut receives press/release events without an
+  Accessibility grant. Pointer position is sampled only while the wheel is active. Hold mode uses
+  no global mouse monitor; toggle mode temporarily monitors mouse-down only to distinguish an
+  inside selection from an outside dismissal, while keyboard input stays inside the temporary
+  panel. There is no event tap or global keyboard monitor. A chosen command still follows its own
+  existing permission explanation, denial behavior, and recovery route. Permission-dependent
+  command manifests are preflighted through the existing permission service without prompting, so
+  Settings and the shared resolver show the same unavailable state; the owning implementation
+  still rechecks at execution time.
+- Command Wheel profiles are non-secret versioned JSON. Its bounded ranking history retains command
+  ID, source, outcome, record ID, and timestamp—not pointer paths, search queries, command arguments,
+  clipboard values, file contents, credentials, private URLs, or frontmost-window titles.
 - Calculation History and Timers & Focus retain only in-process session state.
 - Shelf holds explicitly dropped or pasted file/folder URL references only while its board is open.
   An explicit clipboard import may instead materialize text or image data beneath a per-board

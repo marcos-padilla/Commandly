@@ -6,6 +6,8 @@ These are **future targets**, not measured results. Do not claim they are met un
 |--------|----------------|-------|
 | Cold launch to interactive UI | < 400 ms on reference Apple silicon | Full app shell exists; end-to-end launch is not benchmarked |
 | Warm launcher open | < 50 ms | Implemented; not benchmarked |
+| Warm Command Wheel activation | < 50 ms shortcut event to visible panel on reference Apple silicon | Implemented; not benchmarked |
+| Command Wheel selection feedback | < 16 ms from sampled pointer/key input to model update | 120 Hz pointer sampling is configured; end-to-end feedback is not benchmarked |
 | Keyboard response | < 16 ms input-to-feedback | Keyboard-first launcher exists; not benchmarked |
 | Search result first paint | < 50 ms for local providers | Local providers ship; only the File Search measurements below are recorded |
 | Memory while idle | < 80 MB resident | Not measured |
@@ -17,6 +19,24 @@ These are **future targets**, not measured results. Do not claim they are met un
 - Keep startup free of permission prompts, network, and heavy I/O.
 - Prefer incremental search with cancellation.
 - Measure before optimizing; record methodology when adding benchmarks.
+
+## Command Wheel performance contract
+
+The wheel's activation path uses a cached validated configuration and immutable display/profile
+snapshots. Opening and pointer tracking must not synchronously read profile JSON, persist settings,
+enumerate the command catalog, decode artwork, enumerate screens every frame, or execute a command.
+Recent/frequent providers are bounded and frozen for the active session. Geometry and hit testing
+operate on value snapshots, and SwiftUI observes a focused presentation model rather than the full
+registry or Settings graph. Provider preparation scans at most 96 ranked history candidates per
+provider and deduplicates repeated command-reference resolutions within the invocation. Native
+application artwork is fully rasterized off the main actor and stored in a 128-entry LRU cache with
+time-bounded success and failure entries.
+
+Profile, catalog, permission, and display changes invalidate the relevant cached snapshot between
+sessions. Dismissal must release pointer timers, toggle-only event monitors, dwell work, provider
+tasks, and panel/session references. The implementation is not considered performance-validated
+until activation/selection measurements and repeated open-dismiss leak checks are entered in the
+[Command Wheel testing record](COMMAND_WHEEL_TESTING.md#execution-record-for-this-implementation).
 
 ## File Search measurements
 

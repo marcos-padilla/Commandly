@@ -32,6 +32,26 @@ are Not implemented/excluded.
    **Commandly Settings → Applications** and edit the registered application row. These settings
    apply to Commandly's registered applications, not arbitrary installed macOS applications.
 
+## Run known commands with Command Wheel
+
+Open **Settings → Command Wheel**, enable the feature, and assign a modified shortcut to an
+enabled profile. Hold-and-release mode opens the radial panel around the pointer and runs the
+highlighted segment on key-up; Toggle mode supports hover/click and temporary keyboard focus.
+Tab/arrow keys, 1–9, Return, and Escape provide a complete non-pointer route. Profiles can contain
+stable command assignments, rooted submenus, or bounded recent/frequent command providers, and can
+choose pointer, active-display-center, or normalized fixed placement.
+
+The runtime ring is icon-only, with full names retained in Settings and accessibility. The Settings
+picker searches both registered commands and installed applications; an app assignment stores the
+same typed bundle-identifier reference used by launcher search and renders its native macOS icon.
+
+Command Wheel does not add another command catalog. Registered Commandly commands and installed-app
+references resolve through the same typed CommandKit registry, availability checks, executor,
+feedback, and privacy-safe history used by launcher search and application hotkeys. The default
+configuration is disabled, has no shortcut, and contains File Search, Clipboard History, and Open
+Settings. See [Command Wheel](COMMAND_WHEEL.md) for configuration, interaction, context rules,
+import/export, privacy, and limitations.
+
 ## New and expanded application workflows
 
 ### Clipboard History and clipboard editing
@@ -220,6 +240,12 @@ app after the fixed idle threshold, while **Uninstall Application…** opens a r
 matching support files before moving selected items to Trash. Protected files may fail and are
 reported as partial failures rather than a complete wipe.
 
+Registered-application, launcher, Shelf, and Command Wheel shortcuts share one conflict-checked
+Carbon registration plan. Profile shortcuts support both key-down and key-up so hold-and-release
+does not require Accessibility access or a global keyboard monitor. Installed applications can be
+assigned to wheel slots through the shared parameterized open-application command; this does not
+make arbitrary installed-app hotkeys configurable.
+
 ### Launcher placement
 
 The fixed-size launcher is initially centered and can be dragged by its background. Its current
@@ -262,7 +288,7 @@ workspace-aware placement system.
 | 30 | Custom window management commands | Partial | Users can persist and apply custom rectangles, but each custom layout is not an independently discoverable command or global hotkey. |
 | 31 | Automate the whole thing with window layouts | Not implemented/excluded | There is no multi-window, multi-application workspace capture/restore or sequence automation. |
 | 32 | Monitor System Resources | Implemented in this change | System Activity shows aggregate CPU, memory, the home-directory filesystem, uptime, and thermal state; no GPU/network/battery or per-process resource table. |
-| 33 | Set up hotkeys for apps | Partial | Global hotkeys are configurable for registered Commandly applications. Arbitrary installed app launch hotkeys are not configurable. |
+| 33 | Set up hotkeys for apps | Partial | Global hotkeys are configurable for registered Commandly applications and Command Wheel profiles. Arbitrary installed app launch hotkeys are not configurable. |
 | 34 | Set up aliases for apps | Partial | Aliases participate in search for registered Commandly applications, not arbitrary installed `.app` results. |
 | 35 | Toggle system | Not implemented/excluded | The request is incomplete and no general system-toggle framework exists. Private or unsupported system-control APIs are not used. |
 | 36 | Emptying the trash | Not implemented/excluded | File and uninstall workflows can move selected items to Trash, but Commandly does not empty Trash. |
@@ -348,6 +374,7 @@ workspace-aware placement system.
 | Recent Downloads | Actor-confined `FileManager` metadata scan plus native workspace/Finder/pasteboard actions | A read-only Downloads entitlement grants top-level metadata access without a prompt. File contents are not read, filenames/paths are not logged, and no mutation action exists. |
 | App management | `NSWorkspace`, `NSRunningApplication`, Finder integration, and Trash | Finder Get Info may request Finder Automation on first use. Uninstall access is limited by sandbox entitlements/exceptions and may partially fail. |
 | Registered app aliases/hotkeys | UserDefaults for non-secret settings and Carbon global shortcuts | No Accessibility permission is needed for Carbon hotkeys. Secrets must never be stored in this settings schema. |
+| Command Wheel | Carbon shortcuts, active-session pointer sampling, AppKit/SwiftUI radial panel, versioned profile JSON, and bounded command-outcome history | No new TCC prompt, event tap, or global keyboard monitor. Profiles exclude secrets; history excludes arguments, queries, pointer paths, clipboard/file contents, credentials, and private URLs. Selected commands retain their own permission boundaries. |
 
 Calendar and Contacts permission plumbing exists for future work, but there is no schedule, meeting,
 people-search, or reminders application. Screen Recording, Camera, Microphone, Location, Notifications,

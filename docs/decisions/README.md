@@ -12,5 +12,6 @@ ADRs capture significant technical decisions for Commandly.
 | [ADR-0004](ADR-0004-registered-launcher-applications.md) | Registered launcher applications and reusable screen composition | Accepted |
 | [ADR-0005](ADR-0005-configurable-application-definitions.md) | Typed, configurable launcher application definitions | Accepted |
 | [ADR-0006](ADR-0006-byok-ai-and-finder-tool-safety.md) | BYOK AI providers and Finder tool safety | Accepted |
+| [ADR-0007](ADR-0007-command-wheel-shared-execution.md) | Command Wheel as a shared-command presentation layer | Accepted |
 
 Open items live in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).

@@ -13,7 +13,7 @@ Documentation has two typed sources that share one renderer:
    through its `LauncherApplicationDefinition`.
 2. `CoreDocumentationCatalog` contributes articles for app-wide behavior that is not a registered
    launcher application, including launcher navigation, installed macOS applications, Calculator,
-   Settings, privacy, permissions, and accessibility.
+   Command Wheel, Settings, privacy, permissions, and accessibility.
 
 `DocumentationCatalog` combines both sources. For application articles it derives the title,
 subtitle, symbol, order, enabled state, alias, global hotkey, default actions, and configuration
@@ -74,6 +74,11 @@ Calculator is intentionally a core article because calculation is an inline laun
 provider. Its article is the reference example for detailed, searchable documentation and must stay
 aligned with `docs/CALCULATOR.md` and CalculatorKit coverage.
 
+Command Wheel is also a core article because it is a cross-command presentation surface rather
+than a registered launcher application. Keep it aligned with the repository
+[user guide](COMMAND_WHEEL.md), [architecture](COMMAND_WHEEL_ARCHITECTURE.md),
+[extension guide](COMMAND_WHEEL_EXTENDING.md), and [testing matrix](COMMAND_WHEEL_TESTING.md).
+
 ## UI and accessibility
 
 The Documentation window is resizable and uses Commandly's original macOS material language: a
@@ -93,7 +98,9 @@ and uses a fixed reading layout optimized for documentation at either launcher d
 
 The browser does not request a permission, use the network, inspect user content, or log searches.
 It may display the current non-secret application alias, shortcut, enablement, and configuration
-schema already held by the registry. Documentation must never include secrets, clipboard values,
+schema already held by the registry. The Command Wheel article may describe profile and slot
+metadata, but it must not render stored command arguments, usage records, bundle identifiers, or
+other user-authored configuration. Documentation must never include secrets, clipboard values,
 private file paths, or user-authored content.
 
 Run targeted documentation tests, then `make verify`, before claiming a documentation change is

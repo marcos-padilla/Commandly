@@ -29,6 +29,12 @@ final class LauncherViewModel {
     @ObservationIgnored
     private let applicationOpener: any ApplicationOpening
     @ObservationIgnored
+    private let commandCoordinator: (any SharedCommandExecutionCoordinating)?
+    @ObservationIgnored
+    let commandWheelAssignmentStore: (any CommandWheelAssignmentStoring)?
+    @ObservationIgnored
+    private let invocationContextProvider: @MainActor (CommandInvocationSource) -> CommandInvocationContext
+    @ObservationIgnored
     private let applicationQuery: any InstalledApplicationQuerying
     @ObservationIgnored
     let applicationPreferencesStore: any ApplicationPreferencesStoring
@@ -75,6 +81,11 @@ final class LauncherViewModel {
     /// When non-nil, the application actions panel is presented for this bundle ID.
     var applicationActionsTargetBundleID: String?
     var applicationActionsQuery: String = ""
+    /// A registered command whose contextual launcher actions are visible.
+    var registeredCommandActionsTarget: LauncherCommandWheelActionTarget?
+    var registeredCommandActionsQuery: String = ""
+    /// Item-driven assignment sheet for one exact shared command reference.
+    var commandWheelAssignmentModel: CommandWheelAssignmentModel?
     @ObservationIgnored
     private var resultsScrollEndTask: Task<Void, Never>?
 
@@ -83,10 +94,15 @@ final class LauncherViewModel {
     var onOpenSettings: () -> Void
     var onOpenAISettings: () -> Void
     var onOpenPermissionsSettings: () -> Void
+    var onOpenCommandWheelSettings: (CommandWheelSlotLocation) -> Void
     var onQuit: () -> Void
 
     @ObservationIgnored
     private var searchTask: Task<Void, Never>?
+    @ObservationIgnored
+    var commandWheelAssignmentPreparationTask: Task<Void, Never>?
+    @ObservationIgnored
+    var commandWheelAssignmentPreparationID: UUID?
     @ObservationIgnored
     var cachedApplications: [InstalledApplicationSnapshot] = []
     @ObservationIgnored
@@ -99,6 +115,11 @@ final class LauncherViewModel {
         fileSearchService: any FileSearching = InMemoryFileSearchService(),
         urlOpener: any URLOpening = NoOpURLOpener(),
         applicationOpener: any ApplicationOpening = NoOpApplicationOpener(),
+        commandCoordinator: (any SharedCommandExecutionCoordinating)? = nil,
+        commandWheelAssignmentStore: (any CommandWheelAssignmentStoring)? = nil,
+        invocationContextProvider: @escaping @MainActor (CommandInvocationSource) -> CommandInvocationContext = {
+            CommandInvocationContext(source: $0)
+        },
         applicationQuery: any InstalledApplicationQuerying = InMemoryInstalledApplicationQuery(),
         applicationPreferencesStore: any ApplicationPreferencesStoring = InMemoryApplicationPreferencesStore(),
         fileRevealer: any FileRevealing = InMemoryFileRevealer(),
@@ -115,10 +136,14 @@ final class LauncherViewModel {
         onOpenSettings: @escaping () -> Void = {},
         onOpenAISettings: (() -> Void)? = nil,
         onOpenPermissionsSettings: (() -> Void)? = nil,
+        onOpenCommandWheelSettings: @escaping (CommandWheelSlotLocation) -> Void = { _ in },
         onQuit: @escaping () -> Void = {}
     ) {
         self.clipboardHistoryStore = clipboardHistoryStore
         self.applicationOpener = applicationOpener
+        self.commandCoordinator = commandCoordinator
+        self.commandWheelAssignmentStore = commandWheelAssignmentStore
+        self.invocationContextProvider = invocationContextProvider
         self.applicationQuery = applicationQuery
         self.applicationPreferencesStore = applicationPreferencesStore
         self.fileRevealer = fileRevealer
@@ -134,6 +159,7 @@ final class LauncherViewModel {
         self.onOpenSettings = onOpenSettings
         self.onOpenAISettings = onOpenAISettings ?? onOpenSettings
         self.onOpenPermissionsSettings = onOpenPermissionsSettings ?? onOpenSettings
+        self.onOpenCommandWheelSettings = onOpenCommandWheelSettings
         self.onQuit = onQuit
         self.applicationRegistry = applicationRegistry ?? .makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
@@ -342,6 +368,9 @@ final class LauncherViewModel {
     func resetAfterDismiss() {
         searchTask?.cancel()
         searchTask = nil
+        commandWheelAssignmentPreparationTask?.cancel()
+        commandWheelAssignmentPreparationTask = nil
+        commandWheelAssignmentPreparationID = nil
         resultsScrollEndTask?.cancel()
         resultsScrollEndTask = nil
         query = ""
@@ -356,6 +385,8 @@ final class LauncherViewModel {
         uninstallViewModel = nil
         activeCalculatorResult = nil
         dismissApplicationActionsPanel()
+        dismissRegisteredCommandActionsPanel()
+        commandWheelAssignmentModel = nil
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
     }
 
@@ -450,7 +481,16 @@ final class LauncherViewModel {
         case .placeholder(let message):
             statusMessage = message
         case .launchApplication(let applicationID):
-            launch(applicationID)
+            guard commandCoordinator != nil else {
+                launch(applicationID)
+                return
+            }
+            Task { @MainActor [weak self] in
+                await self?.executeRegisteredApplication(
+                    applicationID,
+                    source: .search
+                )
+            }
         case .openInstalledApplication(let bundleIdentifier):
             Task { @MainActor [weak self] in
                 await self?.openApplication(bundleIdentifier: bundleIdentifier)
@@ -484,6 +524,10 @@ final class LauncherViewModel {
             calculatorSession.recordSuccess(result)
             await pasteboard.writeString(result.formattedPrimaryValue)
             statusMessage = "Copied answer."
+        case .launchApplication(let applicationID):
+            await executeRegisteredApplication(applicationID, source: .search)
+        case .openInstalledApplication(let bundleIdentifier):
+            await openApplication(bundleIdentifier: bundleIdentifier)
         default:
             confirmSelection()
         }
@@ -599,16 +643,21 @@ final class LauncherViewModel {
         }
     }
 
-    func launch(_ applicationID: CommandID) {
+    /// Lower-level registered-application presentation used only by the shared executor and
+    /// deterministic feature setup. Invocation surfaces should execute a `CommandReference`.
+    @discardableResult
+    func presentRegisteredApplication(_ applicationID: CommandID) -> CommandResult {
         guard let application = applicationRegistry.enabledApplication(for: applicationID) else {
-            statusMessage = applicationRegistry.application(for: applicationID) == nil
+            let message = applicationRegistry.application(for: applicationID) == nil
                 ? "Application is not registered."
                 : "Application is disabled."
-            return
+            statusMessage = message
+            return .failure(message: message)
         }
         guard let context = applicationContext(for: applicationID) else {
-            statusMessage = "Application settings are unavailable."
-            return
+            let message = "Application settings are unavailable."
+            statusMessage = message
+            return .failure(message: message)
         }
         switch application.launch(in: context) {
         case .present(let session):
@@ -616,14 +665,39 @@ final class LauncherViewModel {
             activeApplication = session
             route = .application(applicationID)
             statusMessage = nil
+            return .success(message: nil)
         case .openSettings:
             onDismiss()
             onOpenSettings()
+            return .success(message: nil)
         case .dismiss:
             dismiss()
+            return .success(message: nil)
         case .message(let message):
             statusMessage = message
+            return .failure(message: message)
         }
+    }
+
+    /// Compatibility entry point for feature setup that intentionally bypasses invocation history.
+    func launch(_ applicationID: CommandID) {
+        _ = presentRegisteredApplication(applicationID)
+    }
+
+    /// Executes a registered launcher application through the shared engine.
+    func executeRegisteredApplication(
+        _ applicationID: CommandID,
+        source: CommandInvocationSource
+    ) async {
+        guard commandCoordinator != nil else {
+            launch(applicationID)
+            return
+        }
+        await executeSharedCommand(
+            reference: CommandReference(commandID: applicationID),
+            source: source,
+            dismissOnSuccess: false
+        )
     }
 
     /// Rebuilds root discovery after application preferences change.
@@ -667,6 +741,10 @@ final class LauncherViewModel {
     /// launcher window. Returns `true` when the key was consumed inside the
     /// launcher; `false` when the window should hide.
     func handleEscape() -> Bool {
+        if showsRegisteredCommandActionsPanel {
+            dismissRegisteredCommandActionsPanel()
+            return true
+        }
         if showsApplicationActionsPanel {
             dismissApplicationActionsPanel()
             return true
@@ -711,12 +789,56 @@ final class LauncherViewModel {
     }
 
     func openApplication(bundleIdentifier: String) async {
+        if commandCoordinator != nil {
+            await executeSharedCommand(
+                reference: BuiltInCommandReference.openInstalledApplication(
+                    bundleIdentifier: bundleIdentifier
+                ),
+                source: .search,
+                dismissOnSuccess: true
+            )
+            return
+        }
+
         do {
             try await applicationOpener.openApplication(bundleIdentifier: bundleIdentifier)
             recordApplicationOpen(bundleIdentifier: bundleIdentifier)
             dismiss()
         } catch {
             statusMessage = "Couldn’t open that application."
+        }
+    }
+
+    private func executeSharedCommand(
+        reference: CommandReference,
+        source: CommandInvocationSource,
+        dismissOnSuccess: Bool
+    ) async {
+        guard let commandCoordinator else {
+            statusMessage = "Command execution is unavailable."
+            return
+        }
+
+        do {
+            let result = try await commandCoordinator.execute(
+                reference: reference,
+                context: invocationContextProvider(source)
+            )
+            switch result {
+            case .success(let message):
+                statusMessage = message
+                if dismissOnSuccess { dismiss() }
+            case .failure(let message):
+                statusMessage = message
+            case .cancelled:
+                statusMessage = "Command cancelled."
+            }
+        } catch is CancellationError {
+            statusMessage = "Command cancelled."
+        } catch let error as SharedCommandExecutionCoordinatorError {
+            statusMessage = error.userFacingMessage
+        } catch {
+            statusMessage = "Command couldn’t be completed."
         }
     }
 

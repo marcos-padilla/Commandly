@@ -25,11 +25,14 @@ extension LauncherViewModel {
     }
 
     func presentApplicationActionsForSelection() {
-        guard let bundleID = selectedApplicationBundleID else {
-            statusMessage = "Select an application to see actions."
-            return
+        if let bundleID = selectedApplicationBundleID {
+            presentApplicationActions(forBundleID: bundleID)
+        } else if let selectedItem,
+                  case .launchApplication = selectedItem.action {
+            presentRegisteredCommandActions(for: selectedItem)
+        } else {
+            statusMessage = "Select a command or application to see actions."
         }
-        presentApplicationActions(forBundleID: bundleID)
     }
 
     func dismissApplicationActionsPanel() {
@@ -44,7 +47,7 @@ extension LauncherViewModel {
         let disabled = prefs.isDisabled(bundleIdentifier)
         let autoQuit = prefs.isAutoQuitEnabled(bundleIdentifier)
 
-        return [
+        var actions = [
             LauncherApplicationAction(
                 id: BuiltInCommandActionID.openApplication,
                 title: "Open Application",
@@ -142,6 +145,20 @@ extension LauncherViewModel {
                 section: .ranking
             )
         ]
+        if commandWheelAssignmentStore != nil {
+            actions.insert(
+                LauncherApplicationAction(
+                    id: LauncherCommandWheelActionID.add,
+                    title: "Add to Command Wheel…",
+                    systemImage: "circle.grid.cross",
+                    keyHint: nil,
+                    isDestructive: false,
+                    section: .manage
+                ),
+                at: actions.firstIndex(where: { $0.section == .manage }) ?? actions.endIndex
+            )
+        }
+        return actions
     }
 
     func performApplicationAction(_ id: CommandActionID) {
@@ -212,6 +229,13 @@ extension LauncherViewModel {
         _ id: CommandActionID,
         bundleIdentifier: String
     ) async {
+        if id == LauncherCommandWheelActionID.add {
+            dismissApplicationActionsPanel()
+            presentCommandWheelAssignmentForInstalledApplication(
+                bundleIdentifier: bundleIdentifier
+            )
+            return
+        }
         guard let app = resolveApplication(bundleIdentifier: bundleIdentifier) else {
             statusMessage = "That application isn’t available."
             dismissApplicationActionsPanel()

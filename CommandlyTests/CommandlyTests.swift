@@ -504,6 +504,10 @@ struct CommandlyTests {
         let result = try await CommandSearchProvider(manifests: registry.allManifests())
             .search(SearchQuery(text: "rocket"))
         #expect(result.items.map(\.id) == [TestLauncherApplication.id.rawValue])
+        let aliasedManifest = try #require(
+            registry.allManifests().first(where: { $0.id == TestLauncherApplication.id })
+        )
+        #expect(aliasedManifest.arguments == TestLauncherApplication().manifest.arguments)
 
         var groupPreferences = LauncherApplicationPreferences.empty
         groupPreferences.isEnabled = false
@@ -736,7 +740,10 @@ struct CommandlyTests {
         await viewModel.flushSearchForTesting()
 
         viewModel.perform(BuiltInCommandActionID.copyFilePath)
-        await waitUntil { pasteboard.currentValue == item.url.path }
+        await waitUntil {
+            pasteboard.currentValue == item.url.path
+                && viewModel.statusMessage == "Path copied."
+        }
 
         #expect(pasteboard.currentValue == item.url.path)
         #expect(viewModel.statusMessage == "Path copied.")
@@ -1894,6 +1901,89 @@ struct CommandlyTests {
         #expect(viewModel.searchFocusEpoch == epochBefore + 1)
     }
 
+    @Test @MainActor
+    func wheelRegisteredCommandBeforeFirstLauncherMountPresentsOnceWithoutDuplicateHistory() async throws {
+        let container = makeTestContainer(hasCompletedOnboarding: true)
+        let runtime = AppRuntime(
+            container: container,
+            frontmostApplicationContextProvider: InMemoryFrontmostApplicationContextProvider(),
+            windowPresentationTargetProvider: { nil }
+        )
+        let source = CommandInvocationSource.commandWheel(
+            profileID: try #require(
+                UUID(uuidString: "00000000-0000-0000-0000-000000000301")
+            ),
+            pageID: try #require(
+                UUID(uuidString: "00000000-0000-0000-0000-000000000302")
+            ),
+            segmentID: try #require(
+                UUID(uuidString: "00000000-0000-0000-0000-000000000303")
+            )
+        )
+
+        let result = try await runtime.commandCoordinator.execute(
+            reference: CommandReference(commandID: TimersApplication.applicationID),
+            context: CommandInvocationContext(source: source)
+        )
+
+        #expect(result == .success(message: nil))
+        #expect(runtime.showsLauncher)
+        let recordsBeforePresentation = await container.dependencies.commandUsageHistory.records(
+            for: TimersApplication.applicationID
+        )
+        #expect(recordsBeforePresentation.count == 1)
+        #expect(recordsBeforePresentation.first?.source == source)
+
+        let viewModel = runtime.makeLauncherViewModel(onOpenSettings: {})
+        runtime.consumePendingApplicationLaunch(using: viewModel)
+        await yieldMainQueue()
+
+        #expect(viewModel.route == .application(TimersApplication.applicationID))
+        let recordsAfterPresentation = await container.dependencies.commandUsageHistory.records(
+            for: TimersApplication.applicationID
+        )
+        #expect(recordsAfterPresentation == recordsBeforePresentation)
+    }
+
+    @Test @MainActor
+    func wheelRegisteredCommandReopensCachedHiddenLauncherBeforeDirectPresentation() async throws {
+        let container = makeTestContainer(hasCompletedOnboarding: true)
+        let runtime = AppRuntime(
+            container: container,
+            frontmostApplicationContextProvider: InMemoryFrontmostApplicationContextProvider(),
+            windowPresentationTargetProvider: { nil }
+        )
+        let viewModel = runtime.makeLauncherViewModel(onOpenSettings: {})
+        #expect(runtime.showsLauncher == false)
+        let source = CommandInvocationSource.commandWheel(
+            profileID: try #require(
+                UUID(uuidString: "00000000-0000-0000-0000-000000000311")
+            ),
+            pageID: try #require(
+                UUID(uuidString: "00000000-0000-0000-0000-000000000312")
+            ),
+            segmentID: try #require(
+                UUID(uuidString: "00000000-0000-0000-0000-000000000313")
+            )
+        )
+
+        let result = try await runtime.commandCoordinator.execute(
+            reference: CommandReference(commandID: TimersApplication.applicationID),
+            context: CommandInvocationContext(source: source)
+        )
+        await yieldMainQueue()
+        await yieldMainQueue()
+
+        #expect(result == .success(message: nil))
+        #expect(runtime.showsLauncher)
+        #expect(viewModel.route == .application(TimersApplication.applicationID))
+        let records = await container.dependencies.commandUsageHistory.records(
+            for: TimersApplication.applicationID
+        )
+        #expect(records.count == 1)
+        #expect(records.first?.source == source)
+    }
+
     @Test @MainActor func appRuntimeCapturesActiveLauncherScreenBeforeEveryOpenRequest() {
         let firstTarget = WindowPresentationTarget(
             visibleFrame: CGRect(x: -1_600, y: 40, width: 1_600, height: 960)
@@ -2099,8 +2189,7 @@ struct CommandlyTests {
         let runtime = AppRuntime(container: container)
         runtime.showsOnboarding = false
         let viewModel = runtime.makeLauncherViewModel(onOpenSettings: {})
-        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
-        viewModel.confirmSelection()
+        viewModel.launch(BuiltInCommandID.clipboardHistory)
         #expect(viewModel.activeApplicationModel(as: ClipboardHistoryViewModel.self) != nil)
 
         runtime.showLauncher()
@@ -2845,21 +2934,21 @@ struct CommandlyTests {
         #expect(await permissions.state(for: .files) == .authorized)
     }
 
-    @Test @MainActor func filePermissionPickerGuidesSpecificFolderSelection() {
-        let panel = SystemPermissionService.makeFilesAccessPanel()
+    @Test func filePermissionPickerGuidesSpecificFolderSelection() {
+        let configuration = SystemPermissionService.filesAccessPanelConfiguration
 
-        #expect(panel.canChooseFiles == false)
-        #expect(panel.canChooseDirectories)
-        #expect(panel.allowsMultipleSelection)
-        #expect(panel.prompt == "Choose Folders")
+        #expect(configuration.canChooseFiles == false)
+        #expect(configuration.canChooseDirectories)
+        #expect(configuration.allowsMultipleSelection)
+        #expect(configuration.prompt == "Choose Folders")
         #expect(
-            panel.message
+            configuration.message
                 == "Choose one or more specific folders Commandly can search and manage. "
                 + "For safety, Finder AI cannot use your Home folder, folders above Home, or an "
                 + "entire volume as a scope. Choose narrower folders for Finder AI; you can change "
                 + "scopes later in Settings."
         )
-        #expect(panel.directoryURL == FileManager.default.homeDirectoryForCurrentUser)
+        #expect(configuration.directoryURL == FileManager.default.homeDirectoryForCurrentUser)
     }
 
     @Test @MainActor func deniedPermissionOpensSettingsRecovery() async {
@@ -2909,6 +2998,8 @@ struct CommandlyTests {
             dateProvider: FixedDateProvider(date: Date(timeIntervalSince1970: 1_700_000_000)),
             uuidProvider: FixedUUIDProvider(uuid: fixedUUID),
             commandRegistry: CommandRegistry(),
+            commandUsageHistory: InMemoryCommandUsageHistory(),
+            applicationOpener: NoOpApplicationOpener(),
             persistenceStore: InMemoryPersistenceStore(),
             secureStore: InMemorySecureStore(),
             aiConnectionStore: InMemoryAIConnectionStore(),
@@ -3002,6 +3093,14 @@ private struct TestLauncherApplication: LauncherApplication {
         category: .productivity,
         mode: .view,
         keywords: ["test"],
+        arguments: [
+            CommandArgument(
+                name: "mode",
+                description: "Optional presentation mode",
+                isRequired: false,
+                valueType: .string
+            )
+        ],
         defaultActions: [
             CommandActionDescriptor(
                 id: primaryActionID,

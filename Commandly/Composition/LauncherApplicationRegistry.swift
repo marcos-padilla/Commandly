@@ -198,30 +198,50 @@ final class LauncherApplicationRegistry {
     }
 
     func allManifests() -> [CommandManifest] {
+        allKnownManifests()
+            .filter { isEffectivelyEnabled($0.id) }
+    }
+
+    /// Metadata for every registered launchable application, including disabled applications.
+    ///
+    /// Search continues to use ``allManifests()`` so disabled applications stay undiscoverable;
+    /// persisted references use this complete catalog so they can render as unavailable instead
+    /// of appearing to have been removed.
+    func allKnownManifests() -> [CommandManifest] {
         definitions.values
-            .filter { applications[$0.id] != nil && isEffectivelyEnabled($0.id) }
-            .compactMap { definition -> CommandManifest? in
-                guard let manifest = definition.commandManifest else { return nil }
-                let alias = resolvedSettings(for: definition.id)?.alias ?? ""
-                guard alias.isEmpty == false,
-                      manifest.keywords.contains(where: {
-                          $0.caseInsensitiveCompare(alias) == .orderedSame
-                      }) == false else {
-                    return manifest
-                }
-                return CommandManifest(
-                    id: manifest.id,
-                    title: manifest.title,
-                    subtitle: manifest.subtitle,
-                    systemImage: manifest.systemImage,
-                    category: manifest.category,
-                    mode: manifest.mode,
-                    keywords: [alias] + manifest.keywords,
-                    badgeTitle: manifest.badgeTitle,
-                    defaultActions: manifest.defaultActions
-                )
+            .filter { applications[$0.id] != nil }
+            .compactMap { aliasedManifest(for: $0) }
+            .sorted {
+                let titleOrder = $0.title.localizedCaseInsensitiveCompare($1.title)
+                if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
+                return $0.id.rawValue < $1.id.rawValue
             }
-            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private func aliasedManifest(
+        for definition: LauncherApplicationDefinition
+    ) -> CommandManifest? {
+        guard let manifest = definition.commandManifest else { return nil }
+        let alias = resolvedSettings(for: definition.id)?.alias ?? ""
+        guard alias.isEmpty == false,
+              manifest.keywords.contains(where: {
+                  $0.caseInsensitiveCompare(alias) == .orderedSame
+              }) == false else {
+            return manifest
+        }
+        return CommandManifest(
+            id: manifest.id,
+            title: manifest.title,
+            subtitle: manifest.subtitle,
+            systemImage: manifest.systemImage,
+            category: manifest.category,
+            mode: manifest.mode,
+            keywords: [alias] + manifest.keywords,
+            arguments: manifest.arguments,
+            availabilityRequirements: manifest.availabilityRequirements,
+            badgeTitle: manifest.badgeTitle,
+            defaultActions: manifest.defaultActions
+        )
     }
 
     func savePreferences(_ preferences: LauncherApplicationPreferences, for id: CommandID) {

@@ -123,7 +123,7 @@ struct LauncherConfigurationField: Codable, Equatable, Identifiable, Sendable {
 }
 
 /// Cross-platform modifier representation. The Carbon adapter translates these flags.
-struct LauncherHotKeyModifiers: OptionSet, Codable, Hashable, Sendable {
+nonisolated struct LauncherHotKeyModifiers: OptionSet, Codable, Hashable, Sendable {
     let rawValue: UInt8
 
     static let command = LauncherHotKeyModifiers(rawValue: 1 << 0)
@@ -133,7 +133,7 @@ struct LauncherHotKeyModifiers: OptionSet, Codable, Hashable, Sendable {
 }
 
 /// A hardware-key shortcut suitable for system-wide registration.
-struct LauncherHotKey: Codable, Equatable, Hashable, Sendable {
+nonisolated struct LauncherHotKey: Codable, Equatable, Hashable, Sendable {
     let keyCode: UInt16
     let modifiers: LauncherHotKeyModifiers
 
@@ -146,11 +146,15 @@ struct LauncherHotKey: Codable, Equatable, Hashable, Sendable {
         return title + Self.keyTitle(for: keyCode)
     }
 
-    var isValid: Bool {
-        modifiers.isEmpty == false && Self.keyTitle(for: keyCode) != "Key (keyCode)"
+    nonisolated var isValid: Bool {
+        modifiers.isEmpty == false && Self.knownKeyTitle(for: keyCode) != nil
     }
 
     private static func keyTitle(for keyCode: UInt16) -> String {
+        return knownKeyTitle(for: keyCode) ?? "Key \(keyCode)"
+    }
+
+    private nonisolated static func knownKeyTitle(for keyCode: UInt16) -> String? {
         let titles: [UInt16: String] = [
             0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X",
             8: "C", 9: "V", 11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y",
@@ -160,7 +164,7 @@ struct LauncherHotKey: Codable, Equatable, Hashable, Sendable {
             42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".", 49: "Space",
             50: "`", 123: "←", 124: "→", 125: "↓", 126: "↑"
         ]
-        return titles[keyCode] ?? "Key \(keyCode)"
+        return titles[keyCode]
     }
 }
 

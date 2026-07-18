@@ -1,13 +1,12 @@
 # Accessibility
 
-Foundation requirements:
+Project requirements:
 
-- Placeholder UI exposes a combined accessibility label.
-- Title uses header traits.
+- Screen and panel titles use header traits where they establish structure.
 - Colors use system semantic colors for light/dark contrast.
-- Avoid relying on color alone for meaning in future UI.
-- Keep keyboard-first interaction as a core design constraint for upcoming launcher work.
-- Future features must be VoiceOver-testable before release.
+- Do not rely on color alone for meaning.
+- Keep keyboard-first interaction as a core design constraint.
+- New features must be VoiceOver-testable before release.
 
 Accessibility review is part of the definition of done for UI changes (`AGENTS.md`).
 
@@ -29,6 +28,29 @@ Accessibility review is part of the definition of done for UI changes (`AGENTS.m
 - Native Liquid Glass is reserved for genuinely elevated navigation and transient controls so
   Reduce Transparency and Increased Contrast can use the system treatment; static content stays on
   flat neutral planes separated by spacing and semantic hairlines.
+
+## Command Wheel review
+
+Command Wheel exposes the radial interface as a container with one coherent accessibility element
+per visible segment. Each segment reports its title, ordinal position, selected state, availability,
+and submenu state; decorative material, rings, guides, and wedge shapes are hidden. The center
+cancel/back target has a separate label, hint, and stable identifier. Missing, unavailable, loading,
+error, and empty states use words, symbols, opacity, and outline treatment rather than color alone.
+Command and application names are intentionally absent from the visible radial ring to prevent
+collisions; complete names remain in each segment's accessibility semantics and in Settings.
+
+Keyboard selection is available without pointer movement: Tab/Right Arrow advances clockwise;
+Shift-Tab/Left Arrow reverses; Up/Down traverse the same stable order; 1–9 selects a visible slot;
+Return activates; and Escape goes back or cancels. Empty and hidden slots are skipped. Toggle mode
+takes only temporary panel focus and restores the previously active application after dismissal.
+Settings offers labeled buttons and menus for slot assignment, movement, clearing, submenu creation,
+profile order, import/export, and reset, so profile editing does not depend on drag-and-drop.
+
+The wheel reads system light/dark appearance, Reduce Motion, Reduce Transparency, and Increased
+Contrast; it also follows Commandly's shared text-size preference. Animation never affects hit
+testing or the final release sample. Automated semantic checks complement—but do not replace—the
+manual VoiceOver, contrast, reduced-motion, and keyboard/focus matrix in
+[Command Wheel Testing](COMMAND_WHEEL_TESTING.md).
 
 ## Shelf review
 

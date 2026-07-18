@@ -32,7 +32,7 @@ struct ShelfPresentationRequest: Sendable, Equatable {
 }
 
 /// Fixed system-wide Shelf shortcuts registered through Commandly's Carbon hot-key adapter.
-enum ShelfGlobalShortcut: CaseIterable, Sendable {
+enum ShelfGlobalShortcut: CaseIterable, Equatable, Sendable {
     case newShelf
     case newShelfFromClipboard
 

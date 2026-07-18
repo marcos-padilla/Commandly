@@ -243,6 +243,7 @@ func filledSettingsSymbol(for systemName: String) -> String {
     switch systemName {
     case "gearshape": "gearshape.fill"
     case "square.grid.2x2": "square.grid.2x2.fill"
+    case "circle.hexagongrid": "circle.hexagongrid.fill"
     case "lock.shield": "lock.shield.fill"
     case "info.circle": "info.circle.fill"
     case "power": "power.circle.fill"
@@ -281,6 +282,8 @@ extension SettingsPane {
             keywords = "provider model key credential api endpoint ollama finder artificial intelligence connection"
         case .applications:
             keywords = "apps applications discovery alias shortcut hotkey enabled extension command configuration"
+        case .commandWheel:
+            keywords = "radial wheel profile page segment slot submenu command shortcut hotkey pointer cursor context application import export json animation labels keyboard"
         case .permissions:
             keywords = "privacy calendar contacts files folders accessibility automation access granted denied"
         case .about:

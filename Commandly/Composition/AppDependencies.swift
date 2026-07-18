@@ -12,6 +12,8 @@ struct AppDependencies: Sendable {
     let dateProvider: any DateProviding
     let uuidProvider: any UUIDProviding
     let commandRegistry: CommandRegistry
+    let commandUsageHistory: any CommandUsageHistoryStoring
+    let applicationOpener: any ApplicationOpening
     let persistenceStore: any PersistenceStore
     let secureStore: any SecureStoring
     let aiConnectionStore: any AIConnectionStoring
