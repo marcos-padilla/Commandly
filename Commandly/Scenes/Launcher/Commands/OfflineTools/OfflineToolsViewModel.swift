@@ -28,7 +28,18 @@ final class OfflineToolsViewModel {
     var selectedEmojiID: String?
     var textInput = ""
     var textCaseStyle: TextCaseStyle = .uppercase
-    var colorInput = "#4A7DFF"
+    var colorInput = "#4A7DFF" {
+        didSet {
+            guard colorInput != oldValue else { return }
+            colorInputRevision &+= 1
+            statusMessage = nil
+            copyTask?.cancel()
+            if selectedColorFormat == .hex, let color = parsedColor, color.alpha < 1 {
+                selectedColorFormat = .hexWithAlpha
+            }
+        }
+    }
+    var selectedColorFormat: CommandlyColorFormat = .hex
     var dictionaryDefinition: String?
     private(set) var isLookingUpDefinition = false
     var selectedFontFamily: String?
@@ -41,6 +52,7 @@ final class OfflineToolsViewModel {
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
     @ObservationIgnored private var copyTask: Task<Void, Never>?
     @ObservationIgnored private var colorSamplingTask: Task<Void, Never>?
+    @ObservationIgnored private var colorInputRevision = 0
 
     init(
         tool: OfflineToolKind,
@@ -126,10 +138,7 @@ final class OfflineToolsViewModel {
     var menuActions: [CommandActionDescriptor] {
         switch tool {
         case .color:
-            return [
-                CommandActionDescriptor(id: BuiltInCommandActionID.copy, title: "Copy Hex", isEnabled: parsedColor != nil),
-                CommandActionDescriptor(id: OfflineToolsActionID.copyRGB, title: "Copy RGB", isEnabled: parsedColor != nil),
-                CommandActionDescriptor(id: OfflineToolsActionID.copyHSL, title: "Copy HSL", isEnabled: parsedColor != nil),
+            return CommandlyColorFormat.allCases.map { $0.copyAction(isEnabled: parsedColor != nil) } + [
                 CommandActionDescriptor(id: OfflineToolsActionID.sampleColor, title: "Pick Screen Color")
             ]
         case .dictionary:
@@ -184,6 +193,11 @@ final class OfflineToolsViewModel {
     }
 
     func perform(_ actionID: CommandActionID) {
+        if tool == .color, let format = CommandlyColorFormat.matching(actionID) {
+            selectedColorFormat = format
+            copy(parsedColor?.formatted(format), message: "\(format.title) copied.")
+            return
+        }
         switch actionID {
         case BuiltInCommandActionID.copy:
             copy(copyValue, message: copyStatusMessage)
@@ -242,6 +256,10 @@ final class OfflineToolsViewModel {
         await lookupTask?.value
     }
 
+    func flushSamplingForTesting() async {
+        await colorSamplingTask?.value
+    }
+
     func flushCopyForTesting() async {
         await copyTask?.value
     }
@@ -269,9 +287,10 @@ final class OfflineToolsViewModel {
 
     func sampleColor() {
         colorSamplingTask?.cancel()
+        let requestedRevision = colorInputRevision
         colorSamplingTask = Task { @MainActor [weak self] in
             guard let self, let color = await services.colorSampler.sample() else { return }
-            guard Task.isCancelled == false else { return }
+            guard Task.isCancelled == false, colorInputRevision == requestedRevision else { return }
             colorInput = color.hex
             statusMessage = "Color sampled."
             showsActionsMenu = false
@@ -297,7 +316,7 @@ final class OfflineToolsViewModel {
         switch tool {
         case .emoji: return "Copy Emoji"
         case .textCase: return "Copy Converted Text"
-        case .color: return "Copy Hex"
+        case .color: return "Copy \(selectedColorFormat.title)"
         case .fonts: return "Copy Font Name"
         case .dictionary: return "Copy Definition"
         case .typing: return "Copy Result"
@@ -311,7 +330,7 @@ final class OfflineToolsViewModel {
         case .textCase:
             return textOutput.isEmpty ? nil : textOutput
         case .color:
-            return parsedColor?.hex
+            return parsedColor?.formatted(selectedColorFormat)
         case .dictionary:
             return dictionaryDefinition
         case .fonts:
@@ -325,7 +344,7 @@ final class OfflineToolsViewModel {
         switch tool {
         case .emoji: return "Emoji copied."
         case .textCase: return "Converted text copied."
-        case .color: return "Hex color copied."
+        case .color: return "\(selectedColorFormat.title) copied."
         case .dictionary: return "Definition copied."
         case .fonts: return "Font name copied."
         case .typing: return "Copied."
@@ -336,7 +355,7 @@ final class OfflineToolsViewModel {
         guard let value else { return }
         copyTask?.cancel()
         copyTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             await services.pasteboard.writeString(value)
             guard Task.isCancelled == false else { return }
             statusMessage = message

@@ -35,6 +35,7 @@ struct LauncherHomeView: View {
                     if viewModel.sections.isEmpty {
                         LauncherHomeEmptyState()
                     } else {
+                        colorResult
                         calculatorResult
                         resultSections
                     }
@@ -71,6 +72,21 @@ struct LauncherHomeView: View {
     }
 
     @ViewBuilder
+    private var colorResult: some View {
+        if let result = viewModel.colorSearch.result,
+           let item = viewModel.rootItems.first(where: { $0.id == result.id }) {
+            ColorResultCard(
+                model: viewModel.colorSearch, result: result,
+                isSelected: item.id == viewModel.selectedItem?.id,
+                onSelect: { viewModel.select(item.id) }
+            )
+            .id(item.id)
+            .onHover { updateHover(for: item.id, hovering: $0) }
+            .padding(.bottom, density.spacing(.xxs))
+        }
+    }
+
+    @ViewBuilder
     private var calculatorResult: some View {
         if let result = viewModel.activeCalculatorResult,
            let item = viewModel.rootItems.first(where: { $0.section == .calculator }) {
@@ -95,7 +111,7 @@ struct LauncherHomeView: View {
     }
 
     private var resultSections: some View {
-        ForEach(viewModel.sections.filter { $0.kind != .calculator }, id: \.kind) { section in
+        ForEach(viewModel.sections.filter { $0.kind != .calculator && $0.kind != .color }, id: \.kind) { section in
             LauncherSectionHeader(title: section.kind.title)
 
             ForEach(section.items) { item in

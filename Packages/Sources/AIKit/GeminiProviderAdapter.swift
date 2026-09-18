@@ -184,7 +184,7 @@ public struct GeminiProviderAdapter: AIProviderAdapter {
             displayName: value["displayName"]?.stringValue ?? id,
             contextWindow: value["inputTokenLimit"]?.integerValue,
             maximumOutputTokens: value["outputTokenLimit"]?.integerValue,
-            capabilities: [.textInput, .textOutput, .toolCalling],
+            capabilities: Set<AIModelCapability>([.textInput, .textOutput, .toolCalling]).union(AIImageInput.supports(providerID: .googleGemini, modelID: id) ? [.imageInput] : []),
             capabilityEvidence: .curated
         )
     }
@@ -248,7 +248,7 @@ public struct GeminiProviderAdapter: AIProviderAdapter {
         if !generationConfig.isEmpty {
             body["generationConfig"] = .object(generationConfig)
         }
-        return .object(body)
+        return try request.attachingImage(to: .object(body), providerID: .googleGemini)
     }
 
     private func makeContent(

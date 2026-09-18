@@ -31,7 +31,7 @@ struct ShelfPresentationRequest: Sendable, Equatable {
     }
 }
 
-/// Fixed system-wide Shelf shortcuts registered through Commandly's Carbon hot-key adapter.
+/// Default Shelf tool shortcuts. User overrides are resolved by the application registry.
 enum ShelfGlobalShortcut: CaseIterable, Equatable, Sendable {
     case newShelf
     case newShelfFromClipboard
@@ -39,9 +39,9 @@ enum ShelfGlobalShortcut: CaseIterable, Equatable, Sendable {
     var commandID: CommandID {
         switch self {
         case .newShelf:
-            return CommandID(rawValue: "shelf.shortcut.new")
+            return CommandID(rawValue: "shelf.new")
         case .newShelfFromClipboard:
-            return CommandID(rawValue: "shelf.shortcut.clipboard")
+            return CommandID(rawValue: "shelf.new-from-clipboard")
         }
     }
 

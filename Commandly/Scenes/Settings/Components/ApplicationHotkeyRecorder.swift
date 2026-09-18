@@ -7,17 +7,20 @@ struct ApplicationHotkeyRecorder: View {
     let isDisabled: Bool
     let accessibilityTitle: String
     let onChange: (LauncherHotKey?) -> Void
+    let onRecordingChange: (Bool) -> Void
 
     init(
         hotKey: LauncherHotKey?,
         isDisabled: Bool,
         accessibilityTitle: String = "application",
-        onChange: @escaping (LauncherHotKey?) -> Void
+        onChange: @escaping (LauncherHotKey?) -> Void,
+        onRecordingChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.hotKey = hotKey
         self.isDisabled = isDisabled
         self.accessibilityTitle = accessibilityTitle
         self.onChange = onChange
+        self.onRecordingChange = onRecordingChange
     }
 
     @State private var isRecording = false
@@ -65,19 +68,23 @@ struct ApplicationHotkeyRecorder: View {
         }
         .animation(reduceMotion ? nil : CommandlyMotion.control, value: isRecording)
         .onDisappear { stopRecording() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            stopRecording()
+        }
     }
 
     private func startRecording() {
         stopRecording()
         isRecording = true
+        onRecordingChange(true)
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
                 stopRecording()
                 return nil
             }
             if event.keyCode == 51 || event.keyCode == 117 {
-                onChange(nil)
                 stopRecording()
+                onChange(nil)
                 return nil
             }
             let hotKey = LauncherHotKey(
@@ -85,8 +92,8 @@ struct ApplicationHotkeyRecorder: View {
                 modifiers: LauncherHotKeyModifiers(event.modifierFlags)
             )
             guard hotKey.isValid else { return nil }
-            onChange(hotKey)
             stopRecording()
+            onChange(hotKey)
             return nil
         }
     }
@@ -96,7 +103,10 @@ struct ApplicationHotkeyRecorder: View {
             NSEvent.removeMonitor(eventMonitor)
             self.eventMonitor = nil
         }
-        isRecording = false
+        if isRecording {
+            isRecording = false
+            onRecordingChange(false)
+        }
     }
 }
 

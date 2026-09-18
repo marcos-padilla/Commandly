@@ -64,7 +64,17 @@ Every future agent must:
 | BYOK connection storage, Keychain, and Finder AI filesystem boundary | `Commandly/Services/AI` |
 | AI provider setup UI | `Commandly/Scenes/Settings` |
 | Finder AI launcher application and conversation UI | `Commandly/Scenes/Launcher/Commands/FinderAI` |
+| Slack custom emoji session, connection UI, and result UI | `Commandly/Scenes/Launcher/Commands/SlackEmoji` |
+| Slack custom emoji credentials, HTTP, decoding, and export adapters | `Commandly/Services/SlackEmoji` |
+| Notion workspace browsing UI and session | `Commandly/Scenes/Launcher/Commands/Notion` |
+| Notion read-only API, credentials, and parsing | `Commandly/Services/Notion` |
+| Hermes/OpenClaw agent connections and streaming | `Commandly/Services/AI/ExternalAgents` |
+| Hermes/OpenClaw launcher chat UI | `Commandly/Scenes/Launcher/Commands/ExternalAgents` |
 | Experimental extension models | `Packages/Sources/ExtensionKit` |
+| Markdown rendering, preview configuration, and format identifiers | `Packages/Sources/MarkdownPreviewKit` |
+| Markdown Preview launcher application, model, and UI | `Commandly/Scenes/Launcher/Commands/MarkdownPreview` |
+| Markdown Preview file, watcher, rendering, and reading-state adapters | `Commandly/Services/MarkdownPreview` |
+| Finder Markdown Quick Look app extension | `CommandlyMarkdownQuickLook` |
 | Logging | `Packages/Sources/Observability` |
 | App target tests | `CommandlyTests` |
 | Package tests | `Packages/Tests` |

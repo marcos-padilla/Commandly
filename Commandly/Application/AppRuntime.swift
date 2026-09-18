@@ -5,6 +5,7 @@ import Observation
 import Infrastructure
 import AppKit
 import CommandKit
+import MarkdownPreviewKit
 import Observability
 
 /// Observable app runtime for scene-level UI that must react to onboarding completion.
@@ -12,6 +13,34 @@ import Observability
 @MainActor
 final class AppRuntime {
     let container: AppContainer
+    let floatingNotes: FloatingNoteCoordinator
+    let screenRecording: ScreenRecordingCoordinator
+    let displayResolution: DisplayResolutionApplicationServices
+    let menuBarShortcuts: MenuBarShortcutController
+    let keyboardTriggerSettings: KeyboardTriggerSettingsModel
+    let systemCompanion: SystemCompanionApplicationServices
+    let auxiliaryWindowAppearance: AuxiliaryWindowAppearance
+    @ObservationIgnored
+    let writingServiceProvider: NativeWritingServiceProvider
+    /// Keep Awake session state shown in the menu bar panel.
+    let keepAwake: KeepAwakeCoordinator
+    /// Output, input, and per-application audio shown in the menu bar panel.
+    let volumeMixer: VolumeMixerModel
+    private let preciseVolumeSteps: PreciseVolumeStepMonitor
+    /// Processor, graphics, and memory load shown in the menu bar panel.
+    let systemMetrics: SystemMetricsMonitor
+    /// Live network throughput shown in the menu bar panel.
+    let networkMetrics: NetworkMetricsMonitor
+    /// Mounted volumes and disk throughput shown in the menu bar panel.
+    let diskMetrics: DiskMetricsMonitor
+    /// Battery and power draw shown in the menu bar panel.
+    let powerMetrics: PowerMetricsMonitor
+    /// Fan speeds and, where the hardware allows it, fan control.
+    let fanControl: FanControlMonitor
+    /// Everyday macOS switches shown in the menu bar panel.
+    let quickToggles: QuickTogglesModel
+    /// Behaviors the menu bar panel can switch on and off.
+    let controls: ControlsModel
     var showsOnboarding: Bool
     var showMenuBarIcon: Bool
     var textSize: AppTextSizePreference
@@ -38,18 +67,33 @@ final class AppRuntime {
     @ObservationIgnored
     private var globalShortcutRoutes: [GlobalShortcutID: RuntimeGlobalShortcutRoute] = [:]
     @ObservationIgnored
+    private var isRecordingInstalledApplicationShortcut = false
+    @ObservationIgnored
+    private var installedShortcutRegistrationOrder: [String] = []
+    @ObservationIgnored
+    private var activeInstalledApplicationShortcutBundles: Set<String> = []
+    private(set) var installedApplicationHotkeyIssues: [String: GlobalShortcutRegistrationIssue] = [:]
+    @ObservationIgnored
     private var activeWheelShortcutSessions: [GlobalShortcutID: CommandWheelSessionToken] = [:]
+    @ObservationIgnored
+    private var backgroundInvocationTasks: [CommandID: Task<CommandResult, Never>] = [:]
+    @ObservationIgnored
+    private var backgroundInvocationTokens: [CommandID: UUID] = [:]
+    @ObservationIgnored
+    private var backgroundShortcutTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored
     private var commandCatalogIsReadyForWheel = false
     @ObservationIgnored
     private var applicationTerminationObserver: NSObjectProtocol?
-    private var pendingApplicationID: CommandID?
-    private var pendingDirectPresentationApplicationID: CommandID?
+    private var pendingCommandReference: CommandReference?
+    private var pendingDirectPresentationReference: CommandReference?
     private var pendingCommandWheelStatusMessage: String?
     private(set) var applicationHotkeyIssues: [CommandID: ApplicationHotkeyRegistrationIssue] = [:]
     private(set) var commandWheelShortcutIssues: [UUID: GlobalShortcutRegistrationIssue] = [:]
     @ObservationIgnored
     let applicationRegistry: LauncherApplicationRegistry
+    @ObservationIgnored
+    private let aiAgentsServices: AIAgentsApplicationServices
     @ObservationIgnored
     private let commandAvailabilityEvaluator: ProductionCommandAvailabilityEvaluator
     @ObservationIgnored
@@ -80,13 +124,19 @@ final class AppRuntime {
     @ObservationIgnored
     private let aiCredentialStore: any AIProviderCredentialStoring
     @ObservationIgnored
-    private let windowLayoutService: AccessibilityWindowLayoutService
+    private let windowLayoutService: CompanionWindowLayoutService
     @ObservationIgnored
     private let systemActivityProtectionTracker: SystemActivityProtectionTracker
+    @ObservationIgnored
+    private let highlightModeService: any HighlightModeControlling
+    @ObservationIgnored
+    private let windowSwitcherCoordinator: WindowSwitcherCoordinator
     @ObservationIgnored
     let applicationPreferencesStore: any ApplicationPreferencesStoring
     @ObservationIgnored
     private let autoQuitService: AutoQuitService
+    @ObservationIgnored
+    private let scheduleAutoJoin: ScheduleAutoJoinCoordinator
     @ObservationIgnored
     private let shelfLaunchController: ShelfLaunchController
     @ObservationIgnored
@@ -109,10 +159,36 @@ final class AppRuntime {
         self.frontmostApplicationContextProvider = frontmostApplicationContextProvider
         self.windowPresentationTargetProvider = windowPresentationTargetProvider
         let settings = container.dependencies.appSettingsStore.load()
+        let auxiliaryWindowAppearance = AuxiliaryWindowAppearance(textSize: settings.textSize)
+        self.auxiliaryWindowAppearance = auxiliaryWindowAppearance
+        #if DEBUG
+        self.systemCompanion = CommandlyDebugLaunchOptions.usesProductivityFixture
+            && !CommandlyDebugLaunchOptions.usesLiveCompanion ? .inMemory() : .live()
+        #else
+        self.systemCompanion = .live()
+        #endif
         self.showsOnboarding = CommandlyDebugLaunchOptions.skipsOnboarding
             ? false
             : container.appState.route == .onboarding
         self.showMenuBarIcon = settings.showMenuBarIcon
+        self.keepAwake = KeepAwakeCoordinator(
+            permissions: container.dependencies.permissionService
+        )
+        self.volumeMixer = VolumeMixerModel()
+        self.preciseVolumeSteps = PreciseVolumeStepMonitor()
+        let systemMetricsMonitor = SystemMetricsMonitor()
+        self.systemMetrics = systemMetricsMonitor
+        self.networkMetrics = NetworkMetricsMonitor()
+        let diskMetricsMonitor = DiskMetricsMonitor()
+        self.diskMetrics = diskMetricsMonitor
+        self.powerMetrics = PowerMetricsMonitor()
+        self.fanControl = FanControlMonitor(temperatures: systemMetricsMonitor)
+        self.quickToggles = QuickTogglesModel(
+            microphone: NativeMicrophoneControlService(),
+            disks: diskMetricsMonitor,
+            settings: SystemSettingsApplicationServices.live.opener,
+            permissions: container.dependencies.permissionService
+        )
         self.textSize = settings.textSize
         self.viewMode = settings.viewMode
         let aiTransport = URLSessionAIHTTPTransport()
@@ -137,9 +213,17 @@ final class AppRuntime {
             registry: aiRegistry,
             transport: aiTransport
         )
+        #if DEBUG
+        let productivityFixture = CommandlyDebugLaunchOptions.usesProductivityFixture
+            ? CommandlyProductivityDebugFixture() : nil
+        let clipboardHistoryStore = productivityFixture?.clipboard ?? ClipboardHistoryStore(
+            enricher: VisionClipboardContentEnricher()
+        )
+        #else
         let clipboardHistoryStore = ClipboardHistoryStore(
             enricher: VisionClipboardContentEnricher()
         )
+        #endif
         self.clipboardHistoryStore = clipboardHistoryStore
         #if DEBUG
         let fixture = CommandlyFileSearchDebugFixture.prepareIfRequested()
@@ -157,7 +241,8 @@ final class AppRuntime {
         let calculatorSessionStore = CalculatorSessionStore()
         self.calculatorSessionStore = calculatorSessionStore
         let pasteboard = SystemPasteboard()
-        let fileSearchApplicationServices = FileSearchApplicationServices(
+        let fileSearchApplicationServices = CommandlyDebugLaunchOptions.usesProductivityFixture
+            ? FileSearchApplicationServices.inMemory : FileSearchApplicationServices(
             searchService: fileSearchService,
             urlOpener: WorkspaceURLOpener(),
             fileRevealer: WorkspaceFileRevealer(),
@@ -171,7 +256,7 @@ final class AppRuntime {
             searchService: fileSearchService,
             fileRevealer: fileSearchApplicationServices.fileRevealer
         )
-        let finderAIServices = FinderAIApplicationServices(
+        let liveFinderAIServices = FinderAIApplicationServices(
             runtime: aiProviderRuntime,
             workspace: finderAIWorkspace,
             toolExecutor: FinderAIToolExecutor(
@@ -179,6 +264,63 @@ final class AppRuntime {
                 approvalCoordinator: finderAIWorkspace
             )
         )
+        #if DEBUG
+        let finderAIServices = productivityFixture == nil ? liveFinderAIServices : FinderAIImageDebugFixture().services
+        #else
+        let finderAIServices = liveFinderAIServices
+        #endif
+        let liveQuickAIServices = QuickAIApplicationServices.live(
+            connectionStore: container.dependencies.aiConnectionStore,
+            credentialStore: aiCredentialStore,
+            registry: aiRegistry
+        )
+        #if DEBUG
+        let writingToolsServices: WritingToolsApplicationServices = productivityFixture == nil
+            ? .live : WritingToolsDebugFixture.services
+        let translationServices: TranslationApplicationServices = productivityFixture == nil
+            ? .live : TranslationDebugFixture.services
+        #else
+        let writingToolsServices = WritingToolsApplicationServices.live
+        let translationServices = TranslationApplicationServices.live
+        #endif
+        self.writingServiceProvider = NativeWritingServiceProvider(checker: writingToolsServices.checker)
+        #if DEBUG
+        let quickAIServices = productivityFixture?.quickAI ?? liveQuickAIServices
+        let emojiServices: EmojiSearchApplicationServices = productivityFixture == nil
+            ? .live(pasteboard: fileSearchApplicationServices.pasteboard, quickAI: quickAIServices.chat)
+            : EmojiSearchDebugFixture.services(pasteboard: fileSearchApplicationServices.pasteboard)
+        let dictationServices: DictationApplicationServices = productivityFixture == nil
+            ? .live(pasteboard: fileSearchApplicationServices.pasteboard, quickAI: quickAIServices.chat)
+            : DictationDebugFixture.services(pasteboard: fileSearchApplicationServices.pasteboard, quickAI: quickAIServices.chat)
+        let gifSearchServices: GIFSearchApplicationServices = productivityFixture == nil
+            ? .live(secureStore: container.dependencies.secureStore)
+            : GIFSearchDebugFixture.services()
+        let finderPathServices: FinderPathApplicationServices = productivityFixture == nil || CommandlyDebugLaunchOptions.usesLiveFinderPath
+            ? .live : FinderPathDebugFixture.services()
+        let slackEmojiServices: SlackEmojiApplicationServices = productivityFixture == nil
+            ? .live(secureStore: container.dependencies.secureStore)
+            : SlackEmojiDebugFixture.services()
+        let notionWorkspaceServices: NotionWorkspaceApplicationServices = productivityFixture == nil
+            ? .live(store: container.dependencies.secureStore) : .unavailable
+        let externalAgentServices: ExternalAgentApplicationServices = productivityFixture == nil
+            ? .live(store: container.dependencies.secureStore) : .unavailable
+        #else
+        let quickAIServices = liveQuickAIServices
+        let emojiServices = EmojiSearchApplicationServices.live(
+            pasteboard: fileSearchApplicationServices.pasteboard, quickAI: quickAIServices.chat
+        )
+        let dictationServices = DictationApplicationServices.live(
+            pasteboard: fileSearchApplicationServices.pasteboard, quickAI: quickAIServices.chat
+        )
+        let gifSearchServices = GIFSearchApplicationServices.live(secureStore: container.dependencies.secureStore)
+        let finderPathServices = FinderPathApplicationServices.live
+        let slackEmojiServices = SlackEmojiApplicationServices.live(secureStore: container.dependencies.secureStore)
+        let notionWorkspaceServices = NotionWorkspaceApplicationServices.live(store: container.dependencies.secureStore)
+        let externalAgentServices = ExternalAgentApplicationServices.live(store: container.dependencies.secureStore)
+        #endif
+        let aiAgentsServices: AIAgentsApplicationServices = CommandlyDebugLaunchOptions.usesProductivityFixture
+            ? .inMemory : .live(chat: quickAIServices.chat)
+        self.aiAgentsServices = aiAgentsServices
         self.shelfApplicationServices = ShelfApplicationServices(
             metadataReader: WorkspaceFileResourceMetadataReader(),
             fileActions: WorkspaceShelfFileActionService(),
@@ -191,15 +333,87 @@ final class AppRuntime {
                 LocalShelfTemporaryContentStore()
             }
         )
-        let productivityLibraryServices = ProductivityLibraryApplicationServices(
+        #if DEBUG
+        let baseLibraryServices = productivityFixture?.library ?? ProductivityLibraryApplicationServices(
             persistence: JSONProductivityLibraryStore(),
             pasteboard: pasteboard,
             urlOpener: fileSearchApplicationServices.urlOpener
         )
-        let offlineToolsServices = OfflineToolsServices(pasteboard: pasteboard)
-        let windowLayoutService = AccessibilityWindowLayoutService(
-            permissionService: container.dependencies.permissionService
+        #else
+        let baseLibraryServices = ProductivityLibraryApplicationServices(
+            persistence: JSONProductivityLibraryStore(),
+            pasteboard: pasteboard,
+            urlOpener: fileSearchApplicationServices.urlOpener
         )
+        #endif
+        let floatingNotes = FloatingNoteCoordinator(
+            persistence: baseLibraryServices.persistence,
+            makeWindow: { FloatingNoteWindowController(appearance: auxiliaryWindowAppearance) }
+        )
+        self.floatingNotes = floatingNotes
+        #if DEBUG
+        let recordingCapture: any ScreenRecordingCapturing = productivityFixture == nil
+            ? NativeScreenRecordingCaptureService() : ScreenRecordingDebugFixture.capture()
+        let recordingSessionLabel: String? = productivityFixture == nil ? nil : ScreenRecordingDebugFixture.label
+        #else
+        let recordingCapture: any ScreenRecordingCapturing = NativeScreenRecordingCaptureService()
+        let recordingSessionLabel: String? = nil
+        #endif
+        let screenRecording = ScreenRecordingCoordinator(
+            capture: recordingCapture, storage: NativeScreenRecordingStore(), sessionLabel: recordingSessionLabel,
+            makeWindow: { ScreenRecordingWindowController(appearance: auxiliaryWindowAppearance) }
+        )
+        self.screenRecording = screenRecording
+        let displayResolution: DisplayResolutionApplicationServices = CommandlyDebugLaunchOptions.usesProductivityFixture
+            ? .inMemory(appearance: auxiliaryWindowAppearance) : .live(appearance: auxiliaryWindowAppearance)
+        self.displayResolution = displayResolution
+        let productivityLibraryServices = baseLibraryServices.withFloatingNotes(floatingNotes)
+        let financeServices = FinanceApplicationServices.live
+        let markdownPreviewServices = MarkdownPreviewApplicationServices.live
+        let offlineToolsServices = OfflineToolsServices(pasteboard: pasteboard)
+        let scheduleReader = NativeScheduleService(permissions: container.dependencies.permissionService)
+        let scheduleAutoJoin = ScheduleAutoJoinCoordinator(
+            reader: scheduleReader, opener: fileSearchApplicationServices.urlOpener
+        )
+        let liveScheduleServices = ScheduleApplicationServices(
+                reader: scheduleReader,
+                permissions: container.dependencies.permissionService,
+                privacySettings: container.dependencies.privacySettingsOpener,
+                autoJoin: scheduleAutoJoin
+            )
+        #if DEBUG
+        let scheduleServices = productivityFixture?.schedule ?? liveScheduleServices
+        let fileBrowserOverride: (any FileBrowsing)? = productivityFixture?.fileBrowser
+        let cameraServices = productivityFixture?.camera ?? CameraApplicationServices.live(
+            permissions: container.dependencies.permissionService,
+            privacySettingsOpener: container.dependencies.privacySettingsOpener
+        )
+        let screenshotServices = productivityFixture?.screenshot ?? ScreenshotApplicationServices.live(
+            permissions: container.dependencies.permissionService,
+            privacySettings: container.dependencies.privacySettingsOpener
+        )
+        #else
+        let scheduleServices = liveScheduleServices
+        let fileBrowserOverride: (any FileBrowsing)? = nil
+        let cameraServices = CameraApplicationServices.live(
+            permissions: container.dependencies.permissionService,
+            privacySettingsOpener: container.dependencies.privacySettingsOpener
+        )
+        let screenshotServices = ScreenshotApplicationServices.live(
+            permissions: container.dependencies.permissionService,
+            privacySettings: container.dependencies.privacySettingsOpener
+        )
+        #endif
+        let visualAIServices: VisualAIApplicationServices
+        #if DEBUG
+        visualAIServices = productivityFixture == nil ? .live(screenshots: screenshotServices,
+            connections: container.dependencies.aiConnectionStore, credentials: aiCredentialStore, registry: aiRegistry) : .inMemory
+        #else
+        visualAIServices = .live(screenshots: screenshotServices,
+            connections: container.dependencies.aiConnectionStore, credentials: aiCredentialStore, registry: aiRegistry)
+        #endif
+        self.scheduleAutoJoin = scheduleServices.autoJoin
+        let windowLayoutService = CompanionWindowLayoutService(client: systemCompanion.windowLayouts)
         self.windowLayoutService = windowLayoutService
         let windowLayoutsServices = WindowLayoutsApplicationServices(
             layoutService: windowLayoutService,
@@ -207,26 +421,104 @@ final class AppRuntime {
         )
         let systemActivityProtectionTracker = SystemActivityProtectionTracker()
         self.systemActivityProtectionTracker = systemActivityProtectionTracker
+        let highlightModeService = NativeHighlightModeService(
+            permissionService: container.dependencies.permissionService
+        )
+        self.highlightModeService = highlightModeService
+        let windowService = AccessibilityWindowService()
+        let windowSwitcherCoordinator = WindowSwitcherCoordinator(
+            queryService: windowService,
+            controlService: windowService,
+            thumbnailService: ScreenCaptureWindowThumbnailService(
+                permissionService: container.dependencies.permissionService
+            ),
+            permissionService: container.dependencies.permissionService
+        )
+        self.windowSwitcherCoordinator = windowSwitcherCoordinator
         let shelfLaunchController = ShelfLaunchController()
         self.shelfLaunchController = shelfLaunchController
+        let installedApplicationQuery: any InstalledApplicationQuerying =
+            CommandlyDebugLaunchOptions.usesProductivityFixture
+            ? InMemoryInstalledApplicationQuery(applications: [
+                InstalledApplication(
+                    bundleIdentifier: "com.commandly.fixture.canvas", name: "Sample Canvas",
+                    path: "/Applications/CommandlySampleCanvas.app"
+                )
+            ]) : WorkspaceInstalledApplicationQuery()
+        self.installedApplicationQuery = installedApplicationQuery
+        let menuBarShortcuts = MenuBarShortcutController(
+            store: CommandlyDebugLaunchOptions.usesProductivityFixture
+                ? InMemoryMenuBarShortcutStore() : UserDefaultsMenuBarShortcutStore(),
+            presenter: NativeMenuBarShortcutPresenter()
+        )
+        self.menuBarShortcuts = menuBarShortcuts
         let applicationRegistry = LauncherApplicationRegistry.makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: fileSearchApplicationServices,
+            fileBrowserFolderAccessStore: CommandlyDebugLaunchOptions.usesProductivityFixture
+                ? InMemoryFolderAccessStore() : container.dependencies.folderAccessStore,
+            fileBrowserServiceOverride: fileBrowserOverride,
             calculatorSessionStore: calculatorSessionStore,
             timerStore: TimerStore(),
+            financeServices: financeServices,
+            markdownPreviewServices: markdownPreviewServices,
             productivityLibraryServices: productivityLibraryServices,
+            scheduleServices: scheduleServices,
+            cameraServices: cameraServices,
+            screenshotServices: screenshotServices,
+            screenRecordingPresenter: screenRecording,
+            displayResolutionServices: displayResolution,
+            systemSettingsServices: .live,
+            menuBarShortcutController: menuBarShortcuts,
             offlineToolsServices: offlineToolsServices,
             finderAIServices: finderAIServices,
+            quickAIServices: quickAIServices,
+            aiAgentsServices: aiAgentsServices,
+            visualAIServices: visualAIServices,
+            externalAgentServices: externalAgentServices,
+            emojiServices: emojiServices,
+            dictationServices: dictationServices,
+            gifSearchServices: gifSearchServices,
+            slackEmojiServices: slackEmojiServices,
+            notionWorkspaceServices: notionWorkspaceServices,
+            finderPathServices: finderPathServices,
+            appMenusServices: CommandlyDebugLaunchOptions.usesProductivityFixture ? .unavailable : .live(client: systemCompanion.appMenus),
+            writingToolsServices: writingToolsServices,
+            translationServices: translationServices,
             windowLayoutsServices: windowLayoutsServices,
             systemActivityService: NativeSystemActivityService(
                 protectionTracker: systemActivityProtectionTracker
             ),
+            storageCleanupScanner: WorkspaceStorageCleanupScanner(
+                installedApplicationQuery: installedApplicationQuery
+            ),
+            storageCleanupDirectoryChooser: WorkspaceStorageCleanupDirectoryChooser(),
+            storageCleanupTrashManager: WorkspaceApplicationBundleManager(),
+            highlightModeService: highlightModeService,
+            windowSwitcherServices: WindowSwitcherApplicationServices(
+                presenter: windowSwitcherCoordinator
+            ),
+            // Cross-application Accessibility enumeration/control is incompatible with the
+            // App-Sandbox-enabled Commandly target. Keep the reviewed foundation dormant until an
+            // explicitly approved companion/distribution architecture supplies that capability.
+            includesWindowSwitcher: false,
             preferencesStore: container.dependencies.launcherApplicationPreferencesStore,
             shelfLaunchController: shelfLaunchController
         )
         self.applicationRegistry = applicationRegistry
-        let installedApplicationQuery = WorkspaceInstalledApplicationQuery()
-        self.installedApplicationQuery = installedApplicationQuery
+        if let markdownSettings = applicationRegistry.resolvedSettings(
+            for: MarkdownPreviewApplication.applicationID
+        ) {
+            do {
+                try MarkdownPreferenceStore().save(
+                    MarkdownPreviewApplication.configuration(from: markdownSettings)
+                )
+            } catch {
+                container.dependencies.logger.error(
+                    "Markdown Preview settings could not be shared with Quick Look"
+                )
+            }
+        }
         let commandAvailabilityEvaluator = ProductionCommandAvailabilityEvaluator(
             applicationRegistry: applicationRegistry,
             permissionService: container.dependencies.permissionService,
@@ -242,6 +534,13 @@ final class AppRuntime {
             availabilityEvaluator: commandAvailabilityEvaluator
         )
         self.commandCoordinator = commandCoordinator
+        self.keyboardTriggerSettings = KeyboardTriggerSettingsModel(operation: systemCompanion.keyboardTriggers,
+            persistence: CommandlyDebugLaunchOptions.usesProductivityFixture ? InMemoryKeyboardTriggerPreferencesStore() : JSONKeyboardTriggerPreferencesStore(),
+            library: productivityLibraryServices.persistence, executor: commandCoordinator,
+            opener: productivityLibraryServices.urlOpener,
+            commandOptions: { [weak applicationRegistry] in
+                applicationRegistry?.allManifests().filter { $0.arguments.isEmpty }.map { KeyboardTriggerCommandOption(reference: CommandReference(commandID: $0.id), title: $0.title) } ?? []
+            })
         let commandWheelProfileStore: CommandWheelProfileStore
         #if DEBUG
         if CommandWheelDebugFixture.isSettingsPresentationRequested {
@@ -282,11 +581,22 @@ final class AppRuntime {
             commandCoordinator: commandCoordinator,
             resultFeedback: commandWheelFeedbackRelay
         )
-        let applicationPreferencesStore = container.dependencies.applicationPreferencesStore
+        let applicationPreferencesStore: any ApplicationPreferencesStoring =
+            CommandlyDebugLaunchOptions.usesProductivityFixture
+            ? InMemoryApplicationPreferencesStore() : container.dependencies.applicationPreferencesStore
         self.applicationPreferencesStore = applicationPreferencesStore
         self.autoQuitService = AutoQuitService(preferencesStore: applicationPreferencesStore)
-        registeredApplicationPresentationHandler.install { [weak self] commandID in
-            self?.handleRegisteredApplicationPresentation(commandID)
+        self.controls = ControlsModel(
+            registry: applicationRegistry,
+            commandWheel: commandWheelProfileStore,
+            keyboardTriggers: keyboardTriggerSettings,
+            permissions: container.dependencies.permissionService
+        )
+        controls.onApplicationPreferencesChange = { [weak self] in
+            self?.applicationPreferencesDidChange()
+        }
+        registeredApplicationPresentationHandler.install { [weak self] command, context in
+            await self?.handleRegisteredApplicationPresentation(command, context: context)
         }
         commandWheelFeedbackRelay.install(
             onCompletion: { [weak self] result, context in
@@ -299,6 +609,14 @@ final class AppRuntime {
         commandWheelProfileStore.onConfigurationChange = { [weak self] configuration in
             self?.commandWheelConfigurationDidChange(configuration)
         }
+        configureWindowSwitcher()
+        menuBarShortcuts.start(
+            catalog: { [weak applicationRegistry] in
+                guard let applicationRegistry else { return [] }
+                return MenuBarShortcutCatalog.items(in: applicationRegistry)
+            }, execute: { [weak self] id in await self?.invokeMenuBarCommand(id) },
+            manage: { [weak self] in self?.openApplicationFromHotKey(MenuBarShortcutsApplication.id) }
+        )
         refreshGlobalShortcuts()
         prepareCommandWheelRuntime()
         applicationTerminationObserver = NotificationCenter.default.addObserver(
@@ -310,12 +628,45 @@ final class AppRuntime {
                 self?.tearDown()
             }
         }
+        aiAgentsServices.library.onCatalogChange = { [weak self] in
+            guard let self else { return }
+            try self.applicationRegistry.refreshTools(for: AIAgentsApplication.id)
+            self.applicationPreferencesDidChange()
+        }
+        Task { await aiAgentsServices.library.loadForLauncher() }
+        windowLayoutsServices.commandCatalog.onCatalogChange = { [weak self] in
+            guard let self else { return }
+            try self.applicationRegistry.refreshTools(for: WindowLayoutsApplication.id)
+            self.applicationPreferencesDidChange()
+        }
         shelfLaunchController.onPresent = { [weak self] mode in
             self?.showFloatingShelf(entryMode: mode)
         }
-        clipboardHistoryStore.startMonitoring()
-        if showsOnboarding == false {
+        if !CommandlyDebugLaunchOptions.usesProductivityFixture {
+            clipboardHistoryStore.startMonitoring()
+        }
+        if showsOnboarding == false && !CommandlyDebugLaunchOptions.usesProductivityFixture {
             autoQuitService.start()
+        }
+        keepAwake.start()
+        startVolumeMixer()
+    }
+
+    /// Brings the mixer up and keeps the two preferences that reach outside it — the finer
+    /// volume steps event tap and the output-cycling shortcut — in step with its settings.
+    private func startVolumeMixer() {
+        volumeMixer.onFinerVolumeStepsChange = { [weak self] enabled in
+            self?.preciseVolumeSteps.setEnabled(enabled)
+        }
+        volumeMixer.onOutputShortcutChange = { [weak self] _ in
+            self?.refreshGlobalShortcuts()
+        }
+        guard CommandlyDebugLaunchOptions.usesProductivityFixture == false else { return }
+        // Watching the audio system costs HAL listeners and a process enumeration per change.
+        // A mixer with nothing saved has no tap to hold, so it waits for the panel to open.
+        if volumeMixer.hasWorkAtLaunch { volumeMixer.start() }
+        if volumeMixer.settings.usesFinerVolumeSteps {
+            preciseVolumeSteps.setEnabled(true)
         }
     }
 
@@ -344,6 +695,7 @@ final class AppRuntime {
             },
             onTextSizeChange: { [weak self] textSize in
                 self?.textSize = textSize
+                self?.auxiliaryWindowAppearance.textSize = textSize
             },
             onViewModeChange: { [weak self] viewMode in
                 self?.viewMode = viewMode
@@ -413,7 +765,7 @@ final class AppRuntime {
         let viewModel = LauncherViewModel(
             applicationRegistry: applicationRegistry,
             clipboardHistoryStore: clipboardHistoryStore,
-            fileSearchService: fileSearchService,
+            fileSearchService: fileSearchApplicationServices.searchService,
             urlOpener: fileSearchApplicationServices.urlOpener,
             applicationOpener: container.dependencies.applicationOpener,
             commandCoordinator: commandCoordinator,
@@ -450,7 +802,21 @@ final class AppRuntime {
                     onOpenSettings: onOpenSettings
                 )
             },
-            onQuit: quit
+            onQuit: quit,
+            saveInstalledApplicationShortcut: { [weak self] bundleID, hotKey in
+                guard let self else { return "Application shortcuts are unavailable." }
+                return self.saveInstalledApplicationShortcut(hotKey, for: bundleID)
+            },
+            onInstalledApplicationPreferencesChange: { [weak self] in
+                self?.refreshGlobalShortcuts()
+            },
+            onInstalledShortcutRecordingChange: { [weak self] recording in
+                self?.setInstalledShortcutRecording(recording)
+            },
+            installedApplicationShortcutIssue: { [weak self] bundleID in
+                guard let issue = self?.installedApplicationHotkeyIssues[bundleID] else { return nil }
+                return InstalledApplicationShortcuts.message(for: issue)
+            }
         )
         cachedLauncherViewModel = viewModel
         return viewModel
@@ -467,16 +833,53 @@ final class AppRuntime {
     }
 
     private func handleRegisteredApplicationPresentation(
-        _ commandID: CommandID
-    ) -> CommandResult? {
-        if showsLauncher, let cachedLauncherViewModel {
-            return cachedLauncherViewModel.presentRegisteredApplication(commandID)
-        }
-        guard showsOnboarding == false,
-              applicationRegistry.enabledApplication(for: commandID) != nil else {
+        _ command: ResolvedCommand,
+        context: CommandInvocationContext
+    ) async -> CommandResult? {
+        let reference = command.reference
+        guard let applicationID = applicationRegistry.owningApplicationID(
+            for: reference.commandID
+        ),
+        applicationRegistry.isEffectivelyEnabled(reference.commandID),
+        let application = applicationRegistry.enabledApplication(for: applicationID),
+        let settings = applicationRegistry.resolvedSettings(for: applicationID) else {
             return nil
         }
-        pendingDirectPresentationApplicationID = commandID
+
+        if reference.commandID == applicationID,
+           (context.source == .applicationHotKey || context.source == .menuBar),
+           let backgroundApplication = application
+                as? any LauncherApplicationBackgroundInvoking {
+            return await invokeBackgroundCommand(reference.commandID) {
+                await backgroundApplication.invokeInBackground(settings: settings)
+            }
+        }
+        if let backgroundTools = application
+            as? any LauncherApplicationToolBackgroundInvoking,
+           backgroundTools.backgroundToolIDs.contains(reference.commandID) {
+            if context.source == .search {
+                hideLauncher()
+            }
+            let result = await invokeBackgroundCommand(reference.commandID) {
+                await backgroundTools.invokeToolInBackground(
+                    toolID: reference.commandID,
+                    arguments: reference.arguments,
+                    settings: settings
+                )
+            }
+            if context.source == .search, case .failure(let message) = result {
+                presentCommandWheelStatus(message)
+            }
+            return result
+        }
+        if showsLauncher, let cachedLauncherViewModel {
+            return cachedLauncherViewModel.presentRegisteredCommand(reference)
+        }
+        guard showsOnboarding == false,
+              applicationRegistry.isEffectivelyEnabled(reference.commandID) else {
+            return nil
+        }
+        pendingDirectPresentationReference = reference
         showLauncher()
         if let cachedLauncherViewModel {
             // A reused ordered-out SwiftUI window may not emit `onAppear`. Consume after the
@@ -501,22 +904,20 @@ final class AppRuntime {
     }
 
     func consumePendingApplicationLaunch(using viewModel: LauncherViewModel) {
-        if let pendingDirectPresentationApplicationID {
-            self.pendingDirectPresentationApplicationID = nil
+        if let pendingDirectPresentationReference {
+            self.pendingDirectPresentationReference = nil
             // Defer until the presentation/onAppear turn completes so
             // `prepareForPresentation()` cannot reset the newly-created session.
             DispatchQueue.main.async { [weak self, weak viewModel] in
                 guard let self, self.showsLauncher, let viewModel else { return }
-                _ = viewModel.presentRegisteredApplication(
-                    pendingDirectPresentationApplicationID
-                )
+                _ = viewModel.presentRegisteredCommand(pendingDirectPresentationReference)
             }
         }
-        if let pendingApplicationID {
-            self.pendingApplicationID = nil
+        if let pendingCommandReference {
+            self.pendingCommandReference = nil
             Task { @MainActor [weak viewModel] in
-                await viewModel?.executeRegisteredApplication(
-                    pendingApplicationID,
+                await viewModel?.executeRegisteredCommand(
+                    pendingCommandReference,
                     source: .applicationHotKey
                 )
             }
@@ -549,7 +950,6 @@ final class AppRuntime {
         guard showsOnboarding == false else { return }
         launcherFrontmostApplicationContext = frontmostApplicationContextProvider.snapshot()
         systemActivityProtectionTracker.captureFrontmostApplication()
-        windowLayoutService.captureTargetApplication()
         // Capture before Commandly becomes active so reused windows can move to the user's
         // current display and full-screen Space instead of Commandly's previous desktop.
         launcherPresentationRequest = launcherPresentationRequest.next(
@@ -566,6 +966,27 @@ final class AppRuntime {
         }
     }
 
+    /// Opens the registered Window Switcher from menu-bar UI without activating the launcher.
+    func showWindowSwitcher() {
+        guard showsOnboarding == false,
+              applicationRegistry.isEffectivelyEnabled(
+                  WindowSwitcherApplication.applicationID
+              ) else {
+            return
+        }
+        windowSwitcherCoordinator.presentCurrentConfiguration()
+    }
+
+    var isWindowSwitcherEnabled: Bool {
+        applicationRegistry.isEffectivelyEnabled(
+            WindowSwitcherApplication.applicationID
+        )
+    }
+
+    var isWindowSwitcherAvailable: Bool {
+        applicationRegistry.definition(for: WindowSwitcherApplication.applicationID) != nil
+    }
+
     /// Opens the floating Shelf board from the menu bar.
     func openNewShelf() {
         showFloatingShelf(entryMode: .empty)
@@ -574,6 +995,12 @@ final class AppRuntime {
     /// Opens the floating Shelf board in the clipboard entry layout from the menu bar.
     func openNewShelfFromClipboard() {
         showFloatingShelf(entryMode: .fromClipboard)
+    }
+
+    /// Current effective shortcut for a registered application or tool.
+    func resolvedHotKey(for commandID: CommandID) -> LauncherHotKey? {
+        guard applicationRegistry.isEffectivelyEnabled(commandID) else { return nil }
+        return applicationRegistry.resolvedSettings(for: commandID)?.hotKey
     }
 
     /// Preferred corner configured for Shelf in Settings → Applications.
@@ -671,8 +1098,8 @@ final class AppRuntime {
         // Drop command-surface observation (e.g. clipboard entries) so background
         // pasteboard polls cannot refresh a dismissed launcher view hierarchy.
         cachedLauncherViewModel?.resetAfterDismiss()
-        pendingApplicationID = nil
-        pendingDirectPresentationApplicationID = nil
+        pendingCommandReference = nil
+        pendingDirectPresentationReference = nil
         pendingCommandWheelStatusMessage = nil
         guard showsLauncher else {
             dismissLauncherWindow?()
@@ -717,6 +1144,18 @@ final class AppRuntime {
     }
 
     private func applicationPreferencesDidChange() {
+        menuBarShortcuts.refresh()
+        if applicationRegistry.isEffectivelyEnabled(HighlightModeApplication.applicationID) == false {
+            highlightModeService.stop()
+        } else if let settings = applicationRegistry.resolvedSettings(
+            for: HighlightModeApplication.applicationID
+        ) {
+            highlightModeService.updateConfiguration(
+                HighlightModeApplication.configuration(from: settings)
+            )
+        }
+        configureWindowSwitcher()
+        synchronizeMarkdownPreviewPreferences()
         refreshCommandCatalog()
         if let cachedSettingsViewModel {
             Task { @MainActor in
@@ -725,6 +1164,33 @@ final class AppRuntime {
         }
         cachedLauncherViewModel?.applicationPreferencesDidChange()
         cachedDocumentationViewModel?.refresh()
+    }
+
+    private func configureWindowSwitcher() {
+        let id = WindowSwitcherApplication.applicationID
+        let configuration = applicationRegistry.resolvedSettings(for: id)
+            .map(WindowSwitcherConfiguration.init(settings:)) ?? .default
+        windowSwitcherCoordinator.configure(
+            configuration,
+            isEnabled: applicationRegistry.isEffectivelyEnabled(id)
+        )
+    }
+
+    private func synchronizeMarkdownPreviewPreferences() {
+        guard let settings = applicationRegistry.resolvedSettings(
+            for: MarkdownPreviewApplication.applicationID
+        ) else {
+            return
+        }
+        do {
+            try MarkdownPreferenceStore().save(
+                MarkdownPreviewApplication.configuration(from: settings)
+            )
+        } catch {
+            container.dependencies.logger.error(
+                "Markdown Preview settings could not be shared with Quick Look"
+            )
+        }
     }
 
     private func prepareCommandWheelRuntime() {
@@ -753,12 +1219,19 @@ final class AppRuntime {
     }
 
     private func refreshGlobalShortcuts() {
+        guard !CommandlyDebugLaunchOptions.usesProductivityFixture else { return }
+        if isRecordingInstalledApplicationShortcut {
+            globalShortcutMonitor.stop()
+            globalShortcutRoutes.removeAll()
+            activeWheelShortcutSessions.removeAll()
+            return
+        }
         let applicationHotKeys: [(CommandID, LauncherHotKey)] = applicationRegistry
             .allDefinitions()
             .compactMap { definition -> (CommandID, LauncherHotKey)? in
                 guard applicationRegistry.isEffectivelyEnabled(definition.id),
                       let hotKey = applicationRegistry.resolvedSettings(for: definition.id)?.hotKey,
-                      applicationRegistry.application(for: definition.id) != nil else {
+                      applicationRegistry.isLaunchableCommand(definition.id) else {
                     return nil
                 }
                 return (definition.id, hotKey)
@@ -770,7 +1243,11 @@ final class AppRuntime {
         }
         let bindings = RuntimeGlobalShortcutCatalog.bindings(
             applicationHotKeys: applicationHotKeys,
-            wheelConfiguration: wheelConfiguration
+            wheelConfiguration: wheelConfiguration,
+            installedApplicationHotKeys: InstalledApplicationShortcuts.orderedBindings(
+                in: applicationPreferencesStore.load(), previousOwners: installedShortcutRegistrationOrder
+            ),
+            cyclesSoundOutput: volumeMixer.settings.switchesOutputsWithShortcut
         )
         let routes = Dictionary(
             uniqueKeysWithValues: bindings.map { ($0.registration.id, $0.route) }
@@ -781,6 +1258,11 @@ final class AppRuntime {
             self?.handleGlobalShortcutEvent(event)
         }
         globalShortcutRoutes = routes
+        installedShortcutRegistrationOrder = bindings.compactMap { binding in
+            guard issues[binding.registration.id] == nil,
+                  case .installedApplication(let bundleID) = binding.route else { return nil }
+            return bundleID
+        }
         activeWheelShortcutSessions = activeWheelShortcutSessions.filter { id, token in
             routes[id] != nil && commandWheelCoordinator.activeSessionToken == token
         }
@@ -797,13 +1279,11 @@ final class AppRuntime {
         case .launcher:
             if event.phase == .pressed { toggleLauncher() }
 
-        case .shelf(let shortcut):
-            if event.phase == .pressed {
-                showFloatingShelf(entryMode: shortcut.entryMode)
-            }
-
         case .application(let commandID):
             if event.phase == .pressed { openApplicationFromHotKey(commandID) }
+
+        case .installedApplication(let bundleIdentifier):
+            if event.phase == .pressed { openInstalledApplicationFromHotKey(bundleIdentifier) }
 
         case .commandWheel(let profileID, let allowsContextOverride):
             handleCommandWheelShortcutEvent(
@@ -811,6 +1291,9 @@ final class AppRuntime {
                 profileID: profileID,
                 allowsContextOverride: allowsContextOverride
             )
+
+        case .soundOutputCycle:
+            if event.phase == .pressed { volumeMixer.switchToNextOutput() }
         }
     }
 
@@ -850,6 +1333,7 @@ final class AppRuntime {
     ) {
         var applicationIssues = [CommandID: ApplicationHotkeyRegistrationIssue]()
         var wheelIssues = [UUID: GlobalShortcutRegistrationIssue]()
+        var installedIssues = [String: GlobalShortcutRegistrationIssue]()
 
         for (registrationID, issue) in issues {
             guard let route = routes[registrationID] else { continue }
@@ -861,14 +1345,61 @@ final class AppRuntime {
                 } else {
                     applicationIssues[commandID] = .unavailable
                 }
+            case .installedApplication(let bundleIdentifier):
+                installedIssues[bundleIdentifier] = issue
             case .commandWheel(let profileID, _):
                 wheelIssues[profileID] = issue
-            case .launcher, .shelf:
+            case .launcher, .soundOutputCycle:
+                // These have no per-item settings row to flag; the panel reports the mixer's
+                // own failures inline.
                 break
             }
         }
         applicationHotkeyIssues = applicationIssues
+        installedApplicationHotkeyIssues = installedIssues
         commandWheelShortcutIssues = wheelIssues
+    }
+
+    private func setInstalledShortcutRecording(_ recording: Bool) {
+        guard recording != isRecordingInstalledApplicationShortcut else { return }
+        isRecordingInstalledApplicationShortcut = recording
+        refreshGlobalShortcuts()
+    }
+
+    private func saveInstalledApplicationShortcut(_ hotKey: LauncherHotKey?, for bundleID: String) -> String? {
+        guard !isRecordingInstalledApplicationShortcut else { return "Finish recording before saving the shortcut." }
+        return InstalledApplicationShortcuts.save(hotKey, for: bundleID, store: applicationPreferencesStore) {
+            refreshGlobalShortcuts()
+            return installedApplicationHotkeyIssues
+        }
+    }
+
+    private func openInstalledApplicationFromHotKey(_ bundleID: String) {
+        let preferences = applicationPreferencesStore.load()
+        guard preferences.hotKeys[bundleID] != nil, !preferences.isDisabled(bundleID),
+              !activeInstalledApplicationShortcutBundles.contains(bundleID) else { return }
+        activeInstalledApplicationShortcutBundles.insert(bundleID)
+        let taskID = UUID()
+        let context = makeCommandInvocationContext(source: .applicationHotKey)
+        backgroundShortcutTasks[taskID] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                activeInstalledApplicationShortcutBundles.remove(bundleID)
+                backgroundShortcutTasks[taskID] = nil
+            }
+            guard !Task.isCancelled else { return }
+            do {
+                let result = try await commandCoordinator.execute(
+                    reference: BuiltInCommandReference.openInstalledApplication(bundleIdentifier: bundleID),
+                    context: context
+                )
+                if case .failure(let message) = result { presentCommandWheelStatus(message) }
+            } catch is CancellationError {
+                return
+            } catch {
+                presentCommandWheelStatus("Couldn’t open that application. It may have been moved or removed.")
+            }
+        }
     }
 
     private func openApplicationFromHotKey(_ id: CommandID) {
@@ -877,12 +1408,87 @@ final class AppRuntime {
             showFloatingShelf(entryMode: .empty)
             return
         }
-        pendingApplicationID = id
+        if applicationRegistry.isBackgroundInvokingCommand(id) {
+            executeBackgroundApplicationFromHotKey(id)
+            return
+        }
+        pendingCommandReference = CommandReference(commandID: id)
         showLauncher()
         DispatchQueue.main.async { [weak self] in
             guard let self, let viewModel = self.cachedLauncherViewModel else { return }
             self.consumePendingApplicationLaunch(using: viewModel)
         }
+    }
+
+    private func executeBackgroundApplicationFromHotKey(_ id: CommandID) {
+        let context = makeCommandInvocationContext(source: .applicationHotKey)
+        let taskID = UUID()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { backgroundShortcutTasks[taskID] = nil }
+            do {
+                let result = try await commandCoordinator.execute(
+                    reference: CommandReference(commandID: id),
+                    context: context
+                )
+                if case .failure(let message) = result {
+                    presentCommandWheelStatus(message)
+                }
+            } catch {
+                let message = (error as? SharedCommandExecutionCoordinatorError)?
+                    .userFacingMessage ?? "Command couldn’t be completed."
+                presentCommandWheelStatus(message)
+            }
+        }
+        backgroundShortcutTasks[taskID] = task
+    }
+
+    private func invokeMenuBarCommand(_ id: CommandID) async {
+        guard applicationRegistry.isEffectivelyEnabled(id) else { return }
+        let foreground = frontmostApplicationContextProvider.snapshot()
+        let context = CommandInvocationContext(source: .menuBar,
+            frontmostApplicationBundleIdentifier: foreground?.bundleIdentifier,
+            timestamp: container.dependencies.dateProvider.now())
+        do {
+            try await synchronizeCommandCatalog()
+            try Task.checkCancellation()
+            guard applicationRegistry.isEffectivelyEnabled(id) else { return }
+            let result = try await commandCoordinator.execute(reference: CommandReference(commandID: id), context: context)
+            if case .failure(let message) = result { presentCommandWheelStatus(message) }
+        } catch is CancellationError {
+            // Runtime teardown explicitly cancels pending menu actions.
+        } catch {
+            presentCommandWheelStatus((error as? SharedCommandExecutionCoordinatorError)?.userFacingMessage
+                ?? "Command couldn’t be completed.")
+        }
+    }
+
+    private func invokeBackgroundCommand(
+        _ commandID: CommandID,
+        operation: @escaping @MainActor () async -> CommandResult
+    ) async -> CommandResult {
+        let predecessor = backgroundInvocationTasks[commandID]
+        let token = UUID()
+        let task = Task { @MainActor in
+            if let predecessor {
+                _ = await predecessor.value
+            }
+            guard Task.isCancelled == false else { return CommandResult.cancelled }
+            return await operation()
+        }
+        backgroundInvocationTasks[commandID] = task
+        backgroundInvocationTokens[commandID] = token
+
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if backgroundInvocationTokens[commandID] == token {
+            backgroundInvocationTasks[commandID] = nil
+            backgroundInvocationTokens[commandID] = nil
+        }
+        return result
     }
 
     /// Replaces the shared command catalog atomically from current effective application settings.
@@ -946,13 +1552,33 @@ final class AppRuntime {
 
     /// Explicitly stops app-lifetime shortcut, wheel, and feedback resources at termination.
     func tearDown() {
+        let companionManager = systemCompanion.manager
+        Task { await companionManager.disconnect() }
+        menuBarShortcuts.stop()
         globalShortcutMonitor.stop()
         globalShortcutRoutes.removeAll()
         activeWheelShortcutSessions.removeAll()
+        backgroundShortcutTasks.values.forEach { $0.cancel() }
+        backgroundShortcutTasks.removeAll()
+        backgroundInvocationTasks.values.forEach { $0.cancel() }
+        backgroundInvocationTasks.removeAll()
+        backgroundInvocationTokens.removeAll()
         commandWheelCoordinator.tearDown()
         commandWheelFeedbackRelay.tearDown()
+        highlightModeService.stop()
+        windowSwitcherCoordinator.tearDown()
         clipboardHistoryStore.stopMonitoring()
         autoQuitService.stop()
+        keepAwake.tearDown()
+        volumeMixer.tearDown()
+        preciseVolumeSteps.stop()
+        systemMetrics.stop()
+        networkMetrics.stop()
+        diskMetrics.stop()
+        powerMetrics.stop()
+        fanControl.tearDown()
+        quickToggles.tearDown()
+        scheduleAutoJoin.cancel()
         if let applicationTerminationObserver {
             NotificationCenter.default.removeObserver(applicationTerminationObserver)
             self.applicationTerminationObserver = nil

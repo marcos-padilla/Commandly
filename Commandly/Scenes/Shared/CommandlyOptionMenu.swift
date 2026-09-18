@@ -32,9 +32,15 @@ struct CommandlyOptionMenu: View {
     @State private var isHovered = false
     @State private var searchQuery = ""
     @State private var hoveredItemID: String?
+    @State private var keyboardSelection = LauncherMenuSelection<String>()
+    @State private var menuID = UUID()
+    @State private var restoresFocusOnDismiss = true
     @Environment(\.commandlyLayoutDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.launcherTransientMenuState) private var transientMenuState
     @FocusState private var isSearchFocused: Bool
+    @FocusState private var isMenuFocused: Bool
 
     private var selectedTitle: String {
         items.first(where: { $0.id == selectionID })?.title ?? placeholderTitle
@@ -45,6 +51,8 @@ struct CommandlyOptionMenu: View {
         guard allowsSearch, trimmed.isEmpty == false else { return items }
         return items.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
     }
+
+    private var visibleIDs: [String] { filteredItems.map(\.id) }
 
     var body: some View {
         GlassEffectContainer(spacing: 12) {
@@ -59,8 +67,11 @@ struct CommandlyOptionMenu: View {
                     }
                 }
                 .background {
-                    OutsideMouseDownMonitor(isActive: isExpanded) {
-                        dismissMenu()
+                    OutsideMouseDownMonitor(
+                        isActive: isExpanded,
+                        restoresFocusOnDismiss: restoresFocusOnDismiss
+                    ) {
+                        dismissMenu(restoringFocus: false)
                     }
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
@@ -68,6 +79,12 @@ struct CommandlyOptionMenu: View {
                 .animation(reduceMotion ? nil : CommandlyMotion.navigation, value: isExpanded)
                 .onChange(of: isExpanded) { _, expanded in
                     if expanded {
+                        restoresFocusOnDismiss = true
+                        keyboardSelection = LauncherMenuSelection<String>()
+                        keyboardSelection.reconcile(with: visibleIDs, preferredID: selectionID)
+                        transientMenuState?.present(id: menuID) { restoringFocus in
+                            dismissMenu(restoringFocus: restoringFocus)
+                        }
                         if allowsSearch {
                             // The overlay is inserted by the same state change. Reapply focus on
                             // the next main-queue turn so the menu field exists before focus moves.
@@ -76,12 +93,22 @@ struct CommandlyOptionMenu: View {
                                 guard isExpanded else { return }
                                 isSearchFocused = true
                             }
+                        } else {
+                            isMenuFocused = true
                         }
                     } else {
+                        transientMenuState?.remove(id: menuID)
                         searchQuery = ""
                         hoveredItemID = nil
                         isSearchFocused = false
+                        isMenuFocused = false
                     }
+                }
+                .onChange(of: visibleIDs) { _, ids in
+                    keyboardSelection.reconcile(with: ids)
+                }
+                .onDisappear {
+                    transientMenuState?.remove(id: menuID)
                 }
         }
     }
@@ -127,15 +154,21 @@ struct CommandlyOptionMenu: View {
                     Image(systemName: "magnifyingglass")
                         .commandlyFont(size: 11, weight: .medium)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                     TextField(searchPrompt, text: $searchQuery)
                         .textFieldStyle(.plain)
                         .commandlyFont(size: 12, weight: .medium)
                         .focused($isSearchFocused)
-                        .onSubmit {
-                            if let first = filteredItems.first {
-                                select(first)
-                            }
+                        .accessibilityLabel("Search \(accessibilityLabelText)")
+                        .onKeyPress(.upArrow) {
+                            keyboardSelection.move(by: -1, in: visibleIDs)
+                            return .handled
                         }
+                        .onKeyPress(.downArrow) {
+                            keyboardSelection.move(by: 1, in: visibleIDs)
+                            return .handled
+                        }
+                        .onSubmit(selectKeyboardItem)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -143,21 +176,30 @@ struct CommandlyOptionMenu: View {
                 Divider().opacity(0.28)
             }
 
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(filteredItems) { item in
-                        optionRow(item)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(filteredItems) { item in
+                            optionRow(item)
+                                .id(item.id)
+                        }
+                        if filteredItems.isEmpty {
+                            Text("No matches")
+                                .commandlyFont(size: 11, weight: .medium)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                        }
                     }
-                    if filteredItems.isEmpty {
-                        Text("No matches")
-                            .commandlyFont(size: 11, weight: .medium)
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
+                    .padding(6)
+                }
+                .onChange(of: keyboardSelection.selectedID) { _, id in
+                    guard let id else { return }
+                    withAnimation(reduceMotion ? nil : CommandlyMotion.hover) {
+                        proxy.scrollTo(id)
                     }
                 }
-                .padding(6)
             }
             .frame(maxHeight: 220)
         }
@@ -173,6 +215,21 @@ struct CommandlyOptionMenu: View {
                 .strokeBorder(LauncherPalette.separator, lineWidth: 1)
         }
         .shadow(color: Color.black.opacity(0.24), radius: 20, y: 10)
+        .focusable(allowsSearch == false)
+        .focusEffectDisabled()
+        .focused($isMenuFocused)
+        .onKeyPress(.upArrow) {
+            keyboardSelection.move(by: -1, in: visibleIDs)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            keyboardSelection.move(by: 1, in: visibleIDs)
+            return .handled
+        }
+        .onKeyPress(.return) {
+            selectKeyboardItem()
+            return .handled
+        }
         .onKeyPress(.escape) {
             dismissMenu()
             return .handled
@@ -184,28 +241,43 @@ struct CommandlyOptionMenu: View {
     private func optionRow(_ item: CommandlyOptionItem) -> some View {
         let isSelected = item.id == selectionID
         let isRowHovered = hoveredItemID == item.id
+        let isKeyboardSelected = keyboardSelection.selectedID == item.id
         return Button {
             select(item)
         } label: {
-            Text(item.title)
-                .commandlyFont(size: 12, weight: isSelected ? .semibold : .medium)
+            HStack(spacing: 8) {
+                Text(item.title)
+                    .commandlyFont(size: 12, weight: isSelected ? .semibold : .medium)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "checkmark")
+                    .commandlyFont(size: 10, weight: .semibold)
+                    .opacity(isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(
-                    Capsule(style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue, style: .continuous)
                         .fill(
-                            isSelected
-                                ? Color.primary.opacity(0.14)
-                                : Color.primary.opacity(isRowHovered ? 0.08 : 0)
+                            isKeyboardSelected
+                                ? LauncherPalette.selection
+                                : isRowHovered ? LauncherPalette.hover : .clear
                         )
                 )
-                .contentShape(Capsule())
+                .overlay {
+                    if isKeyboardSelected, contrast == .increased {
+                        RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.6), lineWidth: 1)
+                    }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             hoveredItemID = hovering ? item.id : (hoveredItemID == item.id ? nil : hoveredItemID)
+            if hovering { keyboardSelection.select(item.id, in: visibleIDs) }
         }
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -216,7 +288,14 @@ struct CommandlyOptionMenu: View {
         dismissMenu()
     }
 
-    private func dismissMenu() {
+    private func selectKeyboardItem() {
+        guard let id = keyboardSelection.activationID(in: visibleIDs),
+              let item = filteredItems.first(where: { $0.id == id }) else { return }
+        select(item)
+    }
+
+    private func dismissMenu(restoringFocus: Bool = true) {
+        restoresFocusOnDismiss = restoringFocus
         withAnimation(reduceMotion ? nil : CommandlyMotion.navigation) {
             isExpanded = false
         }
@@ -227,6 +306,7 @@ struct CommandlyOptionMenu: View {
 /// menu chrome (trigger + dropdown). Has zero layout impact.
 private struct OutsideMouseDownMonitor: NSViewRepresentable {
     var isActive: Bool
+    var restoresFocusOnDismiss: Bool
     var onOutside: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -241,6 +321,7 @@ private struct OutsideMouseDownMonitor: NSViewRepresentable {
 
     func updateNSView(_ nsView: MonitorHostView, context: Context) {
         context.coordinator.onOutside = onOutside
+        context.coordinator.restoresFocusOnDismiss = restoresFocusOnDismiss
         context.coordinator.setActive(isActive)
     }
 
@@ -250,7 +331,10 @@ private struct OutsideMouseDownMonitor: NSViewRepresentable {
 
     final class Coordinator {
         var onOutside: () -> Void
+        var restoresFocusOnDismiss = true
         private weak var host: MonitorHostView?
+        private weak var previousResponder: NSResponder?
+        private var isActive = false
         /// Event monitor token; cleared in `setActive(false)` / `dismantleNSView`.
         nonisolated(unsafe) private var monitor: Any?
 
@@ -264,8 +348,26 @@ private struct OutsideMouseDownMonitor: NSViewRepresentable {
         }
 
         func setActive(_ active: Bool) {
+            guard isActive != active else { return }
+            isActive = active
             removeMonitor()
-            guard active else { return }
+            guard active else {
+                if restoresFocusOnDismiss, let window = host?.window,
+                   let previousResponder, window.isKeyWindow {
+                    DispatchQueue.main.async { [weak window, weak previousResponder] in
+                        guard let window, let previousResponder, window.isKeyWindow else { return }
+                        window.makeFirstResponder(previousResponder)
+                    }
+                }
+                previousResponder = nil
+                return
+            }
+            if let editor = host?.window?.firstResponder as? NSTextView,
+               let field = editor.delegate as? NSTextField {
+                previousResponder = field
+            } else {
+                previousResponder = host?.window?.firstResponder
+            }
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 guard let self, let host = self.host else {
                     return event

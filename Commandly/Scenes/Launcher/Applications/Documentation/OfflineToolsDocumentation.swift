@@ -122,7 +122,7 @@ extension OfflineToolKind {
     private var colorDocumentation: LauncherApplicationDocumentation {
         LauncherApplicationDocumentation(
             category: .utilities,
-            overview: "Parse common HEX and RGB color strings, preview the color, convert it to HEX, RGB or HSL, or sample a screen color through macOS's native picker.",
+            overview: "Preview a HEX, RGB, or HSL color and copy it in six formats. Enter a color directly in the root launcher or use Color Tools, with optional explicit sampling through the native macOS picker.",
             sections: [
                 DocumentationSection(
                     id: "color.convert",
@@ -130,16 +130,20 @@ extension OfflineToolKind {
                     blocks: [
                         .bullets("color.convert.formats", [
                             "Accepted HEX forms: #RGB, #RGBA, #RRGGBB, and #RRGGBBAA.",
-                            "Accepted functional forms: rgb(red, green, blue) and rgba(red, green, blue, alpha).",
-                            "The preview exposes explicit copy actions for HEX, RGB or RGBA, and HSL."
+                            "Accepts comma-separated RGB/HSL and modern space-separated forms, with optional slash alpha, percentages, and hue units deg, grad, rad, or turn.",
+                            "Choose Hex, Hex with Alpha, RGBA, RGBA (Percentage), RGB (CSS4), or HSL. Return copies the selected format.",
+                            "Transparency is preserved in every format except six-digit Hex; transparent inputs initially select Hex with Alpha.",
+                            "Input is limited to 256 UTF-8 bytes. Named colors, CSS calculations, and wide-gamut spaces are not supported."
                         ]),
                         .examples("color.convert.examples", [
-                            DocumentationExample(id: "color.convert.red-hex", input: "#FF0000", output: "rgb(255, 0, 0) · hsl(0, 100%, 50%)"),
+                            DocumentationExample(id: "color.convert.red-hex", input: "#FF0000", output: "rgba(255, 0, 0, 1) · hsl(0 100% 50% / 1)"),
                             DocumentationExample(id: "color.convert.short-hex", input: "#4AF", output: "#44AAFF"),
                             DocumentationExample(id: "color.convert.alpha", input: "rgba(74, 125, 255, 0.5)", output: "#4A7DFF80")
                         ]),
                         .shortcuts("color.convert.shortcuts", [
-                            DocumentationShortcut(id: "color.convert.actions", title: "Open HEX, RGB, HSL, and sampler actions", keys: ["⌘", "K"])
+                            DocumentationShortcut(id: "color.convert.return", title: "Copy selected format", keys: ["Return"]),
+                            DocumentationShortcut(id: "color.convert.actions", title: "Open all six format actions", keys: ["⌘", "K"]),
+                            DocumentationShortcut(id: "color.convert.formats", title: "Copy format 1 through 6", keys: ["⌘", "1…6"])
                         ])
                     ]
                 ),
@@ -148,9 +152,10 @@ extension OfflineToolKind {
                     title: "Pick from the Screen",
                     blocks: [
                         .steps("color.sample.steps", [
-                            "Press Command-K and choose Pick Screen Color, or use Pick from Screen in the color surface.",
+                            "Inside Color Tools, press Command-K and choose Pick Screen Color, or use Pick from Screen to place a sampled value in the editor.",
+                            "To copy immediately without opening Color Tools, run the separate Pick Screen Color tool from the launcher or assign that tool a global shortcut in Settings → Applications.",
                             "Use the system-controlled macOS sampler to choose a visible pixel.",
-                            "Commandly places the sampled HEX value in the editor so you can convert or copy it."
+                            "The focused tool copies the sampled HEX value to the clipboard; the in-application action places it in the editor for conversion or copying."
                         ]),
                         .callout(
                             "color.sample.privacy",
@@ -165,7 +170,7 @@ extension OfflineToolKind {
                             DocumentationCallout(
                                 kind: .limitation,
                                 title: "Supported color spaces",
-                                text: "Color Tools emits HEX, RGB or RGBA, and HSL. It does not parse or produce every color space."
+                                text: "Outputs use bounded sRGB. Hex rounds to bytes; functional outputs use up to six decimal places. The tool does not parse every CSS color space or evaluate stylesheets."
                             )
                         )
                     ]
@@ -328,4 +333,3 @@ extension OfflineToolKind {
         )
     }
 }
-

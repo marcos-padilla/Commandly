@@ -51,27 +51,35 @@ nonisolated protocol SharedCommandExecutionCoordinating: Sendable {
     ) async throws -> CommandResult
 }
 
-/// Main-actor boundary that presents a registered launcher application without teaching the
-/// executor about concrete feature views or sessions.
+/// Main-actor boundary that dispatches a registered launcher application without teaching the
+/// executor whether the feature presents a session or performs an approved background action.
 @MainActor
 protocol RegisteredLauncherApplicationPresenting: AnyObject, Sendable {
-    /// Returns `nil` when no registered application can present `commandID`.
-    func presentRegisteredApplication(commandID: CommandID) -> CommandResult?
+    /// Returns `nil` when no registered application can handle the resolved reference.
+    func presentRegisteredApplication(
+        command: ResolvedCommand,
+        context: CommandInvocationContext
+    ) async -> CommandResult?
 }
 
-/// Late-bound presentation bridge used to break the runtime/coordinator/view-model ownership cycle.
+/// Late-bound application bridge used to break the runtime/coordinator/view-model ownership cycle.
 @MainActor
 final class RegisteredLauncherApplicationPresentationHandler:
     RegisteredLauncherApplicationPresenting
 {
-    private var handler: ((CommandID) -> CommandResult?)?
+    private var handler: ((ResolvedCommand, CommandInvocationContext) async -> CommandResult?)?
 
-    func install(handler: @escaping (CommandID) -> CommandResult?) {
+    func install(
+        handler: @escaping (ResolvedCommand, CommandInvocationContext) async -> CommandResult?
+    ) {
         self.handler = handler
     }
 
-    func presentRegisteredApplication(commandID: CommandID) -> CommandResult? {
-        handler?(commandID)
+    func presentRegisteredApplication(
+        command: ResolvedCommand,
+        context: CommandInvocationContext
+    ) async -> CommandResult? {
+        await handler?(command, context)
     }
 }
 
@@ -102,7 +110,7 @@ final class ApplicationPreferencesInstalledApplicationUsageRecorder:
     }
 }
 
-/// Concrete shared executor for immediate engine actions and registered application presentation.
+/// Concrete shared executor for immediate engine actions and registered application dispatch.
 struct SharedCommandExecutor: CommandExecuting {
     private let applicationOpener: any ApplicationOpening
     private let registeredApplicationPresenter: any RegisteredLauncherApplicationPresenting
@@ -129,7 +137,8 @@ struct SharedCommandExecutor: CommandExecuting {
         }
 
         guard let result = await registeredApplicationPresenter.presentRegisteredApplication(
-            commandID: command.reference.commandID
+            command: command,
+            context: context
         ) else {
             throw SharedCommandExecutorError.registeredApplicationUnavailable(
                 command.reference.commandID

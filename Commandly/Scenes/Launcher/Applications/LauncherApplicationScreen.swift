@@ -13,6 +13,7 @@ struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: Vie
     private let searchPlaceholder: String
     private let searchAccessibilityIdentifier: String
     private let sidebarWidth: CGFloat
+    private let searchFocusRequest: Int
     private let onBack: () -> Void
     private let onSubmit: () -> Void
     private let onMoveSelection: (Int) -> Void
@@ -26,6 +27,7 @@ struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: Vie
         searchPlaceholder: String,
         searchAccessibilityIdentifier: String = "launcher-application-query",
         sidebarWidth: CGFloat = 270,
+        searchFocusRequest: Int = 0,
         onBack: @escaping () -> Void,
         onSubmit: @escaping () -> Void,
         onMoveSelection: @escaping (Int) -> Void,
@@ -38,6 +40,7 @@ struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: Vie
         self.searchPlaceholder = searchPlaceholder
         self.searchAccessibilityIdentifier = searchAccessibilityIdentifier
         self.sidebarWidth = sidebarWidth
+        self.searchFocusRequest = searchFocusRequest
         self.onBack = onBack
         self.onSubmit = onSubmit
         self.onMoveSelection = onMoveSelection
@@ -82,6 +85,10 @@ struct LauncherApplicationScreen<FilterControl: View, Sidebar: View, Detail: Vie
         }
         .onAppear {
             isSearchFocused = true
+        }
+        .onChange(of: searchFocusRequest) { _, _ in
+            isSearchFocused = false
+            DispatchQueue.main.async { isSearchFocused = true }
         }
     }
 }

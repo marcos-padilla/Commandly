@@ -218,10 +218,15 @@ Mutation tools create an exact local plan:
 - Copy
 - Move
 - Move to Trash
+- Convert an image to a new file with explicit format, size, and rotation (`finder_convert_image`)
 
 A model cannot execute a plan. The user reviews an exact, expiring plan and the local UI issues a
 single-use, non-Codable approval value. Any item identity change, collision, authorization change,
 expiry, edit, or previous use invalidates approval.
+
+Image conversion runs locally through the shared native Image Tools converter; image pixels are
+not sent to the model. The approval includes source, destination, filename, and conversion settings.
+See [Finder AI image conversion](AI_IMAGE_CONVERSION.md) for its byte boundary, fidelity, and limits.
 
 Permanent deletion, emptying Trash, overwrite/merge, recursive arbitrary paths, automatic sharing,
 opening executable content, permission/ownership changes, package traversal, symlink traversal,
@@ -286,10 +291,18 @@ transcript.
 8. Review privacy, accessibility, sandbox capabilities, prompt-injection resistance, and partial
    failure reporting before enabling the extension.
 
+## Reviewed screenshot context
+
+The separate [Visual AI](VISUAL_AI.md) application captures one chosen display or region only after
+Capture, previews the exact locally prepared image, and sends it only after explicit Send. Its bounded
+image request uses reviewed OpenAI, Anthropic and Gemini codecs with one question and no tools.
+It does not add screenshots to Finder AI or Quick AI, and does not save image or conversation history.
+
 ## Initial limitations
 
-- Provider responses are non-streaming in the first vertical slice; the UI still exposes explicit
-  working and cancellation states.
+- Finder AI responses are non-streaming; its UI exposes explicit working and cancellation states.
+  The separate [Quick AI](QUICK_AI.md) application streams general text conversations through the
+  existing provider adapters and does not inherit Finder AI's filesystem authority.
 - Finder AI does not expose arbitrary binary-file reading or image/PDF upload.
 - Operations are confirmed one exact plan at a time; there is no persistent “always allow” mode.
 - Batch filesystem operations are not transactional.

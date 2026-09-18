@@ -4,6 +4,7 @@ import SwiftUI
 
 struct LauncherRootView: View {
     @State private var viewModel: LauncherViewModel
+    @State private var transientMenuState = LauncherTransientMenuState()
     private let presentationRequest: WindowPresentationRequest
     @Environment(\.commandlyLayoutDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -68,10 +69,6 @@ struct LauncherRootView: View {
                     contextSystemImage: viewModel.contextSystemImage,
                     actions: viewModel.footerActions,
                     menuActions: viewModel.menuActions,
-                    showsActionsMenu: Binding(
-                        get: { viewModel.showsActionsMenu },
-                        set: { viewModel.showsActionsMenu = $0 }
-                    ),
                     onAction: { viewModel.performFooterAction($0) }
                 )
             case .uninstallReview:
@@ -100,6 +97,14 @@ struct LauncherRootView: View {
         .shadow(color: .black.opacity(0.24), radius: 24, y: 10)
         .ignoresSafeArea()
         .overlay {
+            if case .application = viewModel.route,
+               let session = viewModel.activeApplication,
+               session.usesSharedActionsMenu, session.showsActionsMenu {
+                LauncherSessionActionsPanel(session: session)
+                    .id(ObjectIdentifier(session))
+            }
+        }
+        .overlay {
             if showsContextActionsPanel {
                 ZStack(alignment: .bottomLeading) {
                     Color.black.opacity(0.001)
@@ -109,7 +114,19 @@ struct LauncherRootView: View {
                         }
 
                     Group {
-                        if viewModel.showsApplicationActionsPanel {
+                        if viewModel.colorSearch.showsActions, let result = viewModel.colorSearch.result {
+                            LauncherActionPanel(
+                                title: "Copy Color",
+                                actions: viewModel.colorSearch.filteredPanelActions,
+                                query: Binding(get: { viewModel.colorSearch.actionsQuery }, set: { viewModel.colorSearch.actionsQuery = $0 }),
+                                onSelect: { viewModel.colorSearch.perform($0, resultID: result.id) },
+                                onDismiss: {
+                                    viewModel.colorSearch.dismissActions()
+                                    viewModel.requestSearchFocus()
+                                },
+                                onBack: nil
+                            )
+                        } else if viewModel.showsApplicationActionsPanel {
                             LauncherActionPanel(
                                 title: viewModel.applicationActionsPanelTitle,
                                 actions: viewModel.filteredApplicationActions.map(\.panelItem),
@@ -142,10 +159,22 @@ struct LauncherRootView: View {
         .sheet(item: $viewModel.commandWheelAssignmentModel) { model in
             CommandWheelAssignmentSheet(model: model)
         }
+        .sheet(item: $viewModel.installedApplicationShortcutEditor, onDismiss: {
+            viewModel.onInstalledShortcutRecordingChange(false)
+            viewModel.requestSearchFocus()
+        }) { model in
+            InstalledApplicationShortcutEditor(model: model)
+        }
+        .sheet(item: $viewModel.applicationAliasEditor, onDismiss: {
+            viewModel.requestSearchFocus()
+        }) { model in
+            ApplicationAliasEditor(model: model)
+        }
         .launcherWindowChrome(
             presentationRequest: presentationRequest,
             onRequestClose: { closeLauncher() },
             onEscape: {
+                if transientMenuState.dismiss() { return true }
                 if viewModel.handleEscape() == false {
                     closeLauncher()
                 }
@@ -154,6 +183,13 @@ struct LauncherRootView: View {
                 return true
             }
         )
+        .onKeyPress(keys: Set(["1", "2", "3", "4", "5", "6"].map { KeyEquivalent(Character($0)) }), phases: .down) { press in
+            guard press.modifiers == .command, viewModel.route == .root,
+                  case .colorPrimary = viewModel.selectedItem?.action,
+                  let format = CommandlyColorFormat.allCases.first(where: { $0.shortcutNumber == String(press.key.character) }) else { return .ignored }
+            viewModel.performFooterAction(format.copyActionID)
+            return .handled
+        }
         .onKeyPress(keys: [KeyEquivalent("k")], phases: .down) { press in
             if press.modifiers.contains(.command) {
                 if viewModel.route == .root {
@@ -166,14 +202,11 @@ struct LauncherRootView: View {
             return .ignored
         }
         .onKeyPress(phases: .down) { press in
-            if viewModel.showsRegisteredCommandActionsPanel {
-                if press.characters == "\r" || press.characters == "\n" {
-                    viewModel.performRegisteredCommandAction(LauncherCommandWheelActionID.add)
-                    return .handled
-                }
-                return .ignored
-            }
-            guard viewModel.showsApplicationActionsPanel else { return .ignored }
+            // Searchable panels own Return for their visible keyboard selection, including
+            // empty results. The shell handles only explicit modified application shortcuts.
+            guard viewModel.showsApplicationActionsPanel,
+                  press.modifiers.intersection([.command, .control, .option]).isEmpty == false
+            else { return .ignored }
             let handled = viewModel.handleApplicationActionsKeyPress(
                 characters: press.characters,
                 modifiers: press.modifiers
@@ -183,6 +216,15 @@ struct LauncherRootView: View {
         .onAppear {
             viewModel.prepareForPresentation()
         }
+        .onChange(of: showsContextActionsPanel) { _, isPresented in
+            if isPresented == false, viewModel.route == .root {
+                viewModel.requestSearchFocus()
+            }
+        }
+        .onChange(of: viewModel.colorSearch.showsActions) { _, visible in
+            if !visible { viewModel.requestSearchFocus() }
+        }
+        .environment(\.launcherTransientMenuState, transientMenuState)
         .animation(reduceMotion ? nil : CommandlyMotion.navigation, value: viewModel.route)
         .animation(reduceMotion ? nil : CommandlyMotion.hover, value: activeStatusMessage)
         .accessibilityElement(children: .contain)
@@ -200,14 +242,15 @@ struct LauncherRootView: View {
     }
 
     private var activeStatusMessage: String? {
-        viewModel.activeApplication?.statusMessage ?? viewModel.statusMessage
+        viewModel.activeApplication?.statusMessage ?? (viewModel.route == .root ? viewModel.colorSearch.statusMessage : nil) ?? viewModel.statusMessage
     }
 
     private var showsContextActionsPanel: Bool {
-        viewModel.showsApplicationActionsPanel || viewModel.showsRegisteredCommandActionsPanel
+        viewModel.colorSearch.showsActions || viewModel.showsApplicationActionsPanel || viewModel.showsRegisteredCommandActionsPanel
     }
 
     private func dismissContextActionsPanel() {
+        viewModel.colorSearch.dismissActions()
         viewModel.dismissApplicationActionsPanel()
         viewModel.dismissRegisteredCommandActionsPanel()
     }

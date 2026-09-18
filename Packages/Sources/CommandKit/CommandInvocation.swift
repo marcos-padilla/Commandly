@@ -129,6 +129,8 @@ public enum CommandInvocationSource: Codable, Hashable, Sendable {
     case search
     /// A registered system-wide shortcut assigned to an application command.
     case applicationHotKey
+    /// An explicitly chosen tool in one of Commandly's pinned native menu-bar items.
+    case menuBar
     /// A segment in a persisted Command Wheel profile and page.
     case commandWheel(profileID: UUID, pageID: UUID, segmentID: UUID)
 }

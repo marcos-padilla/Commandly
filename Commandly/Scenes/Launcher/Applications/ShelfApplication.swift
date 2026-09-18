@@ -1,8 +1,10 @@
 import CommandKit
 
 @MainActor
-struct ShelfApplication: LauncherApplication {
+struct ShelfApplication: LauncherApplication, LauncherApplicationToolBackgroundInvoking {
     static let applicationID = CommandID(rawValue: "shelf.board")
+    static let newShelfToolID = CommandID(rawValue: "shelf.new")
+    static let newShelfFromClipboardToolID = CommandID(rawValue: "shelf.new-from-clipboard")
 
     static let manifest = CommandManifest(
         id: applicationID,
@@ -83,9 +85,77 @@ struct ShelfApplication: LauncherApplication {
         )
     }
 
+    var toolDefinitions: [LauncherApplicationDefinition] {
+        [
+            LauncherApplicationDefinition.tool(
+                id: Self.newShelfToolID,
+                parentID: Self.applicationID,
+                title: "New Shelf",
+                subtitle: "Open an empty temporary staging board",
+                systemImage: "square.stack.3d.up",
+                order: 0,
+                keywords: ["shelf", "new shelf", "empty", "staging", "board"],
+                defaultHotKey: ShelfGlobalShortcut.newShelf.hotKey
+            ),
+            LauncherApplicationDefinition.tool(
+                id: Self.newShelfFromClipboardToolID,
+                parentID: Self.applicationID,
+                title: "New Shelf from Clipboard",
+                subtitle: "Stage the current clipboard on a new Shelf",
+                systemImage: "clipboard",
+                order: 1,
+                keywords: ["shelf", "clipboard", "paste", "stage clipboard"],
+                defaultHotKey: ShelfGlobalShortcut.newShelfFromClipboard.hotKey
+            )
+        ]
+    }
+
+    var backgroundToolIDs: Set<CommandID> {
+        [Self.newShelfToolID, Self.newShelfFromClipboardToolID]
+    }
+
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
         _ = context
         launchController.present(.empty)
         return .dismiss
+    }
+
+    func launch(
+        toolID: CommandID,
+        arguments: CommandArguments,
+        in context: LauncherApplicationContext
+    ) -> LauncherApplicationLaunch {
+        _ = arguments
+        _ = context
+        guard let mode = entryMode(for: toolID) else {
+            return .message("Shelf tool is unavailable.")
+        }
+        launchController.present(mode)
+        return .dismiss
+    }
+
+    func invokeToolInBackground(
+        toolID: CommandID,
+        arguments: CommandArguments,
+        settings: LauncherApplicationResolvedSettings
+    ) async -> CommandResult {
+        _ = arguments
+        _ = settings
+        guard let mode = entryMode(for: toolID) else {
+            return .failure(message: "Shelf tool is unavailable.")
+        }
+        launchController.present(mode)
+        return .success(message: nil)
+    }
+
+    private func entryMode(for toolID: CommandID) -> ShelfEntryMode? {
+        switch toolID {
+        case Self.newShelfToolID:
+            return .empty
+        case Self.newShelfFromClipboardToolID:
+            return .fromClipboard
+        default:
+            return nil
+        }
     }
 }

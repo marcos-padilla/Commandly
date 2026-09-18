@@ -19,6 +19,11 @@
 - Open, Finder info/reveal/enclosing-folder, detail toggle, share, move, copy, duplicate,
   Commandly shortcut, clipboard, and Trash actions
 
+The launcher root also queries the same service while the user types. After an 80 ms cancellable
+debounce it shows at most ten matches in a **Files** section, and Return opens the selected URL.
+This inline path is deliberately narrow: use the full Search Files application for type filters,
+previews, metadata, nested actions, or filesystem mutations.
+
 The layout uses the shared `LauncherApplicationScreen` pattern (search/filter header,
 result list, preview/metadata detail, and shared footer) plus DesignSystem tokens.
 It is intentionally original rather than a copy of another launcher's UI.
@@ -28,7 +33,9 @@ It is intentionally original rather than a copy of another launcher's UI.
 - `SearchKit` owns `FileSearchRequest`, `FileSearchItem`, filter categories, errors,
   and the `FileSearching` contract.
 - `PersistentFileSearchService` owns session scope resolution, corruption recovery, status updates,
-  and FSEvents monitoring. It never creates a Spotlight query while the user types.
+  and session-scoped FSEvents monitoring. Closing the last File Search surface cancels scanning,
+  enrichment, and queued change processing; the next session resumes from the persisted index.
+  It never creates a Spotlight query while the user types.
 - `FileIndexScanner` enumerates authorized folders directly and commits bounded metadata batches.
   Hidden files, packages' descendants, temporary files, and common dependency/build noise are skipped.
 - `FileIndexDatabase` owns one actor-confined SQLite connection in WAL mode. FTS5 external-content
@@ -39,6 +46,11 @@ It is intentionally original rather than a copy of another launcher's UI.
   selection, nested action-card navigation, index-progress observation, and actions on the main actor.
   Native filesystem behavior is injected through `FileActionServicing`. One FTS snapshot query covers
   all enabled fields atomically; filename matches rank above tags, metadata, and content.
+- `LauncherViewModel` owns the separate root-search projection. It supplies an all-files request
+  capped at ten items, cancels it with the root query task, rejects stale query generations, maps
+  results to open-only launcher rows, and keeps access/index failures distinct from no matches.
+  Missing folder access offers a direct route to Permissions; an unavailable index offers the full
+  File Search application as the recovery surface.
 - `FileSearchApplication` owns registration and constructs the feature's strongly typed application session.
 - `FileSearchView` owns feature presentation and opts into `LauncherApplicationScreen`; shared focus,
   keyboard, split-pane, row, empty-state, and metadata chrome stay outside the feature.
@@ -54,14 +66,19 @@ It is intentionally original rather than a copy of another launcher's UI.
 
 Commandly remains sandboxed. Search is limited to folders the user explicitly chooses
 through the existing Files and Folders permission flow. Security-scoped bookmark access
-is activated when File Search is first used. It remains active while the in-process FSEvents monitor
-keeps the local index current, and is released when the process exits or scopes change. Selected-folder access is read-write because copy,
-move, duplicate, shortcut, and Trash operations require it; those operations occur only after
-an explicit action from the user.
+is activated when File Search is first used, including the first nonempty root query that asks the
+inline provider for matches. It remains active only for that launcher/File Search session. Dismissing
+the launcher stops the in-process FSEvents monitor, cancels pending index work, drains queued event
+processing, and then releases access. The next session reuses and incrementally refreshes the local
+SQLite index. Selected-folder access is read-write because copy, move, duplicate, shortcut, and Trash
+operations require it; those
+operations occur only after an explicit action from the user in the full File Search application.
+An inline root result exposes only Open and does not broaden the selected scopes.
 
 Search queries, result paths, filenames, indexed contents, previews, and metadata are
 never logged or uploaded. The derived SQLite index stays in Commandly's Application Support
-directory and is never synced. Commandly does not open and scan files while the user types.
+directory and is never synced. Commandly does not open and scan files while the user types. Root
+file rows are excluded from autocomplete and shared command history.
 
 ## Product research and trade-offs
 
@@ -78,6 +95,8 @@ Current limitations:
 - Unsupported or encrypted binary formats may expose metadata but no readable contents.
 - Image OCR is bounded by file size and runs after names and metadata are already searchable.
 - External volumes must be selected explicitly and be mounted.
+- Root search shows only the first ten all-files matches and an Open action; advanced filtering and
+  actions remain in Search Files.
 
 ## Research sources
 

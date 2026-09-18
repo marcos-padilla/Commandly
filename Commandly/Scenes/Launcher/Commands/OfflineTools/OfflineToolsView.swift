@@ -16,6 +16,7 @@ struct OfflineToolsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(LauncherPalette.detail)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(viewModel.tool.title)
     }
 
@@ -152,57 +153,7 @@ struct OfflineToolsView: View {
     }
 
     private var colorTool: some View {
-        VStack(alignment: .leading, spacing: density.spacing(.md)) {
-            HStack(spacing: density.spacing(.sm)) {
-                TextField("#RRGGBB or rgb(…)", text: $viewModel.colorInput)
-                    .textFieldStyle(.roundedBorder)
-                    .commandlyFont(size: 13, design: .monospaced)
-                    .accessibilityLabel("Color value")
-                Button("Pick from Screen") {
-                    viewModel.sampleColor()
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Pick a color from the screen")
-            }
-
-            if let color = viewModel.parsedColor {
-                HStack(alignment: .top, spacing: density.spacing(.lg)) {
-                    RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                        .fill(Color(nsColor: color.nsColor))
-                        .frame(width: 150, height: 150)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: CornerRadius.lg.rawValue, style: .continuous)
-                                .strokeBorder(LauncherPalette.separator, lineWidth: 1)
-                        }
-                        .accessibilityLabel("Color preview")
-                        .accessibilityValue(color.hex)
-
-                    VStack(spacing: density.spacing(.sm)) {
-                        colorValueRow(label: "HEX", value: color.hex) {
-                            viewModel.perform(BuiltInCommandActionID.copy)
-                        }
-                        colorValueRow(label: "RGB", value: color.rgb) {
-                            viewModel.perform(OfflineToolsActionID.copyRGB)
-                        }
-                        colorValueRow(label: "HSL", value: color.hsl) {
-                            viewModel.perform(OfflineToolsActionID.copyHSL)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                Spacer()
-                Text("All conversion happens on this Mac.")
-                    .commandlyFont(size: 10)
-                    .foregroundStyle(.tertiary)
-            } else {
-                LauncherApplicationEmptyState(
-                    systemImage: "paintpalette",
-                    title: "Enter a valid color",
-                    message: "Supported forms: #RGB, #RGBA, #RRGGBB, #RRGGBBAA, rgb(), and rgba()."
-                )
-            }
-        }
-        .padding(density.spacing(.lg))
+        ColorToolsView(viewModel: viewModel)
     }
 
     private var dictionaryTool: some View {
@@ -382,31 +333,6 @@ struct OfflineToolsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func colorValueRow(
-        label: String,
-        value: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(label)
-                    .commandlyFont(size: 10, weight: .semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-                Text(value)
-                    .commandlyFont(size: 13, design: .monospaced)
-                    .textSelection(.enabled)
-                Spacer()
-                Image(systemName: "doc.on.doc")
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(density.spacing(.sm))
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: CornerRadius.md.rawValue))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Copy \(label) color")
-        .accessibilityValue(value)
-    }
 
     private func metric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {

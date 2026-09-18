@@ -4,6 +4,8 @@ import Foundation
 /// Persisted user overrides for one registered launcher application.
 struct LauncherApplicationPreferences: Codable, Equatable, Sendable {
     var alias: String?
+    /// User-authored discovery tags. Built-in definition tags are retained separately.
+    var tags: [String]?
     var hotKey: LauncherHotKey?
     var hasHotKeyOverride: Bool
     var isEnabled: Bool?
@@ -11,6 +13,7 @@ struct LauncherApplicationPreferences: Codable, Equatable, Sendable {
 
     static let empty = LauncherApplicationPreferences(
         alias: nil,
+        tags: nil,
         hotKey: nil,
         hasHotKeyOverride: false,
         isEnabled: nil,
@@ -19,12 +22,14 @@ struct LauncherApplicationPreferences: Codable, Equatable, Sendable {
 
     init(
         alias: String?,
+        tags: [String]? = nil,
         hotKey: LauncherHotKey?,
         hasHotKeyOverride: Bool = false,
         isEnabled: Bool?,
         configuration: [String: LauncherConfigurationValue]
     ) {
         self.alias = alias
+        self.tags = tags
         self.hotKey = hotKey
         self.hasHotKeyOverride = hasHotKeyOverride
         self.isEnabled = isEnabled

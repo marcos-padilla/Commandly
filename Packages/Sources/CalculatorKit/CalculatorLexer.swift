@@ -68,11 +68,10 @@ struct CalculatorLexer: Sendable {
             case ")":
                 tokens.append(Token(kind: .rightParen, location: location, lexeme: ")"))
                 index += 1
-            case ",":
-                // Ambiguous: grouping separator vs argument separator.
-                // If followed by a digit and we are mid-number context, handled in number scan.
-                // Standalone comma between expressions is argument separator.
-                tokens.append(Token(kind: .comma, location: location, lexeme: ","))
+            case ",", ";", "；":
+                // Commas and semicolons separate function arguments. Grouping
+                // separators are removed during locale-aware normalization.
+                tokens.append(Token(kind: .comma, location: location, lexeme: String(ch)))
                 index += 1
             default:
                 if ch.isNumber || ch == "." {

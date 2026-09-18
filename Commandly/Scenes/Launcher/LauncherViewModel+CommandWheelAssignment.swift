@@ -40,6 +40,8 @@ extension LauncherViewModel {
         switch item.action {
         case .launchApplication(let commandID):
             return CommandReference(commandID: commandID)
+        case .executeCommand(let reference):
+            return reference
         case .openInstalledApplication(let bundleIdentifier):
             return BuiltInCommandReference.openInstalledApplication(
                 bundleIdentifier: bundleIdentifier
@@ -55,7 +57,7 @@ extension LauncherViewModel {
         case .openInstalledApplication(let bundleIdentifier):
             dismissRegisteredCommandActionsPanel()
             presentApplicationActions(forBundleID: bundleIdentifier)
-        case .launchApplication:
+        case .launchApplication, .executeCommand:
             presentRegisteredCommandActions(for: item)
         default:
             break

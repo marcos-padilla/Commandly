@@ -1,3 +1,4 @@
+import CommandKit
 import Foundation
 import Testing
 @testable import Commandly
@@ -144,5 +145,71 @@ struct TimersApplicationTests {
         #expect(store.timer(id: timerID)?.phase == .running)
         #expect(store.remainingTime(for: timerID) == 1_440)
         #expect(application.definition.id == TimersApplication.applicationID)
+    }
+
+    @Test @MainActor
+    func timerToolsAreRegisteredAndNewTimerOpensTheExistingDraftEditor() throws {
+        let store = TimerStore(
+            automaticallySchedulesTicks: false,
+            onCompletion: { _ in }
+        )
+        store.createTimer(name: "Existing", duration: 300)
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+        let tools = registry.children(of: TimersApplication.applicationID)
+
+        #expect(tools.map(\.id) == [
+            TimersApplication.openToolID,
+            TimersApplication.newTimerToolID
+        ])
+        #expect(tools.allSatisfy { $0.kind == .tool })
+        #expect(tools.allSatisfy { $0.parentID == TimersApplication.applicationID })
+        #expect(
+            registry.owningApplicationID(for: TimersApplication.newTimerToolID)
+                == TimersApplication.applicationID
+        )
+        #expect(registry.allManifests().contains { manifest in
+            manifest.id == TimersApplication.newTimerToolID
+                && manifest.keywords.contains("new timer")
+        })
+        #expect(registry.resolvedSettings(for: TimersApplication.newTimerToolID) != nil)
+
+        let application = try #require(
+            registry.application(for: TimersApplication.applicationID)
+        )
+        let settings = try #require(
+            registry.resolvedSettings(for: TimersApplication.applicationID)
+        )
+        let context = LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: {},
+                openSettings: {},
+                goBack: {}
+            ),
+            settings: settings
+        )
+
+        guard case .present(let openSession) = application.launch(
+            toolID: TimersApplication.openToolID,
+            arguments: CommandArguments(),
+            in: context
+        ) else {
+            Issue.record("Expected Open Timers to present a session")
+            return
+        }
+        #expect(openSession.model(as: TimersViewModel.self)?.isCreating == false)
+
+        guard case .present(let newTimerSession) = application.launch(
+            toolID: TimersApplication.newTimerToolID,
+            arguments: CommandArguments(),
+            in: context
+        ) else {
+            Issue.record("Expected New Timer to present a Timers session")
+            return
+        }
+        let model = try #require(newTimerSession.model(as: TimersViewModel.self))
+        #expect(model.isCreating)
+        #expect(model.draftName == TimerPreset.focus.title)
+        #expect(model.draftMinutes == TimerPreset.focus.minutes)
+        #expect(store.timers.map(\.name) == ["Existing"])
     }
 }

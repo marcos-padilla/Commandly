@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.businessmate360.Commandly.SystemCompanion</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/CommandlySystemCompanion</string>
+	<key>MachServices</key>
+	<dict>
+		<key>group.com.businessmate360.Commandly.SystemCompanion</key>
+		<true/>
+	</dict>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>CommandlySystemCompanion</string>
+		<string>--service</string>
+	</array>
+</dict>
+</plist>

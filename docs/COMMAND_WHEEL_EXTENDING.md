@@ -7,12 +7,13 @@ it is not another place to implement an action.
 > in Commandly's shared command engine.
 
 Read [Command Wheel Architecture](COMMAND_WHEEL_ARCHITECTURE.md),
-[Launcher Applications](LAUNCHER_APPLICATIONS.md), and ADR-0007 before changing an execution path.
+[Launcher Applications](LAUNCHER_APPLICATIONS.md), ADR-0007, and ADR-0010 before changing an
+execution path.
 
 ## Make an existing registered command available
 
-1. Confirm the owning `LauncherApplicationDefinition` has a stable `CommandManifest` and is
-   registered with `LauncherApplicationRegistry`.
+1. Confirm the application or application-owned tool has a stable `CommandManifest` registered with
+   `LauncherApplicationRegistry`.
 2. Put all user-visible title, subtitle, symbol, category, keywords, argument schema, and default
    actions in that manifest. Do not create a wheel icon/title table.
 3. Confirm the application has correct effective-enabled behavior. The composition root keeps its
@@ -22,8 +23,9 @@ Read [Command Wheel Architecture](COMMAND_WHEEL_ARCHITECTURE.md),
 5. Test resolution through `CommandRegistry`, execution through
    `SharedCommandExecutionCoordinator`, and both `.search` and `.commandWheel` invocation sources.
 
-No change to the wheel executor should be needed for a registered launcher application. The shared
-executor's main-actor presenter already routes its identifier to the existing application session.
+No change to the wheel executor should be needed for a registered launcher application or tool. The
+shared executor's main-actor presenter already routes the complete resolved reference, including
+typed arguments, to the owning application.
 
 ## Add a new shared command correctly
 

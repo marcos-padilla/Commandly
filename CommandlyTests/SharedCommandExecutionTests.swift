@@ -39,16 +39,18 @@ struct SharedCommandExecutionTests {
 
         let presenter = RecordingRegisteredApplicationPresenter()
         let coordinator = makeAvailabilityCoordinator(registry: registry, presenter: presenter)
-        await #expect(
-            throws: SharedCommandExecutionCoordinatorError.unavailable(
-                commandID: reference.commandID,
-                reason: .disabled
-            )
-        ) {
-            try await coordinator.execute(
-                reference: reference,
-                context: CommandInvocationContext(source: .search)
-            )
+        for source in [CommandInvocationSource.search, .applicationHotKey, .menuBar] {
+            await #expect(
+                throws: SharedCommandExecutionCoordinatorError.unavailable(
+                    commandID: reference.commandID,
+                    reason: .disabled
+                )
+            ) {
+                try await coordinator.execute(
+                    reference: reference,
+                    context: CommandInvocationContext(source: source)
+                )
+            }
         }
         #expect(presenter.presentedCommandIDs.isEmpty)
     }
@@ -63,7 +65,10 @@ struct SharedCommandExecutionTests {
             ),
             installedApplicationQuery: InMemoryInstalledApplicationQuery()
         ).snapshot()
-        let reference = CommandReference(commandID: WindowLayoutsApplication.id)
+        // Window Layouts now applies its presets through the System Companion, which holds the
+        // Accessibility grant on Commandly's behalf, so the application itself no longer declares
+        // that requirement. Window Switcher is the built-in that still does.
+        let reference = CommandReference(commandID: WindowSwitcherApplication.applicationID)
         let registry = CommandRegistry()
         try await registry.replaceCatalog(
             with: snapshot.manifests,
@@ -75,7 +80,7 @@ struct SharedCommandExecutionTests {
                 == .unavailable(.missingPermission(identifier: "accessibility"))
         )
         let slot = try await availabilitySlot(reference: reference, snapshot: snapshot)
-        #expect(slot.title == "Window Layouts")
+        #expect(slot.title == "Window Switcher")
         #expect(slot.availability == .unavailable(requiresPermission: true))
 
         let presenter = RecordingRegisteredApplicationPresenter()
@@ -263,8 +268,15 @@ struct SharedCommandExecutionTests {
     }
 
     @Test @MainActor
-    func registeredCommandsDispatchThroughTheInjectedMainActorPresenter() async throws {
+    func registeredCommandsPreserveTypedArgumentsAcrossTheMainActorPresenter() async throws {
         let commandID = CommandID(rawValue: "test.registered-presentation")
+        let reference = CommandReference(
+            commandID: commandID,
+            arguments: CommandArguments([
+                "port": .integer(5_173),
+                "operation": .string("terminate"),
+            ])
+        )
         let registry = CommandRegistry()
         try await registry.register(
             CommandManifest(
@@ -272,7 +284,20 @@ struct SharedCommandExecutionTests {
                 title: "Registered Presentation",
                 systemImage: "rectangle.on.rectangle",
                 category: .productivity,
-                mode: .view
+                mode: .view,
+                arguments: [
+                    CommandArgument(
+                        name: "port",
+                        description: "Port number",
+                        isRequired: true,
+                        valueType: .integer
+                    ),
+                    CommandArgument(
+                        name: "operation",
+                        description: "Operation to perform",
+                        isRequired: true
+                    ),
+                ]
             )
         )
         let presenter = RecordingRegisteredApplicationPresenter()
@@ -290,12 +315,14 @@ struct SharedCommandExecutionTests {
         )
 
         let result = try await coordinator.execute(
-            reference: CommandReference(commandID: commandID),
+            reference: reference,
             context: CommandInvocationContext(source: .search)
         )
 
         #expect(result == .success(message: nil))
+        #expect(presenter.presentedCommands.map(\.reference) == [reference])
         #expect(presenter.presentedCommandIDs == [commandID])
+        #expect(presenter.invocationSources == [.search])
     }
 
     @Test @MainActor
@@ -371,7 +398,7 @@ struct SharedCommandExecutionTests {
             CommandExecutionRecord(
                 id: thirdID,
                 commandID: commandID,
-                source: .search,
+                source: .menuBar,
                 outcome: .succeeded,
                 timestamp: Date(timeIntervalSince1970: 3)
             )
@@ -385,6 +412,7 @@ struct SharedCommandExecutionTests {
         let summary = try #require(await reloaded.summary(for: commandID))
 
         #expect(records.map(\.id) == [secondID, thirdID])
+        #expect(records.map(\.source) == [.applicationHotKey, .menuBar])
         #expect(summary.successfulExecutionCount == 1)
         #expect(summary.lastSuccessfulExecutionAt == Date(timeIntervalSince1970: 3))
     }
@@ -453,10 +481,19 @@ private actor RecordingSharedCommandApplicationOpener: ApplicationOpening {
 private final class RecordingRegisteredApplicationPresenter:
     RegisteredLauncherApplicationPresenting
 {
-    private(set) var presentedCommandIDs: [CommandID] = []
+    private(set) var presentedCommands: [ResolvedCommand] = []
+    private(set) var invocationSources: [CommandInvocationSource] = []
 
-    func presentRegisteredApplication(commandID: CommandID) -> CommandResult? {
-        presentedCommandIDs.append(commandID)
+    var presentedCommandIDs: [CommandID] {
+        presentedCommands.map(\.reference.commandID)
+    }
+
+    func presentRegisteredApplication(
+        command: ResolvedCommand,
+        context: CommandInvocationContext
+    ) async -> CommandResult? {
+        presentedCommands.append(command)
+        invocationSources.append(context.source)
         return .success(message: nil)
     }
 }

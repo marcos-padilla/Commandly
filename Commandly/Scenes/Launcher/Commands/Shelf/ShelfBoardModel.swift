@@ -24,7 +24,10 @@ final class ShelfBoardModel {
     private let temporaryContentStore: any ShelfTemporaryContentStoring
     private let onClose: () -> Void
     private var metadataTasks: [ShelfItem.ID: Task<Void, Never>] = [:]
+    private var operationTasks: [UUID: Task<Void, Never>] = [:]
     private var scopedURLs: Set<URL> = []
+    private var actionTokens: Set<UUID> = []
+    private var actionOptionLoadTokens: Set<UUID> = []
     private var didLoadInitialContent = false
     private var isTornDown = false
     private var didRequestClose = false
@@ -89,6 +92,17 @@ final class ShelfBoardModel {
 // MARK: - Staging and selection
 
 extension ShelfBoardModel {
+    /// Starts user-initiated work owned by this board so closing or replacing Shelf cancels it.
+    func perform(_ operation: @escaping @MainActor (ShelfBoardModel) async -> Void) {
+        guard isTornDown == false else { return }
+        let token = UUID()
+        operationTasks[token] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { operationTasks[token] = nil }
+            await operation(self)
+        }
+    }
+
     func loadInitialContent() async {
         guard didLoadInitialContent == false else { return }
         didLoadInitialContent = true
@@ -134,10 +148,13 @@ extension ShelfBoardModel {
     }
 
     func addFromClipboard() async {
+        guard isTornDown == false else { return }
         guard let content = await services.pasteboard.readContent() else {
+            guard isTornDown == false else { return }
             statusMessage = "The clipboard does not contain supported text, images, files, or folders."
             return
         }
+        guard isTornDown == false else { return }
         do {
             switch content {
             case .fileURLs(let urls):
@@ -156,28 +173,33 @@ extension ShelfBoardModel {
         } catch is CancellationError {
             return
         } catch {
+            guard isTornDown == false else { return }
             errorMessage = Self.userFacingMessage(for: error)
         }
     }
 
     func copyItemsToClipboard() async {
+        guard isTornDown == false else { return }
         let urls = actionURLs
         guard urls.isEmpty == false else {
             statusMessage = "There are no Shelf items to copy."
             return
         }
         await services.pasteboard.writeFileURLs(urls)
+        guard isTornDown == false else { return }
         statusMessage = urls.count == 1 ? "Item copied." : "\(urls.count) items copied."
         errorMessage = nil
     }
 
     func copyPathsToClipboard() async {
+        guard isTornDown == false else { return }
         let urls = actionURLs
         guard urls.isEmpty == false else {
             statusMessage = "There are no Shelf item paths to copy."
             return
         }
         await services.pasteboard.writeString(urls.map(\.path).joined(separator: "\n"))
+        guard isTornDown == false else { return }
         statusMessage = urls.count == 1 ? "Path copied." : "\(urls.count) paths copied."
         errorMessage = nil
     }
@@ -278,8 +300,9 @@ extension ShelfBoardModel {
     func share(_ urls: [URL]? = nil, to destination: NativeShareDestination) async {
         let candidateURLs = urls ?? actionURLs
         guard candidateURLs.isEmpty == false else { return }
-        if urls != nil {
-            candidateURLs.forEach { retainAccess(for: $0) }
+        let transientScopedURLs = urls == nil ? [] : candidateURLs.filter { retainAccess(for: $0) }
+        defer {
+            transientScopedURLs.forEach { releaseAccess(for: $0) }
         }
         await runAction(success: "Opened \(destination.shelfTitle) sharing.") { [services] in
             try services.fileActions.share(candidateURLs, to: destination)
@@ -292,9 +315,11 @@ extension ShelfBoardModel {
             openWithOptions = []
             return
         }
-        isLoadingActionOptions = true
-        openWithOptions = await services.fileActions.applications(toOpen: urls)
-        isLoadingActionOptions = false
+        let token = beginActionOptionLoad()
+        defer { finishActionOptionLoad(token) }
+        let options = await services.fileActions.applications(toOpen: urls)
+        guard isTornDown == false, actionURLs == urls else { return }
+        openWithOptions = options
     }
 
     func openSelected(withApplication optionID: String) async {
@@ -311,9 +336,11 @@ extension ShelfBoardModel {
             sharingOptions = []
             return
         }
-        isLoadingActionOptions = true
-        sharingOptions = await services.fileActions.sharingServices(for: urls)
-        isLoadingActionOptions = false
+        let token = beginActionOptionLoad()
+        defer { finishActionOptionLoad(token) }
+        let options = await services.fileActions.sharingServices(for: urls)
+        guard isTornDown == false, actionURLs == urls else { return }
+        sharingOptions = options
     }
 
     func shareSelected(withService optionID: String) async {
@@ -328,12 +355,12 @@ extension ShelfBoardModel {
         let sourceItems = actionItems
         guard sourceItems.isEmpty == false else { return }
         var outputs: [URL] = []
-        await runAction(
+        let succeeded = await runAction(
             success: sourceItems.count == 1 ? "Duplicate created." : "Duplicates created."
         ) { [services] in
             outputs = try await services.fileActions.duplicate(sourceItems.map(\.url))
         }
-        if outputs.count == sourceItems.count {
+        if succeeded, outputs.count == sourceItems.count {
             _ = stage(zip(outputs, sourceItems).map { output, source in
                 (output, source.ownership)
             })
@@ -347,10 +374,10 @@ extension ShelfBoardModel {
             return
         }
         var outputs: [URL] = []
-        await runAction(success: "Copied to the selected folder.") { [services] in
+        let succeeded = await runAction(success: "Copied to the selected folder.") { [services] in
             outputs = try await services.fileActions.copy(urls, to: destination)
         }
-        if outputs.isEmpty == false {
+        if succeeded, outputs.isEmpty == false {
             _ = stage(outputs)
         }
     }
@@ -362,10 +389,10 @@ extension ShelfBoardModel {
             return
         }
         var outputs: [URL] = []
-        await runAction(success: "Moved to the selected folder.") { [services] in
+        let succeeded = await runAction(success: "Moved to the selected folder.") { [services] in
             outputs = try await services.fileActions.move(sourceItems.map(\.url), to: destination)
         }
-        guard outputs.count == sourceItems.count else { return }
+        guard succeeded, outputs.count == sourceItems.count else { return }
         replace(sourceItems, with: outputs) { _ in .externalReference }
     }
 
@@ -377,10 +404,10 @@ extension ShelfBoardModel {
             return
         }
         var output: URL?
-        await runAction(success: "Renamed.") { [services] in
+        let succeeded = await runAction(success: "Renamed.") { [services] in
             output = try await services.fileActions.rename(item.url, to: name)
         }
-        if let output {
+        if succeeded, let output {
             replace([item], with: [output]) { $0.ownership }
         }
     }
@@ -389,11 +416,11 @@ extension ShelfBoardModel {
         let selectedItems = actionItems
         guard selectedItems.isEmpty == false else { return }
         var didMove = false
-        await runAction(success: selectedItems.count == 1 ? "Moved to Trash." : "Moved items to Trash.") { [services] in
+        let succeeded = await runAction(success: selectedItems.count == 1 ? "Moved to Trash." : "Moved items to Trash.") { [services] in
             try await services.fileActions.moveToTrash(selectedItems.map(\.url))
             didMove = true
         }
-        if didMove {
+        if succeeded, didMove {
             remove(itemIDs: Set(selectedItems.map(\.id)), status: nil)
         }
     }
@@ -420,6 +447,14 @@ extension ShelfBoardModel {
             task.cancel()
         }
         metadataTasks.removeAll()
+        for task in operationTasks.values {
+            task.cancel()
+        }
+        operationTasks.removeAll()
+        actionTokens.removeAll()
+        actionOptionLoadTokens.removeAll()
+        isPerformingAction = false
+        isLoadingActionOptions = false
         for url in scopedURLs {
             url.stopAccessingSecurityScopedResource()
         }
@@ -546,11 +581,14 @@ extension ShelfBoardModel {
         url.stopAccessingSecurityScopedResource()
     }
 
-    private func retainAccess(for url: URL) {
-        guard scopedURLs.contains(url) == false else { return }
+    @discardableResult
+    private func retainAccess(for url: URL) -> Bool {
+        guard scopedURLs.contains(url) == false else { return false }
         if url.startAccessingSecurityScopedResource() {
             scopedURLs.insert(url)
+            return true
         }
+        return false
     }
 
     private func discardTemporaryContent(_ urls: [URL]) {
@@ -561,21 +599,44 @@ extension ShelfBoardModel {
         }
     }
 
+    @discardableResult
     private func runAction(
         success: String?,
         operation: () async throws -> Void
-    ) async {
+    ) async -> Bool {
+        guard isTornDown == false else { return false }
+        let token = UUID()
+        actionTokens.insert(token)
         isPerformingAction = true
-        defer { isPerformingAction = false }
+        defer {
+            actionTokens.remove(token)
+            isPerformingAction = actionTokens.isEmpty == false
+        }
         do {
             try await operation()
+            guard isTornDown == false else { return false }
             statusMessage = success
             errorMessage = nil
+            return true
         } catch is CancellationError {
-            return
+            return false
         } catch {
+            guard isTornDown == false else { return false }
             errorMessage = Self.userFacingMessage(for: error)
+            return false
         }
+    }
+
+    private func beginActionOptionLoad() -> UUID {
+        let token = UUID()
+        actionOptionLoadTokens.insert(token)
+        isLoadingActionOptions = true
+        return token
+    }
+
+    private func finishActionOptionLoad(_ token: UUID) {
+        actionOptionLoadTokens.remove(token)
+        isLoadingActionOptions = actionOptionLoadTokens.isEmpty == false
     }
 
     private static func isValidFileName(_ name: String) -> Bool {

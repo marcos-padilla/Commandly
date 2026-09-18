@@ -25,21 +25,38 @@ Implementation lives in the **CalculatorKit** package:
 
 ## Arithmetic grammar
 
-Precedence from low to high is additive, multiplicative/modulo, unary signs, right-associative powers, postfix percent/factorial, then primaries and implicit multiplication.
+Precedence from low to high is additive, multiplicative/modulo/percentage-of, unary signs, right-associative powers, postfix percent/factorial, then primaries and implicit multiplication.
 
 - `-5^2` is `-(5^2)` and evaluates to `-25`
 - `2^3^2` is `2^(3^2)` and evaluates to `512`
 - `-5!` is `-(5!)` and evaluates to `-120`
 - Factorials accept integers from 0 through 32. Negative, fractional, or larger inputs fail instead of overflowing or silently using a gamma function.
 - `%` is postfix percentage without a right operand (`20%`) and modulo with one (`10 % 3`). `mod` and `modulo` are explicit aliases.
+- `% of` accepts full expressions on both sides. For example, `3% of (4 plus 5)` evaluates to `0.27`, `(2 + 3)% of (10 * 4)` evaluates to `2`, and the result can participate in more surrounding terms.
+- Parentheses, square brackets, and braces can group nested expressions. Full-width pasted forms and spoken `open`/`close` or `left`/`right` parenthesis, bracket, and brace names normalize to the same grammar.
+- Unary scientific functions can compose with surrounding terms without requiring an extra call wrapper when their argument is one value: `2 plus square root of 9`, `3 times absolute value of -4`, and `1 plus factorial of 5`.
 
 Supported numeric functions include roots, powers, absolute value, rounding, trigonometric and hyperbolic functions, logarithms, `min`, `max`, `clamp`, sum/mean/median/mode/product/range/variance/standard deviation, factorial, GCD/LCM, and combinations/permutations. Constants include `pi`, `e`, `tau`, `phi`, `sqrt2`, `ln2`, and `ln10`.
 
+Function argument lists accept commas, semicolons, and `and`, including an Oxford comma. Aggregate questions such as `sum of 1, 2, 3 and 4`, `product of two, three and four`, and `average of (2 + 4), 8 and 10` use the same expression parser as explicit calls. Semicolons provide an unambiguous list separator for decimal-comma locales, such as `sum(1,5; 2,5; 3)` in German formatting.
+
 Structured command evaluators also cover nearest-increment and significant-figure rounding, numeric comparisons, reverse percentages, tips/taxes/discounts/markup/margin, ratios and proportions, elementary linear equations, two-variable linear systems, real-root quadratics, prime operations, and explicitly marked nondeterministic random commands. These paths consume the complete input and do not use dynamic evaluation. Quadratics with complex-only roots and general symbolic algebra remain unsupported.
+
+The expanded formula catalog adds more than 160 executable examples across these deterministic domains:
+
+- Composable arithmetic language: `double`, `twice`, `triple`, `quadruple`, named fractional multipliers, reciprocal, additive inverse, square, and cube. Their operands are full expressions, so parentheses and nested terms remain available.
+- Statistics and mapping: weighted/geometric/harmonic means, RMS, sample variance/deviation, z-scores, coefficient of variation, standard error, 95% normal-approximation margin of error, interpolation, normalization, and range mapping.
+- Sequences and number properties: bounded Fibonacci values, arithmetic/geometric terms and sums, polygonal numbers, sums of squares/cubes, powers of two, digital roots, digit sums, and digit counts.
+- Extended geometry and coordinates: trapezoids, parallelograms, rhombi, ellipses, regular polygons, sphere/cylinder/cone/pyramid/prism/torus formulas, point distance/slope/midpoint, Heron's formula, arcs/sectors, triangle angles, and grade-angle conversions.
+- Physics: mechanics, work/energy/power, pressure/density, impulse, waves, Ohm's law and electrical energy, mass/photon energy, ideal gases, free fall, centripetal motion, springs, and Newtonian gravitation. Results state their SI units, and formulas that require modeling assumptions record them in metadata.
+- Constants and representations: SI-defining and 2022 CODATA constants, common astronomy distances, Roman numerals, decimal fractions, scientific/engineering notation, DMS angles, aspect ratios, checksums, Unix permissions, media sizing, and basis points.
+- Everyday calculations: recipe scaling, unit-price comparisons, fuel/paint/tile estimates, battery estimates, grades, trip-average speed, display PPI, map scales, odds/probability, and bill splitting.
+
+Structured inputs are recognized before general word aliases are applied. This prevents phrases such as `sum of first 100 integers` or `250 basis points as percent` from being partially rewritten into an unrelated arithmetic expression. Undefined domains—including zero divisors, impossible triangles, malformed Roman numerals, oversized bounded sequences, and invalid efficiency inputs—fail safely.
 
 ## Locale and pasted input
 
-Number literals are canonicalized once using the evaluation locale, then tokenized with a stable internal grammar. Locale grouping separators, regular/non-breaking spaces, and apostrophes are accepted when they form three-digit groups. Common pasted operators (`×`, `÷`, `−`, `√`), superscripts (`²`, `³`), and vulgar fractions are normalized before parsing. A separator that is not valid for the selected locale is not silently guessed.
+Number literals are canonicalized once using the evaluation locale, then tokenized with a stable internal grammar. Locale grouping separators, regular/non-breaking spaces, and apostrophes are accepted when they form three-digit groups; numeric underscores are accepted between digits. Common pasted and full-width operators (`×`, `∗`, `÷`, `∕`, `−`, `＋`, `％`, `√`), multi-digit signed superscript exponents (`2¹⁰`, `10⁻²`), vulgar fractions, and adjacent mixed vulgar fractions (`1⅝`) are normalized before parsing. A separator that is not valid for the selected locale is not silently guessed.
 
 English number phrases are normalized before lexing, including hyphenated compounds, hundreds through billions, decimals introduced by “point,” and negative values. Examples include `ten plus ten`, `one hundred and five times two`, and `three point five plus one point two five`. Named fraction handling remains separate so phrases such as `one half` retain their fraction meaning.
 
@@ -59,7 +76,7 @@ All three controls expose distinct accessibility labels and remain keyboard-focu
 
 ## Scope
 
-The supplied calculator expression catalog is covered by specialized deterministic evaluators and table-driven tests. This includes arithmetic/scientific expressions, percentages, units, currency and finance, calendars and time zones, scheduling/cron, geometry, informational health arithmetic, business metrics, number bases/bitwise operations, character and color conversion, transfer-time estimates, URL encoding, and Base64.
+The supplied calculator expression catalog is covered by specialized deterministic evaluators and table-driven tests. This includes arithmetic/scientific expressions, percentages, units, currency and finance, calendars and time zones, scheduling/cron, geometry, statistics, sequences, physics, scientific constants, informational health arithmetic, business metrics, number bases/bitwise operations, character and color conversion, transfer-time estimates, URL encoding, and Base64.
 
 Symbolic integration/differentiation and astronomy without a location are explicitly unsupported. They return an unsupported-capability error rather than a fabricated value. Cron support intentionally covers the documented five-field examples, not every vendor-specific extension.
 

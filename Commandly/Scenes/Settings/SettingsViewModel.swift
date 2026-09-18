@@ -13,6 +13,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
     case applications
     case commandWheel
     case permissions
+    case systemIntegration
     case about
 
     var id: String { rawValue }
@@ -24,6 +25,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .applications: return "Applications"
         case .commandWheel: return "Command Wheel"
         case .permissions: return "Permissions"
+        case .systemIntegration: return "System Integration"
         case .about: return "About"
         }
     }
@@ -39,7 +41,9 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .commandWheel:
             return "Create radial command profiles, pages, slots, shortcuts, and app rules."
         case .permissions:
-            return "Review access Commandly uses for calendar, files, and automation."
+            return "Review access Commandly uses for files, accounts, and system features."
+        case .systemIntegration:
+            return "Manage the optional background companion and verify its connection."
         case .about:
             return "Version details and project information."
         }
@@ -52,6 +56,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Sendable {
         case .applications: return "square.grid.2x2"
         case .commandWheel: return "circle.hexagongrid"
         case .permissions: return "lock.shield"
+        case .systemIntegration: return "link"
         case .about: return "info.circle"
         }
     }
@@ -68,6 +73,7 @@ final class SettingsViewModel {
     let applications: LauncherApplicationsSettingsModel
     let ai: AISettingsModel
     let commandWheel: CommandWheelSettingsModel
+    let windowSwitcherIsAvailable: Bool
 
     var selectedPane: SettingsPane = .general
     var opensAtLogin: Bool
@@ -113,6 +119,9 @@ final class SettingsViewModel {
         self.metadata = metadata
         self.ai = aiSettingsModel ?? AISettingsModel()
         let resolvedRegistry = applicationRegistry ?? .makeBuiltIn()
+        self.windowSwitcherIsAvailable = resolvedRegistry.definition(
+            for: WindowSwitcherApplication.applicationID
+        ) != nil
         self.applications = LauncherApplicationsSettingsModel(
             registry: resolvedRegistry,
             onPreferencesChange: onApplicationPreferencesChange,
@@ -211,7 +220,7 @@ final class SettingsViewModel {
 
     func refreshPermissions() async {
         var states: [PermissionKind: PermissionState] = [:]
-        for kind in [PermissionKind.calendar, .contacts, .files, .accessibility] {
+        for kind in [PermissionKind.calendar, .camera, .contacts, .files, .accessibility, .screenRecording] {
             states[kind] = await permissionService.state(for: kind)
         }
         permissionStates = states
@@ -262,9 +271,11 @@ final class SettingsViewModel {
     private func pane(for kind: PermissionKind) -> PrivacySettingsPane {
         switch kind {
         case .calendar: return .calendars
+        case .camera: return .camera
         case .contacts: return .contacts
         case .files: return .filesAndFolders
         case .accessibility: return .accessibility
+        case .screenRecording: return .screenRecording
         default: return .accessibility
         }
     }

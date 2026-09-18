@@ -17,7 +17,7 @@ struct OfflineToolsApplicationTests {
         let color = try #require(CommandlyColor(string: "#4A7DFF"))
         #expect(color.hex == "#4A7DFF")
         #expect(color.rgb == "rgb(74, 125, 255)")
-        #expect(color.hsl == "hsl(223, 100%, 65%)")
+        #expect(color.hsl == "hsl(223.093923 100% 64.509804% / 1)")
 
         let translucent = try #require(CommandlyColor(string: "rgba(255, 0, 128, 0.5)"))
         #expect(translucent.hex == "#FF008080")

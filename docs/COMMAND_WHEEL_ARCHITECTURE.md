@@ -3,7 +3,7 @@
 Command Wheel is an app-target presentation and interaction feature. It owns radial layout,
 profiles, input sessions, and an AppKit panel; it does not own command behavior. Its actionable
 segments are persistable `CommandReference` values resolved and executed by the same shared path as
-launcher search and application hotkeys.
+launcher search and registered application/tool hotkeys.
 
 ## Repository audit and resulting boundaries
 
@@ -31,7 +31,7 @@ The pre-implementation audit found these ownership seams:
 | Tests | CommandKit package tests, `CommandlyTests`, and `CommandlyUITests` |
 
 The application registry remains the owner of registered feature implementations and settings. It
-is not a second command resolver: all known launchable manifests, including disabled ones, are
+is not a second command resolver: all known launchable application and tool manifests, including disabled ones, are
 atomically synchronized into the existing CommandKit registry with one availability snapshot, and
 every invocation resolves there before execution.
 
@@ -40,7 +40,7 @@ every invocation resolves there before execution.
 ```mermaid
 flowchart TD
     S["Launcher search"] --> C["SharedCommandExecutionCoordinator"]
-    H["Registered application hotkey"] --> C
+    H["Registered application/tool hotkey"] --> C
     W["Command Wheel coordinator"] --> C
     C --> R["Existing CommandRegistry.resolve"]
     R --> V["Typed arguments and availability"]
@@ -64,7 +64,8 @@ flowchart TD
 
 `SharedCommandExecutor` contains app-level reusable behavior, not wheel behavior. Registered
 Commandly commands cross a narrow main-actor presentation boundary into the existing
-`LauncherApplicationRegistry` implementation. Installed application results use the parameterized
+`LauncherApplicationRegistry` implementation. The complete resolved reference crosses that boundary
+so an application-owned tool receives its typed arguments. Installed application results use the parameterized
 `applications.open-installed` manifest and its `bundleIdentifier` string argument, then call the
 existing `ApplicationOpening` adapter. Search and wheel references therefore reach the same opener
 and usage-ranking update.
@@ -237,8 +238,9 @@ intercept events during that visual tail. Deinitialization is a backup, not the 
 
 ## Input lifecycle and permissions
 
-One Carbon owner registers the launcher, Shelf, registered-application, and profile shortcuts in a
-deterministic order. Each event contains a stable registration ID, phase (pressed, released, or
+One Carbon owner registers the launcher, registered application/tool, and profile shortcuts in a
+deterministic order. Shelf's two default shortcuts are owned by its registered tools rather than a
+separate runtime route. Each event contains a stable registration ID, phase (pressed, released, or
 cancelled), and registration generation. Held registrations emit cancellation before replacement,
 so an old key-up cannot execute a newly assigned profile.
 

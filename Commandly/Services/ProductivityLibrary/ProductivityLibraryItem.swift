@@ -68,14 +68,45 @@ enum ProductivityLibraryItemKind: String, CaseIterable, Codable, Identifiable, S
     }
 }
 
-/// Immutable value persisted by the productivity library store.
-struct ProductivityLibraryItem: Codable, Equatable, Identifiable, Sendable {
+/// Sendable value persisted by the productivity library store.
+nonisolated struct ProductivityLibraryItem: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var kind: ProductivityLibraryItemKind
     var title: String
     var content: String
     let createdAt: Date
     var updatedAt: Date
+    var tags: [String]
+
+    init(
+        id: UUID, kind: ProductivityLibraryItemKind, title: String, content: String,
+        createdAt: Date, updatedAt: Date, tags: [String] = []
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.content = content
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.tags = ProductivityLibraryTags.normalized(tags)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, title, content, createdAt, updatedAt, tags
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try values.decode(UUID.self, forKey: .id),
+            kind: try values.decode(ProductivityLibraryItemKind.self, forKey: .kind),
+            title: try values.decode(String.self, forKey: .title),
+            content: try values.decode(String.self, forKey: .content),
+            createdAt: try values.decode(Date.self, forKey: .createdAt),
+            updatedAt: try values.decode(Date.self, forKey: .updatedAt),
+            tags: try values.decodeIfPresent([String].self, forKey: .tags) ?? []
+        )
+    }
 }
 
 /// Validation errors intentionally omit user-authored values so they remain safe to surface or log.

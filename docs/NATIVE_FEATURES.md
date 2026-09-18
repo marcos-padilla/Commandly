@@ -1,5 +1,9 @@
 # Native feature inventory
 
+This is the historical 101-item native-feature inventory. The current September 2026 video request
+has a broader scope, tracked in [Video Feature Parity](VIDEO_FEATURE_PARITY.md); exclusions below
+do not remove requirements from that newer goal.
+
 This document maps the requested 101-feature checklist to the behavior that exists in the
 current Commandly working tree. It is intentionally conservative: a permission contract,
 placeholder row, test double, or adjacent capability does not count as a finished feature.
@@ -25,12 +29,14 @@ are Not implemented/excluded.
 ## Starting any Commandly application
 
 1. Press **Option-Space** or choose **Open Commandly** from the menu bar.
-2. Type the application or command name, use the arrow keys if needed, and press Return.
+2. Type an application, tool, tag, or supported typed command, use the arrow keys if needed, and
+   press Return. The same root query can also show captured clipboard entries and authorized files.
 3. Within an application, Return runs its primary action, Command-K opens its action menu, and
    Escape first clears local UI state before returning to the launcher.
-4. To assign an alias, enable or disable an application, or assign a global shortcut, open
-   **Commandly Settings → Applications** and edit the registered application row. These settings
-   apply to Commandly's registered applications, not arbitrary installed macOS applications.
+4. To add search tags, enable or disable an application/tool, or assign an application/tool global
+   shortcut, open **Commandly Settings → Applications**, expand the application, and select the
+   relevant row. These settings apply to Commandly's registered definitions, not arbitrary installed
+   macOS applications.
 
 ## Run known commands with Command Wheel
 
@@ -47,7 +53,7 @@ same typed bundle-identifier reference used by launcher search and renders its n
 
 Command Wheel does not add another command catalog. Registered Commandly commands and installed-app
 references resolve through the same typed CommandKit registry, availability checks, executor,
-feedback, and privacy-safe history used by launcher search and application hotkeys. The default
+feedback, and privacy-safe history used by launcher search and application/tool hotkeys. The default
 configuration is disabled, has no shortcut, and contains File Search, Clipboard History, and Open
 Settings. See [Command Wheel](COMMAND_WHEEL.md) for configuration, interaction, context rules,
 import/export, privacy, and limitations.
@@ -67,7 +73,10 @@ the new text workflows:
   needed, then records and copies the combined value.
 
 Clipboard monitoring and on-device Vision/PDFKit enrichment remain in memory for the current app
-process. Clipboard contents, OCR text, and file contents are never logged or uploaded.
+process. A normal launcher-root query also shows up to six matches from that capture-time data;
+Return copies one directly without first opening Clipboard History. Private root rows do not feed
+autocomplete or command history. Clipboard contents, OCR text, and file contents are never logged or
+uploaded.
 
 ### Calculation History
 
@@ -87,10 +96,11 @@ Pomodoro cycles.
 
 ### Shelf
 
-Open **Shelf** from the launcher, menu-bar commands, or system-wide **New Shelf** / **New Shelf From
-Clipboard** shortcuts (`⌥⇧Space` / `⌥⇧A`). Each request opens in the preferred corner of the active
-display and macOS Space. Drop concrete file or folder URLs on the floating board; a blue outline plus
-an item-count prompt confirms targeting, and AirDrop, Messages, and Mail targets appear below it for
+Open **Shelf** from the launcher, menu-bar commands, or the default shortcuts owned by its **New
+Shelf** / **New Shelf From Clipboard** tools (`⌥⇧Space` / `⌥⇧A`). Either shortcut can be replaced or
+cleared in Applications settings. Each request opens in the preferred corner of the active display
+and macOS Space. Drop concrete file or folder URLs on the floating board; a blue outline plus an
+item-count prompt confirms targeting, and AirDrop, Messages, and Mail targets appear below it for
 direct native sharing. Shelf keeps external references rather than copying those originals.
 
 The clipboard command accepts file/folder URLs, a standalone image, or plain text. Shelf keeps URLs
@@ -115,8 +125,9 @@ gesture. See `docs/SHELF.md`.
 
 Open **Productivity Library** and use the add menu to create one of four local item types:
 
-- **Snippet** — reusable text or code. Every `{{clipboard}}` token is replaced with the current
-  clipboard string when the snippet is copied.
+- **Snippet** — reusable text or code with `{{clipboard}}`, `{{date}}`, `{{time}}`, `{{datetime}}`,
+  `{{uuid}}`, and named `{{input:Name}}` fields. Copy prompts for named values, then expands each token
+  from one copy-time snapshot. Inserted values are literal text and are never interpreted again.
 - **Quick Note** — persistent local text that can be searched and copied.
 - **Quicklink** — a validated HTTPS/HTTP URL, file URL, absolute or `~/` path, folder path, or custom
   application deep link. `javascript:` and `data:` payloads are rejected.
@@ -124,10 +135,16 @@ Open **Productivity Library** and use the add menu to create one of four local i
   copied.
 
 The application supports search, type filters, create, edit, delete confirmation, primary actions,
-and the native share sheet through `ShareLink`. Items are stored as versioned JSON in Commandly's
+and the native share sheet through `ShareLink`. Every item can have up to 12 comma-separated tags
+(32 characters each); tags are searchable and the Tag filter narrows the library. Items are stored as versioned JSON in Commandly's
 Application Support container. Sharing is a user-selected native share action, not a Commandly
 account, public link, or team library. Opening a Quicklink is always an explicit action; sandbox or
 target-application restrictions can still prevent a protected path or deep link from opening.
+Version 1 library files migrate when saved; version 2 retains tags. Named snippet values remain in
+memory only until copying/cancellation/session close and are not saved with the template. Template
+and expanded output size is limited to 1 MB, with at most 16 distinct prompted fields. Date/time
+tokens use local time (`yyyy-MM-dd`, `HH:mm`). Automatic expansion while typing in other apps is not
+implemented by this copy workflow.
 
 ### Recent Downloads
 
@@ -140,6 +157,15 @@ The scan runs off the main actor, is bounded to 50 results by default, supports 
 stale-result protection, and reads metadata rather than file contents. A narrow read-only Downloads
 sandbox entitlement permits this workflow; Commandly cannot modify Downloads through it and never
 logs filenames or paths.
+
+### Background Remover
+
+Open **Background Remover**, choose or drop an image, and Commandly uses Apple Vision locally to
+separate all detected foreground subjects. The application shows original and transparent previews
+and exports a PNG only after an explicit save action. Processing does not use the configured BYOK AI
+provider or a network connection; source bytes, masks, and results stay in memory for the active
+launcher session. Busy scenes, fine edges, transparent objects, and low foreground contrast can
+reduce cutout quality.
 
 ### System Activity
 
@@ -155,6 +181,48 @@ Commandly, Finder, and the current frontmost application are protected from bulk
 Unsaved work can still be lost when the user confirms a force or bulk action. This is not a full
 Unix process inspector: it does not list daemons or provide per-process CPU, memory, ports, or signals.
 
+### Port Manager
+
+Open **Port Manager** to inspect local TCP and UDP listeners visible to the current user. Filter by
+port, process name, PID, or protocol, then press Return on a selected listener to review a required
+confirmation. Confirming sends a graceful termination request to the process owning that listener;
+Commandly rechecks the process/port match immediately before that request. A port cannot be stopped
+independently of its process, and protected or other-user processes may be unavailable. Listener
+metadata stays on-device for the active session and is never stored, uploaded, or logged.
+
+The exact launcher phrases `kill port <number>` and `stop port <number>` invoke the same Kill Port
+tool with a typed integer. They prefill Port Manager and may prepare the matching listener for
+review, but they never bypass the explicit confirmation or owner revalidation. The Kill Port tool
+can also receive a global shortcut; without an argument it opens the review surface for manual
+selection.
+
+### Storage Cleaner
+
+Open **Storage Cleaner** to review identifier-based app leftovers and third-party caches in the
+current user's real Library. Leftovers are selected as recommendations; caches remain unchecked
+until the user chooses them. The scanner is bounded, excludes Apple and Commandly data plus
+ambiguous names and shared containers, and reports partial access instead of claiming a complete
+disk sweep.
+
+Choose **Find Exact Duplicates…** to select one folder for an ephemeral on-device scan. Regular files
+are grouped by size and then compared with incremental SHA-256 hashes. One copy in every exact-match
+group always remains unchecked, including when the user changes which copy to keep. Commandly does
+not persist the folder grant, paths, hashes, results, or selections. Review Cleanup shows an exact
+count and size before confirmed items move to Trash; Storage Cleaner never permanently deletes or
+empties Trash. See [Storage Cleaner](STORAGE_CLEANER.md).
+
+### Microphone Control
+
+Open **Microphone Control** to see the current default input device and whether its Core Audio mute
+property is on or off. Press Return or use the main button to change that state. The view refreshes
+while open so a device switch or mute change made elsewhere is reflected in Commandly.
+
+This changes the default device rather than one application's private capture session, so apps that
+use that input device receive the same muted or unmuted state. Commandly does not capture audio or
+request Microphone permission. Some external, virtual, aggregate, and driver-managed devices do not
+publish a writable mute property; those devices are reported as unsupported and their gain is not
+silently changed.
+
 ### Window Layouts
 
 Open **Window Layouts**, search or browse the 58 built-in presets, and press Return to apply the
@@ -167,6 +235,27 @@ width, and height values within the screen. Custom rectangles persist as non-sec
 Applying a layout requests Accessibility access only after the user invokes the action. Unsupported
 or missing focused windows fail with an explanation. There is no multi-application workspace layout,
 window-sequence automation, or separate global shortcut for each rectangle.
+
+### Window Switcher
+
+Window Switcher is foundation/prototype work, not a usable launcher application. Contracts,
+in-memory adapters, original UI/presentation models, a settings schema, app-target prototypes, and
+deterministic tests exist, but production registration and coordinator startup must remain disabled
+while Commandly uses App Sandbox. Apple's
+[App Sandbox guidance](https://developer.apple.com/documentation/security/protecting-user-data-with-app-sandbox)
+lists assistive Accessibility API use and terminating other running apps as incompatible activities;
+the prototype requires both cross-application window control and graceful quit.
+
+The modeled Option-Tab/Command-Tab active event tap, Dock Accessibility traversal, window
+enumeration/actions, and Screen Recording thumbnails are therefore not current product workflows.
+A listen-only input monitor would require Input Monitoring and could not suppress or replace system
+shortcuts. A future separately signed non-sandboxed companion/helper or a non-sandboxed direct-
+distribution build requires a new accepted architecture, security, and distribution decision.
+
+The prototype and interface remain original Commandly work; no GPL-licensed source, assets, copy,
+symbols, or exact layout from the supplied reference project is included. Private Dock, Spaces,
+WindowServer, media, and blur APIs remain forbidden. See [Window Switcher](WINDOW_SWITCHER.md) and
+the rejected [ADR-0008](decisions/ADR-0008-window-switcher-public-api-boundary.md).
 
 ### Emoji Search
 
@@ -187,6 +276,10 @@ Open **Color Tools** and enter `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb(...
 or choose **Pick from Screen** to use the native macOS color sampler. The application previews the
 color and can copy HEX, RGB/RGBA, or HSL. It does not record the screen or upload sampled pixels, and
 it does not yet parse or emit every color space.
+
+The application also exposes **Pick Screen Color** as a focused tool. Assigning that tool a global
+shortcut runs the native picker directly and copies the sampled Hex value without first opening the
+Color Tools surface.
 
 ### Dictionary
 
@@ -229,22 +322,27 @@ Open **Search Files**, authorize folders through the Files and Folders flow, the
 names, paths, Finder tags, metadata, supported document text, PDFs, and bounded on-device image OCR.
 Use the type filter and arrow keys; Return opens in the default app. Command-K exposes Open With,
 native sharing, Finder actions, copy/move/duplicate, clipboard export, Commandly shortcuts, and Trash.
-The SQLite/FTS index stays local and covers only user-authorized folders.
+The SQLite/FTS index stays local and covers only user-authorized folders. A normal root query also
+shows at most ten indexed matches after a short cancellable debounce; Return opens one directly,
+while filters, previews, and mutation actions remain in Search Files.
 
-### Application aliases, shortcuts, auto-quit, and uninstall
+### Application tags, tools, shortcuts, auto-quit, and uninstall
 
-**Commandly Settings → Applications** manages aliases, global Carbon hotkeys, enablement, and
-non-secret configuration for registered Commandly applications. Installed macOS app rows instead
+**Commandly Settings → Applications** shows an expandable Group → Application → Tool hierarchy and
+manages built-in/user tags, global Carbon hotkeys, enablement, and non-secret configuration for
+registered Commandly definitions. A tool can own a shortcut independently of its application;
+typed-command syntax invokes a tool but cannot own another shortcut. Installed macOS app rows instead
 use the launcher's action panel. There, **Enable Auto Quit** gracefully terminates that background
 app after the fixed idle threshold, while **Uninstall Application…** opens a review of the bundle and
 matching support files before moving selected items to Trash. Protected files may fail and are
 reported as partial failures rather than a complete wipe.
 
-Registered-application, launcher, Shelf, and Command Wheel shortcuts share one conflict-checked
-Carbon registration plan. Profile shortcuts support both key-down and key-up so hold-and-release
-does not require Accessibility access or a global keyboard monitor. Installed applications can be
-assigned to wheel slots through the shared parameterized open-application command; this does not
-make arbitrary installed-app hotkeys configurable.
+Launcher, registered application/tool, and Command Wheel shortcuts share one conflict-checked Carbon
+registration plan. Shelf's defaults are owned by its two tools rather than a separate fixed runtime
+route. Profile shortcuts support both key-down and key-up so hold-and-release does not require
+Accessibility access or a global keyboard monitor. Installed applications can be assigned to wheel
+slots through the shared parameterized open-application command; this does not make arbitrary
+installed-app hotkeys configurable.
 
 ### Launcher placement
 
@@ -257,8 +355,8 @@ workspace-aware placement system.
 | # | Requested idea | Status | Actual Commandly behavior and limitation |
 |---:|---|---|---|
 | 1 | Launch Applications | Existing | Root search discovers standard installed `.app` bundles and opens the selected bundle with `NSWorkspace`. |
-| 2 | Search Files | Existing | Registered local-index application with filters, previews, content search, and native file actions inside user-authorized folders. |
-| 3 | Browse Your Clipboard History | Existing | In-memory text/image/file history with local search, previews, copy, delete, clear, and on-device enrichment. |
+| 2 | Search Files | Existing | Root search shows a bounded open-only projection; the registered local-index application adds filters, previews, content search, and native file actions inside user-authorized folders. |
+| 3 | Browse Your Clipboard History | Existing | Root search can copy bounded capture-time matches; the in-memory application adds type filters, previews, editing, delete, clear, and on-device enrichment. |
 | 4 | Append entries to your clipboard | Implemented in this change | Clipboard History can append text to the current string clipboard with newline handling and record the combined entry. |
 | 5 | Edit your clipboard | Implemented in this change | Text history entries can be edited; saving also makes the edited value current. Image and file entries are read-only. |
 | 6 | Do Simple Math | Existing | The launcher calculator supports basic arithmetic, percentages, powers, roots, and common numeric syntax. |
@@ -288,10 +386,10 @@ workspace-aware placement system.
 | 30 | Custom window management commands | Partial | Users can persist and apply custom rectangles, but each custom layout is not an independently discoverable command or global hotkey. |
 | 31 | Automate the whole thing with window layouts | Not implemented/excluded | There is no multi-window, multi-application workspace capture/restore or sequence automation. |
 | 32 | Monitor System Resources | Implemented in this change | System Activity shows aggregate CPU, memory, the home-directory filesystem, uptime, and thermal state; no GPU/network/battery or per-process resource table. |
-| 33 | Set up hotkeys for apps | Partial | Global hotkeys are configurable for registered Commandly applications and Command Wheel profiles. Arbitrary installed app launch hotkeys are not configurable. |
-| 34 | Set up aliases for apps | Partial | Aliases participate in search for registered Commandly applications, not arbitrary installed `.app` results. |
-| 35 | Toggle system | Not implemented/excluded | The request is incomplete and no general system-toggle framework exists. Private or unsupported system-control APIs are not used. |
-| 36 | Emptying the trash | Not implemented/excluded | File and uninstall workflows can move selected items to Trash, but Commandly does not empty Trash. |
+| 33 | Set up hotkeys for apps | Partial | Global hotkeys are configurable independently for registered Commandly applications/tools and for Command Wheel profiles. Arbitrary installed app launch hotkeys are not configurable. |
+| 34 | Set up aliases for apps | Partial | Registered Commandly applications/tools have maintained tags plus bounded user tags. Legacy aliases remain searchable, but arbitrary installed `.app` results do not receive custom tags. |
+| 35 | Toggle system | Partial | Microphone Control provides one supported system toggle through Core Audio. There is no general system-toggle framework, and private or unsupported control APIs are not used. |
+| 36 | Emptying the trash | Not implemented/excluded | File, uninstall, and Storage Cleaner workflows can move selected items to Trash, but Commandly does not empty Trash. |
 | 37 | Install brew apps | Not implemented/excluded | Homebrew is external and would require shell/process execution, which this project explicitly forbids. |
 | 38 | Stay on top of your schedule | Not implemented/excluded | “My Schedule” remains an honest placeholder. Calendar permission support alone is not a calendar application. |
 | 39 | Join Online Meetings | Not implemented/excluded | No calendar-event or meeting-link workflow exists. |
@@ -305,10 +403,10 @@ workspace-aware placement system.
 | 47 | Control Apple Music | Not implemented/excluded | Commandly can launch installed apps but has no Music playback/library controller. |
 | 48 | Control Spotify | Not implemented/excluded | No Spotify account, Apple Events, URL-control, or Web API integration is included. |
 | 49 | Create Spotify playlists with AI | Not implemented/excluded | Finder AI has no Spotify authority. This would require a separately reviewed Spotify account/API integration and approval boundary. |
-| 50 | Switch between open windows | Partial | System Activity can switch to a running application and Window Layouts tracks one focused external window, but there is no list or selector for individual open windows. |
+| 50 | Switch between open windows | Not implemented/excluded | Contracts, settings, prototype adapters/UI, and deterministic tests exist, but sandboxed production Commandly keeps Window Switcher unregistered and disabled. Cross-application assistive Accessibility/termination is App Sandbox-incompatible; a privileged helper or non-sandboxed distribution requires a new accepted decision. |
 | 51 | Manage running processes | Partial | System Activity lists and manages regular GUI applications only; it is not a daemon/Unix-process inspector. |
-| 52 | Start a Screen Recording | Not implemented/excluded | No recording workflow exists and Screen Recording permission is not requested. |
-| 53 | Take a Screenshot | Not implemented/excluded | No screen capture workflow exists and Screen Recording permission is not requested. |
+| 52 | Start a Screen Recording | Not implemented/excluded | No recording workflow exists. The disabled Window Switcher prototype models bounded in-memory thumbnails, but production Commandly does not request Screen Recording for it. |
+| 53 | Take a Screenshot | Not implemented/excluded | No screenshot workflow exists. The disabled Window Switcher prototype has no production capture path or save/copy/export action. |
 | 54 | Record audio | Not implemented/excluded | No audio recorder exists and Microphone permission is not requested. |
 | 55 | Quit applications | Implemented in this change | System Activity requests graceful termination for a selected unprotected GUI application. |
 | 56 | Force quit applications | Implemented in this change | System Activity offers a destructive confirmation before native force termination. |
@@ -329,9 +427,9 @@ workspace-aware placement system.
 | 71 | Rotate images | Not implemented/excluded | No image mutation workflow exists. |
 | 72 | Compress images with TinyPNG | Not implemented/excluded | TinyPNG is an external network service; no credential/upload path is included. |
 | 73 | Convert Text Cases | Implemented in this change | Convert Text Case supports nine deterministic local styles and copies the output. |
-| 74 | Measure distances on your screen | Not implemented/excluded | No screen-measurement overlay exists; Screen Recording permission is not requested. |
+| 74 | Measure distances on your screen | Not implemented/excluded | No screen-measurement overlay exists. The disabled Window Switcher prototype does not create a production Screen Recording grant or measurement workflow. |
 | 75 | Search for Fonts | Implemented in this change | Search Fonts filters and previews installed font families and copies the family name. |
-| 76 | Pick colors | Implemented in this change | Color Tools invokes the native `NSColorSampler` after explicit user action. |
+| 76 | Pick colors | Implemented in this change | Color Tools invokes the native `NSColorSampler` after explicit user action; its focused picker tool can receive a direct global shortcut. |
 | 77 | Convert colors to any format | Partial | Color Tools parses HEX and RGB/RGBA and emits HEX, RGB/RGBA, and HSL; other color spaces and “any format” are not supported. |
 | 78 | Look up word definitions | Implemented in this change | Dictionary uses installed macOS dictionaries locally and can copy the result. |
 | 79 | Translate a word to another language | Not implemented/excluded | No Translation framework or remote translation workflow is registered. |
@@ -363,20 +461,26 @@ workspace-aware placement system.
 | Area | Native/free implementation | Permission and privacy boundary |
 |---|---|---|
 | Clipboard History | `NSPasteboard`, Vision, PDFKit, and local text extraction | No TCC prompt; in-memory only; content and enrichment are never logged. Clear History is user initiated. |
+| Background Remover | Apple Vision foreground-instance masks and Core Image PNG encoding | Explicitly picked or dropped images are processed on device. Bounded previews and the transparent result remain in memory until the session ends; export requires an explicit destination and no image data is logged or uploaded. |
 | Calculator | Native deterministic parsers and Foundation measurements/calendars | Queries/results are not logged or persisted. Currency is the one documented pre-existing no-key network provider and was not expanded by this pass. |
 | Productivity Library | Versioned JSON, native pasteboard/workspace, and `ShareLink` | Local Application Support storage; no content/path logging. Quicklinks open only after explicit action and unsafe schemes are rejected. |
 | Timers & Focus | Foundation dates/timer and optional `NSSound` | In-process only. No Notifications entitlement/prompt and no attempt to survive app termination. |
 | Shelf | SwiftUI/AppKit drag-and-drop and screen geometry, Carbon hot keys, Quick Look, `NSWorkspace`, `NSSharingService`, `NSPasteboard`, `FileManager`, and optional `NSSound` | One transient board of security-scoped file/folder URL references plus owner-only temporary files for explicit clipboard text/image imports. Owned files are removed with their item or board. No path/content logging, upload, persistence, Screen Recording/Accessibility requirement, or new automatic TCC prompt. File mutations and native sharing are explicit; the receiving service controls any transfer or sign-in. |
 | System Activity | Mach host statistics, `ProcessInfo`, `FileManager`, and `NSRunningApplication` | No new permission prompt. Quit/force/bulk actions require explicit user action; destructive actions have confirmation/protection where appropriate. |
+| Storage Cleaner | Bounded `FileManager` scans, the installed-app catalog, CryptoKit SHA-256, a native folder picker, and Trash | Real-user Library discovery begins only when Storage Cleaner opens and reuses the disclosed temporary uninstall exception. Duplicate discovery reads one explicitly selected ephemeral folder. No results, paths, hashes, or grants are persisted/logged/uploaded; at least one duplicate copy remains and every Trash batch requires confirmation. |
+| Microphone Control | Core Audio default-input and mute properties | No audio stream, recording, account, persistence, input entitlement, usage string, or TCC prompt. Device details are not logged. Unsupported devices remain unchanged. |
+| Window Switcher prototype | Infrastructure contracts, in-memory adapters, and unregistered public-API app-target prototypes | Not a usable sandboxed workflow. Production registration, cross-application Accessibility/control, active event filtering, Dock traversal, Quit, and thumbnail requests remain disabled. Any future privileged runtime must keep titles, images, queries, ordering, and pointer/input state ephemeral and continue to forbid private Dock, Spaces, WindowServer, media, and blur APIs. |
 | Window Layouts | Accessibility API and native screen/window geometry | Accessibility is requested contextually when applying a layout. Denial is recoverable in System Settings. Only the previously focused external target is acted on. |
 | Offline tools | Unicode metadata, Dictionary Services, `NSFontManager`, `NSColorSampler`, local transforms | No network or account. The color sampler is a system-controlled explicit picker, not general screen capture. |
 | File Search | FileManager/FSEvents, system SQLite FTS5, Quick Look, PDFKit, and bounded Vision OCR | Only user-selected security-scoped folders are indexed. Index/query/path/content data stays local and is not logged. Mutations are explicit. |
+| Markdown Preview | SwiftUI/AppKit, a dependency-free shared renderer, nonpersistent WebKit, and a sandboxed Quick Look extension | Reads only an explicitly picked/dropped file or Finder-supplied preview URL. Source and local images are bounded, document HTML/scripts and implicit network loads are blocked, and the App Group stores renderer settings only. No TCC prompt, upload, content/path logging, or code execution. |
 | Recent Downloads | Actor-confined `FileManager` metadata scan plus native workspace/Finder/pasteboard actions | A read-only Downloads entitlement grants top-level metadata access without a prompt. File contents are not read, filenames/paths are not logged, and no mutation action exists. |
-| App management | `NSWorkspace`, `NSRunningApplication`, Finder integration, and Trash | Finder Get Info may request Finder Automation on first use. Uninstall access is limited by sandbox entitlements/exceptions and may partially fail. |
-| Registered app aliases/hotkeys | UserDefaults for non-secret settings and Carbon global shortcuts | No Accessibility permission is needed for Carbon hotkeys. Secrets must never be stored in this settings schema. |
+| App management | `NSWorkspace`, `NSRunningApplication`, Finder integration, and Trash | Finder Get Info may request Finder Automation on first use. Uninstall and Storage Cleaner Library access is limited by disclosed sandbox exceptions, bounded review-first discovery, and partial-failure reporting. |
+| Registered application/tool tags and hotkeys | UserDefaults for non-secret user tags/settings and Carbon global shortcuts | Built-in tags remain definition metadata. No Accessibility permission is needed for Carbon hotkeys. Typed commands do not own shortcuts, and secrets must never be stored in this settings schema. |
 | Command Wheel | Carbon shortcuts, active-session pointer sampling, AppKit/SwiftUI radial panel, versioned profile JSON, and bounded command-outcome history | No new TCC prompt, event tap, or global keyboard monitor. Profiles exclude secrets; history excludes arguments, queries, pointer paths, clipboard/file contents, credentials, and private URLs. Selected commands retain their own permission boundaries. |
 
 Calendar and Contacts permission plumbing exists for future work, but there is no schedule, meeting,
-people-search, or reminders application. Screen Recording, Camera, Microphone, Location, Notifications,
-Bluetooth control, and cloud/account permissions remain unrequested. `ExtensionKit` still contains
+people-search, or reminders application. The disabled Window Switcher prototype does not request
+Screen Recording or Input Monitoring. Camera, Microphone capture, Location, Notifications, Bluetooth
+control, and cloud/account permissions remain unrequested. `ExtensionKit` still contains
 experimental manifest models only; it does not load third-party code or extensions.

@@ -11,6 +11,8 @@ protocol LauncherApplicationModel: AnyObject {
     var footerActions: [CommandActionDescriptor] { get }
     var menuActions: [CommandActionDescriptor] { get }
     var showsActionsMenu: Bool { get set }
+    /// Custom browsers may own a richer action panel instead of using the shell's shared panel.
+    var presentsOwnActionsMenu: Bool { get }
 
     func moveSelection(offset: Int)
     func perform(_ actionID: CommandActionID)
@@ -23,6 +25,7 @@ protocol LauncherApplicationModel: AnyObject {
 }
 
 extension LauncherApplicationModel {
+    var presentsOwnActionsMenu: Bool { false }
     func stop() {}
 
     func handleEscape() -> Bool { false }
@@ -67,6 +70,7 @@ final class LauncherApplicationSession {
     private let menuActionsProvider: () -> [CommandActionDescriptor]
     private let actionsMenuProvider: () -> Bool
     private let actionsMenuSetter: (Bool) -> Void
+    private let customActionsProvider: () -> Bool
     private let moveSelectionHandler: (Int) -> Void
     private let actionHandler: (CommandActionID) -> Void
     private let stopHandler: () -> Void
@@ -85,6 +89,7 @@ final class LauncherApplicationSession {
         self.menuActionsProvider = { model.menuActions }
         self.actionsMenuProvider = { model.showsActionsMenu }
         self.actionsMenuSetter = { model.showsActionsMenu = $0 }
+        self.customActionsProvider = { model.presentsOwnActionsMenu }
         self.moveSelectionHandler = { model.moveSelection(offset: $0) }
         self.actionHandler = { model.perform($0) }
         self.stopHandler = { model.stop() }
@@ -94,6 +99,7 @@ final class LauncherApplicationSession {
     var statusMessage: String? { statusMessageProvider() }
     var footerActions: [CommandActionDescriptor] { footerActionsProvider() }
     var menuActions: [CommandActionDescriptor] { menuActionsProvider() }
+    var usesSharedActionsMenu: Bool { !customActionsProvider() }
 
     var showsActionsMenu: Bool {
         get { actionsMenuProvider() }
@@ -118,6 +124,16 @@ final class LauncherApplicationSession {
 
     func perform(_ actionID: CommandActionID) {
         actionHandler(actionID)
+    }
+
+    /// Revalidates an open menu against current feature state before dispatching an action.
+    @discardableResult
+    func performMenuAction(_ actionID: CommandActionID) -> Bool {
+        guard usesSharedActionsMenu, showsActionsMenu,
+              menuActions.contains(where: { $0.id == actionID && $0.isEnabled }) else { return false }
+        showsActionsMenu = false
+        actionHandler(actionID)
+        return true
     }
 
     func handleEscape() -> Bool {

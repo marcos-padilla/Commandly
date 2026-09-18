@@ -24,6 +24,9 @@ nonisolated struct DownloadsApplicationServices: Sendable {
 @MainActor
 struct DownloadsApplication: LauncherApplication {
     static let applicationID = CommandID(rawValue: "downloads.recent")
+    static let openToolID = CommandID(rawValue: "downloads.recent.tool.open")
+    static let openNewestToolID = CommandID(rawValue: "downloads.open-newest")
+    static let copyNewestToolID = CommandID(rawValue: "downloads.copy-newest")
 
     static let manifest = CommandManifest(
         id: applicationID,
@@ -67,14 +70,71 @@ struct DownloadsApplication: LauncherApplication {
         self.services = services
     }
 
+    var toolDefinitions: [LauncherApplicationDefinition] {
+        [
+            LauncherApplicationDefinition.tool(
+                id: Self.openToolID,
+                parentID: Self.applicationID,
+                title: "Open Recent Downloads",
+                subtitle: "Browse the newest top-level files in Downloads",
+                systemImage: "arrow.down.circle",
+                keywords: ["open", "downloads", "latest", "recent", "files"]
+            ),
+            LauncherApplicationDefinition.tool(
+                id: Self.openNewestToolID,
+                parentID: Self.applicationID,
+                title: "Open Newest Download",
+                subtitle: "Open the most recent available download",
+                systemImage: "arrow.up.forward.app",
+                order: 1,
+                keywords: ["open newest", "latest download", "recent file"]
+            ),
+            LauncherApplicationDefinition.tool(
+                id: Self.copyNewestToolID,
+                parentID: Self.applicationID,
+                title: "Copy Newest Download",
+                subtitle: "Copy the most recent download as a file URL",
+                systemImage: "doc.on.doc",
+                order: 2,
+                keywords: ["copy newest", "latest download", "clipboard", "recent file"]
+            )
+        ]
+    }
+
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
+        makeLaunch(initialAction: nil, context: context)
+    }
+
+    func launch(
+        toolID: CommandID,
+        arguments: CommandArguments,
+        in context: LauncherApplicationContext
+    ) -> LauncherApplicationLaunch {
+        _ = arguments
+        switch toolID {
+        case Self.openToolID:
+            return makeLaunch(initialAction: nil, context: context)
+        case Self.openNewestToolID:
+            return makeLaunch(initialAction: .openNewest, context: context)
+        case Self.copyNewestToolID:
+            return makeLaunch(initialAction: .copyNewest, context: context)
+        default:
+            return .message("Recent Downloads tool is unavailable.")
+        }
+    }
+
+    private func makeLaunch(
+        initialAction: DownloadsInitialAction?,
+        context: LauncherApplicationContext
+    ) -> LauncherApplicationLaunch {
         let model = DownloadsViewModel(
             provider: services.provider,
             urlOpener: services.urlOpener,
             fileRevealer: services.fileRevealer,
             pasteboard: services.pasteboard,
             onGoBack: context.navigation.goBack,
-            onDismiss: context.navigation.dismissLauncher
+            onDismiss: context.navigation.dismissLauncher,
+            initialAction: initialAction
         )
         return .present(
             LauncherApplicationSession(manifest: Self.manifest, model: model) {

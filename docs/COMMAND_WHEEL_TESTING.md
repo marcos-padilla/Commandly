@@ -209,8 +209,10 @@ not leak.
 
 Before completion, verify that:
 
-- ⌥Space still toggles the launcher and Shelf's two fixed shortcuts still route correctly;
-- registered-application hotkeys still present their existing session once, including cold launch;
+- ⌥Space still toggles the launcher and Shelf's two tool-owned default shortcuts still route
+  correctly after replacement, clearing, or restoration;
+- registered application/tool hotkeys still invoke or present their existing implementation once,
+  including cold launch, and preserve typed tool arguments;
 - launcher command and installed-app search retain selection, ranking, action menus, feedback, and
   dismissal behavior;
 - disabled applications stay absent from discovery but saved wheel references remain visibly
@@ -243,7 +245,7 @@ unavailable hardware coverage, and measurements that were not performed.
 | VoiceOver/appearance matrix | VoiceOver and system appearance/accessibility settings were not changed on the validation Mac | Not run |
 | Activation/selection performance | No Release physical-shortcut latency sample was captured; the required 30-warm-activation median/p95/maximum measurement remains outstanding | Not measured |
 | Repeated-open leak/lifecycle review | No 100-cycle physical open/cancel Instruments Allocations/Leaks or memory-graph run was captured | Not measured |
-| Shared-command and legacy-shortcut regression review | Shared execution/catalog behavior passed automated app tests. Manual ⌥Space, Shelf, registered-application hotkey, and legacy launcher checks remain pending; the broader UI result above retains the File Search failure | Partial automated pass; manual review pending |
+| Shared-command and legacy-shortcut regression review | Shared execution/catalog behavior passed automated app tests. Manual ⌥Space, Shelf tool-default, registered application/tool hotkey, and legacy launcher checks remain pending; the broader UI result above retains the File Search failure | Partial automated pass; manual review pending |
 
 Do not mark the feature complete until this record distinguishes automated passes from manual
 passes, failures, skipped cases, and measurements that were not obtainable on the validation Mac.

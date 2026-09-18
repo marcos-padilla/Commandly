@@ -173,6 +173,9 @@ struct CalculatorClassifier: Sendable {
     }
 
     private func looksLikeCalculationSuite(_ input: String) -> Bool {
+        if CalculatorExpanded.looksLikeQuery(input) {
+            return true
+        }
         let phrases = [
             "area of a rectangle", "perimeter of a", "area of a square", "diagonal of a", "area of a circle",
             "circumference of a circle", "circle diameter from", "area of a triangle", "hypotenuse with",

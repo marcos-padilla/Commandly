@@ -26,10 +26,24 @@ struct ClipboardHistoryRow: View {
                     isSelected: isSelected,
                     size: density.iconSize
                 )
-                Text(entry.preview)
-                    .commandlyFont(size: 12, weight: .medium)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.displayTitle)
+                        .commandlyFont(size: 12, weight: .medium)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let collection = entry.organization.collection {
+                        Text(collection)
+                            .commandlyFont(size: 10)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                if entry.organization.isPinned {
+                    Image(systemName: "pin.fill")
+                        .commandlyFont(size: 10)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
                 Spacer(minLength: 0)
             }
         } accessory: {
@@ -38,8 +52,13 @@ struct ClipboardHistoryRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(entry.preview)
+        .accessibilityLabel(entry.displayTitle)
+        .accessibilityValue([
+            entry.organization.isPinned ? "Pinned" : nil,
+            entry.organization.collection.map { "Collection: " + $0 }
+        ].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityRemoveTraits(isSelected ? [] : .isSelected)
         .accessibilityAction(named: "Copy", onCopy)
     }
 

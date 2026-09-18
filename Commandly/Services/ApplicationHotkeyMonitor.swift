@@ -9,7 +9,7 @@ enum ApplicationHotkeyRegistrationIssue: Equatable, Sendable {
     var message: String {
         switch self {
         case .duplicate:
-            return "This shortcut is already assigned to another Commandly application."
+            return "This shortcut is already assigned to another Commandly application or tool."
         case .unavailable:
             return "This shortcut is reserved by Commandly, macOS, or another application."
         }

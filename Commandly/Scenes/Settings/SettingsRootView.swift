@@ -6,12 +6,17 @@ import SwiftUI
 
 struct SettingsRootView: View {
     @State private var viewModel: SettingsViewModel
+    @State private var systemIntegrationModel: SystemIntegrationSettingsModel
+    private let keyboardTriggerSettings: KeyboardTriggerSettingsModel?
     @State private var isSidebarVisible = true
     @State private var sidebarQuery = ""
+    @State private var sidebarSearchFocusEpoch = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(viewModel: SettingsViewModel) {
+    init(viewModel: SettingsViewModel, systemIntegrationModel: SystemIntegrationSettingsModel? = nil, keyboardTriggerSettings: KeyboardTriggerSettingsModel? = nil) {
+        self.keyboardTriggerSettings = keyboardTriggerSettings
         _viewModel = State(initialValue: viewModel)
+        _systemIntegrationModel = State(initialValue: systemIntegrationModel ?? SystemCompanionApplicationServices.inMemory().settings)
     }
 
     var body: some View {
@@ -26,6 +31,7 @@ struct SettingsRootView: View {
                     SettingsSidebar(
                         selection: $viewModel.selectedPane,
                         query: $sidebarQuery,
+                        searchFocusEpoch: sidebarSearchFocusEpoch,
                         versionLabel: versionLabel
                     )
                     .frame(width: LayoutConstants.settingsSidebarWidth)
@@ -71,6 +77,12 @@ struct SettingsRootView: View {
         .onAppear {
             viewModel.onAppear()
         }
+        .onKeyPress(keys: [KeyEquivalent("f")], phases: .down) { press in
+            guard press.modifiers == .command else { return .ignored }
+            isSidebarVisible = true
+            sidebarSearchFocusEpoch += 1
+            return .handled
+        }
     }
 
     private var pageTransition: AnyTransition {
@@ -106,6 +118,8 @@ struct SettingsRootView: View {
             )
         case .permissions:
             PermissionsSettingsPage(viewModel: viewModel)
+        case .systemIntegration:
+            SystemIntegrationSettingsPage(model: systemIntegrationModel, keyboardTriggers: keyboardTriggerSettings)
         case .about:
             AboutSettingsPage(viewModel: viewModel)
         }
@@ -119,6 +133,7 @@ struct SettingsRootView: View {
 private struct SettingsSidebar: View {
     @Binding var selection: SettingsPane
     @Binding var query: String
+    let searchFocusEpoch: Int
     let versionLabel: String
 
     private var filteredPanes: [SettingsPane] {
@@ -138,7 +153,15 @@ private struct SettingsSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSidebarSearchField(query: $query)
+            SettingsSidebarSearchField(
+                query: $query,
+                focusEpoch: searchFocusEpoch,
+                onSubmit: {
+                    if filteredPanes.contains(selection) == false,
+                       let first = filteredPanes.first { selection = first }
+                },
+                onMoveSelection: moveSelection
+            )
                 .padding(.horizontal, Spacing.sm.rawValue)
                 .frame(height: SettingsTopBar.height)
 
@@ -151,8 +174,8 @@ private struct SettingsSidebar: View {
                         Text("No settings found")
                             .commandlyFont(size: 11.5, weight: .medium)
                         Text("Try a pane name or setting, such as Appearance or Calendar.")
-                            .commandlyFont(size: 9.5)
-                            .foregroundStyle(.tertiary)
+                            .commandlyFont(size: 11)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
@@ -179,8 +202,8 @@ private struct SettingsSidebar: View {
             .environment(\.defaultMinListRowHeight, 34)
 
             Text("Version \(versionLabel)")
-                .commandlyFont(size: 9.5)
-                .foregroundStyle(.quaternary)
+                .commandlyFont(size: 10.5)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, Spacing.md.rawValue)
                 .padding(.bottom, Spacing.sm.rawValue)
                 .contentTransition(.numericText())
@@ -193,10 +216,20 @@ private struct SettingsSidebar: View {
                 .frame(width: 1)
         }
     }
+
+    private func moveSelection(_ direction: Int) {
+        var navigation = LauncherMenuSelection<SettingsPane>()
+        navigation.select(selection, in: filteredPanes)
+        navigation.move(by: direction, in: filteredPanes)
+        if let pane = navigation.selectedID { selection = pane }
+    }
 }
 
 private struct SettingsSidebarSearchField: View {
     @Binding var query: String
+    let focusEpoch: Int
+    let onSubmit: () -> Void
+    let onMoveSelection: (Int) -> Void
     @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -212,6 +245,21 @@ private struct SettingsSidebarSearchField: View {
                 .commandlyFont(size: 11.5)
                 .focused($isFocused)
                 .accessibilityLabel("Search Settings panes")
+                .accessibilityIdentifier("settings.search")
+                .onSubmit(onSubmit)
+                .onKeyPress(.upArrow) {
+                    onMoveSelection(-1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    onMoveSelection(1)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    guard query.isEmpty == false else { return .ignored }
+                    query = ""
+                    return .handled
+                }
 
             if query.isEmpty == false {
                 Button {
@@ -228,18 +276,22 @@ private struct SettingsSidebarSearchField: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
+        .background(
+            SettingsVisualStyle.fieldBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.sm.rawValue, style: .continuous)
                 .strokeBorder(
-                    isFocused ? SettingsVisualStyle.focusRing : SettingsVisualStyle.separator,
+                    isFocused ? SettingsVisualStyle.focusRing : .clear,
                     lineWidth: 1
                 )
         }
-        .glassEffect(
-            .regular.interactive(),
-            in: .rect(cornerRadius: CornerRadius.md.rawValue)
-        )
         .animation(reduceMotion ? nil : CommandlyMotion.hover, value: isFocused)
+        .onAppear {
+            if focusEpoch > 0 { isFocused = true }
+        }
+        .onChange(of: focusEpoch) { _, _ in isFocused = true }
     }
 }
 

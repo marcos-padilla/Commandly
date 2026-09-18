@@ -20,12 +20,22 @@ enum LauncherInputDevice: Equatable {
     case pointer
 }
 
+private enum InlineFileSearchOutcome: Sendable {
+    case results([FileSearchItem])
+    case permissionRequired
+    case unavailable
+}
+
 @Observable
 @MainActor
 final class LauncherViewModel {
     private let applicationRegistry: LauncherApplicationRegistry
     @ObservationIgnored
     private let clipboardHistoryStore: ClipboardHistoryStore
+    @ObservationIgnored
+    private let fileSearchService: any FileSearching
+    @ObservationIgnored
+    private let urlOpener: any URLOpening
     @ObservationIgnored
     private let applicationOpener: any ApplicationOpening
     @ObservationIgnored
@@ -61,10 +71,11 @@ final class LauncherViewModel {
     /// Bumped on each presentation so the search field can reclaim focus.
     private(set) var searchFocusEpoch: Int = 0
     private(set) var activeCalculatorResult: CalculatorResult?
+    let colorSearch: ColorSearchModel
 
     var query: String = "" {
         didSet {
-            guard oldValue != query else { return }
+            guard oldValue != query, suppressesSearchScheduling == false else { return }
             scheduleSearch()
         }
     }
@@ -75,9 +86,26 @@ final class LauncherViewModel {
     /// True while the results list is scrolling; pointer hover must not move selection.
     private(set) var isResultsScrolling = false
     private var hoveredID: String?
-    var route: LauncherRoute = .root
+    var route: LauncherRoute = .root {
+        didSet {
+            if oldValue != route {
+                cancelPendingRootConfirmation()
+                colorSearch.dismissActions()
+            }
+        }
+    }
     private(set) var activeApplication: LauncherApplicationSession?
     var uninstallViewModel: ApplicationUninstallViewModel?
+    var applicationAliasEditor: ApplicationAliasEditorModel?
+    var installedApplicationShortcutEditor: InstalledApplicationShortcutEditorModel?
+    @ObservationIgnored
+    let saveInstalledApplicationShortcut: ((String, LauncherHotKey?) -> String?)?
+    @ObservationIgnored
+    let onInstalledApplicationPreferencesChange: () -> Void
+    @ObservationIgnored
+    let onInstalledShortcutRecordingChange: (Bool) -> Void
+    @ObservationIgnored
+    let installedApplicationShortcutIssue: (String) -> String?
     /// When non-nil, the application actions panel is presented for this bundle ID.
     var applicationActionsTargetBundleID: String?
     var applicationActionsQuery: String = ""
@@ -99,6 +127,20 @@ final class LauncherViewModel {
 
     @ObservationIgnored
     private var searchTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var searchRequestID = UUID()
+    @ObservationIgnored
+    private var publishedSearchRequestID: UUID?
+    @ObservationIgnored
+    private var rootConfirmationID: UUID?
+    @ObservationIgnored
+    private var rootConfirmationTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var rootConfirmationWaiter: CheckedContinuation<Void, Never>?
+    @ObservationIgnored
+    private var isExecutingRootConfirmation = false
+    @ObservationIgnored
+    private var suppressesSearchScheduling = false
     @ObservationIgnored
     var commandWheelAssignmentPreparationTask: Task<Void, Never>?
     @ObservationIgnored
@@ -137,9 +179,15 @@ final class LauncherViewModel {
         onOpenAISettings: (() -> Void)? = nil,
         onOpenPermissionsSettings: (() -> Void)? = nil,
         onOpenCommandWheelSettings: @escaping (CommandWheelSlotLocation) -> Void = { _ in },
-        onQuit: @escaping () -> Void = {}
+        onQuit: @escaping () -> Void = {},
+        saveInstalledApplicationShortcut: ((String, LauncherHotKey?) -> String?)? = nil,
+        onInstalledApplicationPreferencesChange: @escaping () -> Void = {},
+        onInstalledShortcutRecordingChange: @escaping (Bool) -> Void = { _ in },
+        installedApplicationShortcutIssue: @escaping (String) -> String? = { _ in nil }
     ) {
         self.clipboardHistoryStore = clipboardHistoryStore
+        self.fileSearchService = fileSearchService
+        self.urlOpener = urlOpener
         self.applicationOpener = applicationOpener
         self.commandCoordinator = commandCoordinator
         self.commandWheelAssignmentStore = commandWheelAssignmentStore
@@ -151,6 +199,7 @@ final class LauncherViewModel {
         self.finderInfoPresenter = finderInfoPresenter
         self.uninstallDiscoverer = uninstallDiscoverer
         self.pasteboard = pasteboard
+        self.colorSearch = ColorSearchModel(pasteboard: pasteboard)
         self.calculator = calculator
         self.calculatorSession = calculatorSession
         self.placeholderItems = placeholderItems
@@ -161,6 +210,10 @@ final class LauncherViewModel {
         self.onOpenPermissionsSettings = onOpenPermissionsSettings ?? onOpenSettings
         self.onOpenCommandWheelSettings = onOpenCommandWheelSettings
         self.onQuit = onQuit
+        self.saveInstalledApplicationShortcut = saveInstalledApplicationShortcut
+        self.onInstalledApplicationPreferencesChange = onInstalledApplicationPreferencesChange
+        self.onInstalledShortcutRecordingChange = onInstalledShortcutRecordingChange
+        self.installedApplicationShortcutIssue = installedApplicationShortcutIssue
         self.applicationRegistry = applicationRegistry ?? .makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: FileSearchApplicationServices(
@@ -174,6 +227,7 @@ final class LauncherViewModel {
             calculatorSessionStore: calculatorSession
         )
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
+        publishedSearchRequestID = searchRequestID
     }
 
     private func applicationContext(for applicationID: CommandID) -> LauncherApplicationContext? {
@@ -260,7 +314,8 @@ final class LauncherViewModel {
 
     /// Root footer Actions: application actions when an app is selected; otherwise empty.
     var rootActionsMenuItems: [CommandActionDescriptor] {
-        applicationActions(for: selectedApplicationBundleID).map(\.descriptor)
+        if case .colorPrimary = selectedItem?.action { return colorSearch.actions }
+        return applicationActions(for: selectedApplicationBundleID).map(\.descriptor)
     }
 
     var showsApplicationActionsPanel: Bool {
@@ -291,6 +346,12 @@ final class LauncherViewModel {
     var footerActions: [CommandActionDescriptor] {
         switch route {
         case .root:
+            if case .colorPrimary = selectedItem?.action, colorSearch.result != nil {
+                return [
+                    CommandActionDescriptor(id: BuiltInCommandActionID.copy, title: "Copy \(colorSearch.selectedFormat.title)", isPrimary: true, keyHint: .return),
+                    CommandActionDescriptor(id: BuiltInCommandActionID.openActions, title: "Actions", keyHint: .commandK)
+                ]
+            }
             return [
                 CommandActionDescriptor(
                     id: BuiltInCommandActionID.openActions,
@@ -366,14 +427,20 @@ final class LauncherViewModel {
 
     /// Clears navigation / command-surface state when the launcher is hidden.
     func resetAfterDismiss() {
+        colorSearch.stop()
+        cancelPendingRootConfirmation()
         searchTask?.cancel()
         searchTask = nil
+        searchRequestID = UUID()
+        (fileSearchService as? any FileSearchSessionManaging)?.endFileSearchSession()
         commandWheelAssignmentPreparationTask?.cancel()
         commandWheelAssignmentPreparationTask = nil
         commandWheelAssignmentPreparationID = nil
         resultsScrollEndTask?.cancel()
         resultsScrollEndTask = nil
+        suppressesSearchScheduling = true
         query = ""
+        suppressesSearchScheduling = false
         statusMessage = nil
         shouldScrollToSelection = false
         isResultsScrolling = false
@@ -387,10 +454,15 @@ final class LauncherViewModel {
         dismissApplicationActionsPanel()
         dismissRegisteredCommandActionsPanel()
         commandWheelAssignmentModel = nil
+        applicationAliasEditor = nil
+        installedApplicationShortcutEditor?.cancel()
+        installedApplicationShortcutEditor = nil
         applySearchResult(items: fallbackItems(matching: ""), queryText: "")
+        publishedSearchRequestID = searchRequestID
     }
 
     func select(_ id: String) {
+        cancelPendingRootConfirmation()
         shouldScrollToSelection = false
         selectedID = id
         statusMessage = nil
@@ -442,6 +514,7 @@ final class LauncherViewModel {
     }
 
     func moveSelection(offset: Int) {
+        cancelPendingRootConfirmation()
         if case .application = route {
             activeApplication?.moveSelection(offset: offset)
             return
@@ -466,59 +539,104 @@ final class LauncherViewModel {
     }
 
     func confirmSelection() {
+        // One Return intent owns its side effects until execution completes, including a
+        // transition into an application. A second Return cannot reuse the pending intent.
+        guard rootConfirmationID == nil else { return }
         if case .application = route {
             guard let primaryActionID = activeApplication?.primaryActionID else { return }
             activeApplication?.perform(primaryActionID)
             return
         }
-        guard let item = selectedItem else { return }
+        guard route == .root else { return }
+        performWithCurrentRootSelection { [weak self] item in
+            await self?.executeRootSelection(item)
+        }
+    }
+
+    /// Waits for this exact query before an invocation or Actions intent uses its selection.
+    /// Repeated presses coalesce, and edits/navigation cancel a not-yet-consumed intent.
+    func performWithCurrentRootSelection(_ action: @escaping @MainActor (LauncherItem) async -> Void) {
+        guard route == .root, rootConfirmationID == nil else { return }
+        let confirmationID = UUID()
+        let requestID = searchRequestID
+        let submittedQuery = query
+        rootConfirmationID = confirmationID
+        rootConfirmationTask = Task.immediate { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if rootConfirmationID == confirmationID {
+                    rootConfirmationID = nil
+                    isExecutingRootConfirmation = false
+                }
+            }
+            if publishedSearchRequestID != requestID {
+                await withCheckedContinuation { rootConfirmationWaiter = $0 }
+            }
+            guard Task.isCancelled == false,
+                  rootConfirmationID == confirmationID,
+                  searchRequestID == requestID,
+                  publishedSearchRequestID == requestID,
+                  query == submittedQuery,
+                  route == .root,
+                  let item = selectedItem else { return }
+            isExecutingRootConfirmation = true
+            await action(item)
+            // Keep rapid submissions in this event-loop turn from applying to the
+            // application that the first submission has just presented.
+            await Task.yield()
+        }
+    }
+
+    /// Tests use the same pending-query and execution path as keyboard submission.
+    func confirmSelectionAndWaitForTesting() async {
+        confirmSelection()
+        await waitForConfirmationForTesting()
+    }
+
+    /// Observes an already submitted root keyboard intent without submitting another one.
+    func waitForConfirmationForTesting() async {
+        await rootConfirmationTask?.value
+    }
+
+    private func cancelPendingRootConfirmation() {
+        // Once execution starts, the press has been consumed. Keep the in-flight guard
+        // until it finishes; navigation must not permit a duplicate side effect.
+        guard isExecutingRootConfirmation == false else { return }
+        rootConfirmationID = nil
+        rootConfirmationTask?.cancel()
+        let waiter = rootConfirmationWaiter
+        rootConfirmationWaiter = nil
+        waiter?.resume()
+    }
+
+    private func publishSearchReadiness(requestID: UUID, includesFileResults: Bool = false) {
+        guard searchRequestID == requestID else { return }
+        // If the fast search is empty, a pending Return may still select a file result.
+        guard rootItems.isEmpty == false || includesFileResults else { return }
+        publishedSearchRequestID = requestID
+        let waiter = rootConfirmationWaiter
+        rootConfirmationWaiter = nil
+        waiter?.resume()
+    }
+
+    private func executeRootSelection(_ item: LauncherItem) async {
         switch item.action {
         case .openSettings:
             onDismiss()
             onOpenSettings()
+        case .openFileSearchPermissions:
+            onDismiss()
+            onOpenPermissionsSettings()
         case .dismiss:
             onDismiss()
         case .placeholder(let message):
             statusMessage = message
-        case .launchApplication(let applicationID):
-            guard commandCoordinator != nil else {
-                launch(applicationID)
-                return
-            }
-            Task { @MainActor [weak self] in
-                await self?.executeRegisteredApplication(
-                    applicationID,
-                    source: .search
-                )
-            }
-        case .openInstalledApplication(let bundleIdentifier):
-            Task { @MainActor [weak self] in
-                await self?.openApplication(bundleIdentifier: bundleIdentifier)
-            }
-        case .copyText(let value):
-            Task { @MainActor [weak self] in
-                await self?.pasteboard.writeString(value)
-                self?.statusMessage = nil
-                self?.dismiss()
-            }
-        case .calculatorPrimary(let resultID):
-            performCalculatorPrimary(resultID: resultID)
-        }
-    }
-
-    /// Test helper: awaits primary confirm side effects (copy / open).
-    func confirmSelectionAndWaitForTesting() async {
-        if case .application = route {
-            guard let primaryActionID = activeApplication?.primaryActionID else { return }
-            activeApplication?.perform(primaryActionID)
-            return
-        }
-        guard let item = selectedItem else { return }
-        switch item.action {
         case .copyText(let value):
             await pasteboard.writeString(value)
             statusMessage = nil
             dismiss()
+        case .colorPrimary(let resultID):
+            await colorSearch.copyAndWait(resultID: resultID)
         case .calculatorPrimary(let resultID):
             guard let result = activeCalculatorResult, result.id.rawValue == resultID else { return }
             calculatorSession.recordSuccess(result)
@@ -526,16 +644,38 @@ final class LauncherViewModel {
             statusMessage = "Copied answer."
         case .launchApplication(let applicationID):
             await executeRegisteredApplication(applicationID, source: .search)
+        case .executeCommand(let reference):
+            await executeRegisteredCommand(reference, source: .search)
         case .openInstalledApplication(let bundleIdentifier):
             await openApplication(bundleIdentifier: bundleIdentifier)
-        default:
-            confirmSelection()
+        case .copyClipboardEntry(let id):
+            guard let entry = clipboardHistoryStore.entry(id: id) else {
+                statusMessage = "That clipboard item is no longer available."
+                return
+            }
+            clipboardHistoryStore.copyToPasteboard(entry)
+            dismiss()
+        case .openFile(let url):
+            do {
+                try await urlOpener.openURL(url)
+                dismiss()
+            } catch {
+                statusMessage = "That file couldn’t be opened."
+            }
         }
     }
 
     func performFooterAction(_ id: CommandActionID) {
         if case .application = route {
             activeApplication?.perform(id)
+            return
+        }
+        if CommandlyColorFormat.matching(id) != nil || id == BuiltInCommandActionID.copy {
+            performWithCurrentRootSelection { [weak self] item in
+                guard let self, case .colorPrimary(let resultID) = item.action else { return }
+                if id == BuiltInCommandActionID.copy { colorSearch.copy(resultID: resultID) }
+                else { colorSearch.perform(id, resultID: resultID) }
+            }
             return
         }
         switch id {
@@ -602,23 +742,6 @@ final class LauncherViewModel {
         }
     }
 
-    private func performCalculatorPrimary(resultID: String) {
-        guard let result = activeCalculatorResult, result.id.rawValue == resultID else {
-            if case .copyText(let value) = selectedItem?.action {
-                Task { @MainActor [weak self] in
-                    await self?.pasteboard.writeString(value)
-                    self?.dismiss()
-                }
-            }
-            return
-        }
-        calculatorSession.recordSuccess(result)
-        Task { @MainActor [weak self] in
-            await self?.pasteboard.writeString(result.formattedPrimaryValue)
-            self?.statusMessage = "Copied answer."
-        }
-    }
-
     func editCalculatorQuestion(resultID: String) {
         guard let result = activeCalculatorResult, result.id.rawValue == resultID else { return }
         query = result.originalInput
@@ -647,10 +770,20 @@ final class LauncherViewModel {
     /// deterministic feature setup. Invocation surfaces should execute a `CommandReference`.
     @discardableResult
     func presentRegisteredApplication(_ applicationID: CommandID) -> CommandResult {
-        guard let application = applicationRegistry.enabledApplication(for: applicationID) else {
-            let message = applicationRegistry.application(for: applicationID) == nil
-                ? "Application is not registered."
-                : "Application is disabled."
+        presentRegisteredCommand(CommandReference(commandID: applicationID))
+    }
+
+    /// Presents an application or one of its tools while preserving typed invocation arguments.
+    @discardableResult
+    func presentRegisteredCommand(_ reference: CommandReference) -> CommandResult {
+        guard let applicationID = applicationRegistry.owningApplicationID(
+            for: reference.commandID
+        ),
+        applicationRegistry.isEffectivelyEnabled(reference.commandID),
+        let application = applicationRegistry.enabledApplication(for: applicationID) else {
+            let message = applicationRegistry.owningApplication(for: reference.commandID) == nil
+                ? "Application or tool is not registered."
+                : "Application or tool is disabled."
             statusMessage = message
             return .failure(message: message)
         }
@@ -659,7 +792,17 @@ final class LauncherViewModel {
             statusMessage = message
             return .failure(message: message)
         }
-        switch application.launch(in: context) {
+        let launch: LauncherApplicationLaunch
+        if reference.commandID == applicationID {
+            launch = application.launch(in: context)
+        } else {
+            launch = application.launch(
+                toolID: reference.commandID,
+                arguments: reference.arguments,
+                in: context
+            )
+        }
+        switch launch {
         case .present(let session):
             activeApplication?.stop()
             activeApplication = session
@@ -689,12 +832,22 @@ final class LauncherViewModel {
         _ applicationID: CommandID,
         source: CommandInvocationSource
     ) async {
+        await executeRegisteredCommand(
+            CommandReference(commandID: applicationID),
+            source: source
+        )
+    }
+
+    func executeRegisteredCommand(
+        _ reference: CommandReference,
+        source: CommandInvocationSource
+    ) async {
         guard commandCoordinator != nil else {
-            launch(applicationID)
+            _ = presentRegisteredCommand(reference)
             return
         }
         await executeSharedCommand(
-            reference: CommandReference(commandID: applicationID),
+            reference: reference,
             source: source,
             dismissOnSuccess: false
         )
@@ -731,6 +884,7 @@ final class LauncherViewModel {
     }
 
     func dismiss() {
+        cancelPendingRootConfirmation()
         onDismiss()
     }
 
@@ -741,6 +895,21 @@ final class LauncherViewModel {
     /// launcher window. Returns `true` when the key was consumed inside the
     /// launcher; `false` when the window should hide.
     func handleEscape() -> Bool {
+        cancelPendingRootConfirmation()
+        if colorSearch.showsActions {
+            colorSearch.dismissActions()
+            requestSearchFocus()
+            return true
+        }
+        if let editor = installedApplicationShortcutEditor {
+            editor.cancel()
+            return true
+        }
+        if applicationAliasEditor != nil {
+            applicationAliasEditor = nil
+            requestSearchFocus()
+            return true
+        }
         if showsRegisteredCommandActionsPanel {
             dismissRegisteredCommandActionsPanel()
             return true
@@ -774,8 +943,14 @@ final class LauncherViewModel {
 
     /// Awaits the in-flight search task (tests).
     func flushSearchForTesting() async {
-        searchTask?.cancel()
-        await performSearch(queryText: query, loadApplicationsIfNeeded: true)
+        let queryText = query
+        let requestID = searchRequestID
+        let pendingSearch = searchTask
+        searchTask = nil
+        pendingSearch?.cancel()
+        await pendingSearch?.value
+        guard searchRequestID == requestID, query == queryText else { return }
+        await performSearch(queryText: queryText, requestID: requestID, loadApplicationsIfNeeded: true)
     }
 
     /// Ends results-scroll hover suppression immediately (tests).
@@ -852,7 +1027,11 @@ final class LauncherViewModel {
     }
 
     func scheduleSearch(loadApplicationsIfNeeded: Bool = false) {
+        colorSearch.update(query: query)
+        cancelPendingRootConfirmation()
         searchTask?.cancel()
+        searchRequestID = UUID()
+        let requestID = searchRequestID
         calculatorSuggestion = nil
         autocompleteCompletion = nil
         autocompleteActionLabel = nil
@@ -861,15 +1040,16 @@ final class LauncherViewModel {
         searchTask = Task { @MainActor [weak self] in
             await self?.performSearch(
                 queryText: queryText,
+                requestID: requestID,
                 loadApplicationsIfNeeded: loadApplicationsIfNeeded
             )
         }
     }
 
-    private func performSearch(queryText: String, loadApplicationsIfNeeded: Bool) async {
+    private func performSearch(queryText: String, requestID: UUID, loadApplicationsIfNeeded: Bool) async {
         if loadApplicationsIfNeeded || didLoadApplications == false {
             let apps = await applicationQuery.installedApplications()
-            guard Task.isCancelled == false else { return }
+            guard Task.isCancelled == false, searchRequestID == requestID else { return }
             cachedApplications = apps.map {
                 InstalledApplicationSnapshot(
                     bundleIdentifier: $0.bundleIdentifier,
@@ -883,38 +1063,169 @@ final class LauncherViewModel {
         let service = makeSearchService()
         let searchQuery = SearchQuery(text: queryText, limit: nil)
         let calcContext = calculatorSession.makeContext()
+        let clipboardEntries = clipboardHistoryStore.searchEntries(
+            matching: queryText,
+            limit: 6
+        )
+        let commandMatches = applicationRegistry.commandMatches(queryText)
         do {
             async let calcOutcome = calculator.evaluate(queryText, context: calcContext)
             async let calcSuggestion = calculator.suggestion(for: queryText, context: calcContext)
             async let searchResult = service.search(searchQuery)
+            async let fileResults = searchInlineFiles(queryText)
 
             let outcome = await calcOutcome
             let suggestion = await calcSuggestion
             let result = try await searchResult
-            guard Task.isCancelled == false else { return }
-            calculatorSuggestion = suggestion
+            guard Task.isCancelled == false,
+                  searchRequestID == requestID,
+                  SearchQuery(text: self.query).text == searchQuery.text else {
+                return
+            }
+            calculatorSuggestion = colorSearch.result == nil ? suggestion : nil
 
             var mapped = result.items.compactMap { mapSearchItem($0) }
+            mapped.append(contentsOf: commandMatches.map(mapCommandMatch))
+            mapped.append(contentsOf: clipboardEntries.map(mapClipboardEntry))
             let previousSelected = selectedID
-            if let calcItem = mapCalculatorOutcome(outcome, queryText: queryText) {
+            if colorSearch.result == nil, let calcItem = mapCalculatorOutcome(outcome, queryText: queryText) {
                 mapped.insert(calcItem, at: 0)
             } else {
                 activeCalculatorResult = nil
             }
+            if let colorItem = colorSearchItem { mapped.insert(colorItem, at: 0) }
             applySearchResult(items: mapped, queryText: queryText)
             // Prefer keeping selection when the calculator card appears/disappears.
             if let previousSelected, mapped.contains(where: { $0.id == previousSelected }) {
                 selectedID = previousSelected
-            } else if mapped.first?.section == .calculator {
+            } else if mapped.first?.section == .calculator || mapped.first?.section == .color {
                 selectedID = mapped.first?.id
             }
+            publishSearchReadiness(requestID: requestID)
+
+            // File lookup is deliberately debounced, so publish the low-latency command,
+            // application, calculator, and clipboard results before waiting for it.
+            let fileOutcome = await fileResults
+            guard Task.isCancelled == false,
+                  searchRequestID == requestID,
+                  SearchQuery(text: self.query).text == searchQuery.text else {
+                return
+            }
+            switch fileOutcome {
+            case .results(let files):
+                guard files.isEmpty == false else {
+                    publishSearchReadiness(requestID: requestID, includesFileResults: true)
+                    return
+                }
+                mapped.append(contentsOf: files.map(mapFileSearchItem))
+            case .permissionRequired:
+                mapped.append(
+                    LauncherItem(
+                        id: "file-search-permission-required",
+                        section: .files,
+                        title: "Choose folders for File Search",
+                        subtitle: "Grant access in Settings → Permissions",
+                        systemImage: "folder.badge.questionmark",
+                        badge: .file,
+                        keywords: [],
+                        action: .openFileSearchPermissions
+                    )
+                )
+            case .unavailable:
+                mapped.append(
+                    LauncherItem(
+                        id: "file-search-unavailable",
+                        section: .files,
+                        title: "File Search is unavailable",
+                        subtitle: "Open File Search to inspect or rebuild its local index",
+                        systemImage: "exclamationmark.magnifyingglass",
+                        badge: .file,
+                        keywords: [],
+                        action: .launchApplication(BuiltInCommandID.searchFiles)
+                    )
+                )
+            }
+            applySearchResult(items: mapped, queryText: queryText)
+            publishSearchReadiness(requestID: requestID, includesFileResults: true)
         } catch is CancellationError {
+            if searchRequestID == requestID { cancelPendingRootConfirmation() }
             return
         } catch {
-            guard Task.isCancelled == false else { return }
+            guard Task.isCancelled == false, searchRequestID == requestID else { return }
             calculatorSuggestion = nil
-            applySearchResult(items: fallbackItems(matching: queryText), queryText: queryText)
+            var fallback = fallbackItems(matching: queryText)
+            if let colorItem = colorSearchItem { fallback.insert(colorItem, at: 0) }
+            applySearchResult(items: fallback, queryText: queryText)
+            publishSearchReadiness(requestID: requestID, includesFileResults: true)
         }
+    }
+
+    private func searchInlineFiles(_ queryText: String) async -> InlineFileSearchOutcome {
+        let query = SearchQuery(text: queryText, limit: 10)
+        guard query.isEmpty == false else { return .results([]) }
+        do {
+            try await ContinuousClock().sleep(for: .milliseconds(80))
+            try Task.checkCancellation()
+            return .results(
+                try await fileSearchService.search(
+                    FileSearchRequest(query: query, category: .all)
+                )
+            )
+        } catch is CancellationError {
+            return .results([])
+        } catch FileSearchError.noAuthorizedScopes {
+            return .permissionRequired
+        } catch {
+            return .unavailable
+        }
+    }
+
+    private var colorSearchItem: LauncherItem? {
+        guard let result = colorSearch.result else { return nil }
+        return LauncherItem(
+            id: result.id, section: .color, title: result.color.formatted(colorSearch.selectedFormat),
+            subtitle: "Convert and copy a color", systemImage: "paintpalette", badge: .color,
+            keywords: [], action: .colorPrimary(resultID: result.id)
+        )
+    }
+
+    private func mapCommandMatch(_ match: LauncherApplicationCommandMatch) -> LauncherItem {
+        LauncherItem(
+            id: "typed-command:\(match.id)",
+            section: .commands,
+            title: match.title,
+            subtitle: match.subtitle,
+            systemImage: match.systemImage,
+            badge: .command,
+            keywords: [],
+            action: .executeCommand(match.reference)
+        )
+    }
+
+    private func mapClipboardEntry(_ entry: ClipboardHistoryEntry) -> LauncherItem {
+        LauncherItem(
+            id: "clipboard:\(entry.id.uuidString.lowercased())",
+            section: .clipboard,
+            title: entry.displayTitle,
+            subtitle: entry.sourceAppName ?? entry.contentType.title,
+            systemImage: entry.contentType.systemImage,
+            badge: .clipboard,
+            keywords: [],
+            action: .copyClipboardEntry(entry.id)
+        )
+    }
+
+    private func mapFileSearchItem(_ item: FileSearchItem) -> LauncherItem {
+        LauncherItem(
+            id: "file:\(item.id)",
+            section: .files,
+            title: item.name,
+            subtitle: item.parentPath,
+            systemImage: item.kind == .folder ? "folder" : "doc",
+            badge: .file,
+            keywords: item.tags,
+            action: .openFile(item.url)
+        )
     }
 
     private func mapCalculatorOutcome(
@@ -968,7 +1279,8 @@ final class LauncherViewModel {
                     applications: cachedApplications,
                     favoriteBundleIDs: preferences.favoriteBundleIDs,
                     disabledBundleIDs: preferences.disabledBundleIDs,
-                    ranking: preferences.ranking
+                    ranking: preferences.ranking,
+                    aliases: preferences.aliases
                 ),
                 PlaceholderSearchProvider(placeholders: LauncherPlaceholderCatalog.searchRecords)
             ]
@@ -981,16 +1293,25 @@ final class LauncherViewModel {
             guard let manifest = applicationRegistry.allManifests().first(where: { $0.id.rawValue == item.id }) else {
                 return nil
             }
-            let badge: LauncherItemBadge = manifest.id == BuiltInCommandID.openSettings ? .settings : .command
+            let definition = applicationRegistry.definition(for: manifest.id)
+            let isTool = definition?.kind == .tool
+            let badge: LauncherItemBadge
+            if manifest.id == BuiltInCommandID.openSettings {
+                badge = .settings
+            } else {
+                badge = isTool ? .tool : .command
+            }
             return LauncherItem(
                 id: item.id,
-                section: .suggestions,
+                section: isTool ? .tools : .suggestions,
                 title: manifest.title,
                 subtitle: manifest.subtitle,
                 systemImage: manifest.systemImage,
                 badge: badge,
                 keywords: manifest.keywords,
-                action: .launchApplication(manifest.id)
+                action: isTool
+                    ? .executeCommand(CommandReference(commandID: manifest.id))
+                    : .launchApplication(manifest.id)
             )
         case BuiltInSearchProviderID.applications:
             let path = cachedApplications.first(where: { $0.bundleIdentifier == item.id })?.path
@@ -1040,16 +1361,21 @@ final class LauncherViewModel {
 
     private func fallbackItems(matching queryText: String) -> [LauncherItem] {
         let commandItems = applicationRegistry.allManifests().map { manifest -> LauncherItem in
-            let badge: LauncherItemBadge = manifest.id == BuiltInCommandID.openSettings ? .settings : .command
+            let isTool = applicationRegistry.definition(for: manifest.id)?.kind == .tool
+            let badge: LauncherItemBadge = manifest.id == BuiltInCommandID.openSettings
+                ? .settings
+                : (isTool ? .tool : .command)
             return LauncherItem(
                 id: manifest.id.rawValue,
-                section: .suggestions,
+                section: isTool ? .tools : .suggestions,
                 title: manifest.title,
                 subtitle: manifest.subtitle,
                 systemImage: manifest.systemImage,
                 badge: badge,
                 keywords: manifest.keywords,
-                action: .launchApplication(manifest.id)
+                action: isTool
+                    ? .executeCommand(CommandReference(commandID: manifest.id))
+                    : .launchApplication(manifest.id)
             )
         }
         return (commandItems + placeholderItems).filter { $0.matches(query: queryText) }
@@ -1081,7 +1407,13 @@ final class LauncherViewModel {
             return
         }
         let needle = trimmed.lowercased()
-        guard let match = rootItems.first(where: { $0.title.lowercased().hasPrefix(needle) && $0.title.count > trimmed.count }) else {
+        guard let match = rootItems.first(where: {
+            $0.section != .clipboard
+                && $0.section != .color
+                && $0.section != .files
+                && $0.title.lowercased().hasPrefix(needle)
+                && $0.title.count > trimmed.count
+        }) else {
             autocompleteSuffix = ""
             autocompleteCompletion = nil
             autocompleteActionLabel = nil

@@ -15,6 +15,7 @@ enum CalculatorUtilities {
         let lowered = text.lowercased()
         if let result = assignment(text, lowered: lowered) { return result }
         if let result = advanced(text, lowered: lowered) { return result }
+        if let result = CalculatorExpanded.evaluate(text) { return result }
         if let result = geometry(lowered) { return result }
         if let result = health(lowered) { return result }
         if let result = business(lowered, context: context) { return result }

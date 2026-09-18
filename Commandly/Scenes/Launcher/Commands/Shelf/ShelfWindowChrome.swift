@@ -152,6 +152,44 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         window.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 
+    /// Moves a manually positioned Shelf to another display without resetting it to a corner.
+    /// The normalized position within the source display's usable area is preserved and clamped.
+    static func rehomedFrame(
+        _ frame: CGRect,
+        from sourceVisibleFrame: CGRect,
+        to targetVisibleFrame: CGRect
+    ) -> CGRect {
+        let sourceTravelX = max(sourceVisibleFrame.width - frame.width, 0)
+        let sourceTravelY = max(sourceVisibleFrame.height - frame.height, 0)
+        let normalizedX = sourceTravelX > 0
+            ? (frame.minX - sourceVisibleFrame.minX) / sourceTravelX
+            : 0.5
+        let normalizedY = sourceTravelY > 0
+            ? (frame.minY - sourceVisibleFrame.minY) / sourceTravelY
+            : 0.5
+        let targetTravelX = max(targetVisibleFrame.width - frame.width, 0)
+        let targetTravelY = max(targetVisibleFrame.height - frame.height, 0)
+        let proposed = CGRect(
+            x: targetVisibleFrame.minX + min(max(normalizedX, 0), 1) * targetTravelX,
+            y: targetVisibleFrame.minY + min(max(normalizedY, 0), 1) * targetTravelY,
+            width: frame.width,
+            height: frame.height
+        )
+        return constrainedFrame(proposed, to: targetVisibleFrame)
+    }
+
+    /// Keeps the complete Shelf surface reachable after a resolution, dock, or menu-bar change.
+    static func constrainedFrame(_ frame: CGRect, to visibleFrame: CGRect) -> CGRect {
+        let maximumX = max(visibleFrame.minX, visibleFrame.maxX - frame.width)
+        let maximumY = max(visibleFrame.minY, visibleFrame.maxY - frame.height)
+        return CGRect(
+            x: min(max(frame.minX, visibleFrame.minX), maximumX),
+            y: min(max(frame.minY, visibleFrame.minY), maximumY),
+            width: frame.width,
+            height: frame.height
+        )
+    }
+
     /// AppKit owns these monitor callbacks. Every mutation is explicitly marshalled to MainActor.
     final class Coordinator: @unchecked Sendable {
         var preferredCorner: ShelfPreferredCorner
@@ -165,24 +203,39 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
         private var resignKeyObserver: NSObjectProtocol?
         private var becomeActiveObserver: NSObjectProtocol?
         private var resignActiveObserver: NSObjectProtocol?
+        private var activeSpaceObserver: NSObjectProtocol?
+        private var activatedApplicationObserver: NSObjectProtocol?
+        private var screenParametersObserver: NSObjectProtocol?
         private var needsPlacement = true
         private var needsPresentation = true
         private var isAttaching = false
         private var attachingGeneration: UInt64?
         private weak var deferredWindow: NSWindow?
+        private var lastKnownVisibleFrame: CGRect?
+        private let notificationCenter: NotificationCenter
+        private let workspaceNotificationCenter: NotificationCenter
+        private let screenTargetProvider: @MainActor () -> WindowPresentationTarget?
 
         init(
             preferredCorner: ShelfPreferredCorner,
             presentationRequest: ShelfPresentationRequest,
             interaction: ShelfBoardInteractionState,
             onEscape: @escaping () -> Bool,
-            onKeyDown: @escaping (NSEvent) -> Bool
+            onKeyDown: @escaping (NSEvent) -> Bool,
+            notificationCenter: NotificationCenter = .default,
+            workspaceNotificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
+            screenTargetProvider: @escaping @MainActor () -> WindowPresentationTarget? = {
+                WindowPresentationTargetResolver.activeTarget()
+            }
         ) {
             self.preferredCorner = preferredCorner
             self.presentationRequest = presentationRequest
             self.interaction = interaction
             self.onEscape = onEscape
             self.onKeyDown = onKeyDown
+            self.notificationCenter = notificationCenter
+            self.workspaceNotificationCenter = workspaceNotificationCenter
+            self.screenTargetProvider = screenTargetProvider
         }
 
         @MainActor
@@ -215,6 +268,9 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 deferredWindow = nil
                 let request = presentationRequest
                 attachingGeneration = request.generation
+                if self.window !== currentWindow {
+                    removeMonitors()
+                }
                 self.window = currentWindow
 
                 var shouldPlace = needsPlacement
@@ -231,6 +287,9 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 // AppKit can synchronously reattach the probe while changing style/frame.
                 // Keep any newer request flags and process that generation in a fresh pass.
                 needsPlacement = needsPlacement || shouldPlace
+                lastKnownVisibleFrame = request.screenTarget?.visibleFrame
+                    ?? currentWindow.screen?.visibleFrame
+                    ?? lastKnownVisibleFrame
                 installMonitorsIfNeeded()
                 if shouldPresent {
                     if presentationRequest.generation == request.generation {
@@ -261,6 +320,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
             isAttaching = false
             needsPlacement = true
             needsPresentation = true
+            lastKnownVisibleFrame = nil
         }
 
         @MainActor
@@ -280,7 +340,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 return consumed ? nil : event
             }
 
-            becomeKeyObserver = NotificationCenter.default.addObserver(
+            becomeKeyObserver = notificationCenter.addObserver(
                 forName: NSWindow.didBecomeKeyNotification,
                 object: window,
                 queue: .main
@@ -290,7 +350,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 }
             }
 
-            resignKeyObserver = NotificationCenter.default.addObserver(
+            resignKeyObserver = notificationCenter.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: window,
                 queue: .main
@@ -300,7 +360,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 }
             }
 
-            becomeActiveObserver = NotificationCenter.default.addObserver(
+            becomeActiveObserver = notificationCenter.addObserver(
                 forName: NSApplication.didBecomeActiveNotification,
                 object: nil,
                 queue: .main
@@ -310,7 +370,7 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 }
             }
 
-            resignActiveObserver = NotificationCenter.default.addObserver(
+            resignActiveObserver = notificationCenter.addObserver(
                 forName: NSApplication.didResignActiveNotification,
                 object: nil,
                 queue: .main
@@ -319,6 +379,92 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                     self?.refreshFocusState()
                 }
             }
+
+            activeSpaceObserver = workspaceNotificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.moveToActiveDesktopIfNeeded()
+                }
+            }
+
+            activatedApplicationObserver = workspaceNotificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.moveToActiveDesktopIfNeeded()
+                }
+            }
+
+            screenParametersObserver = notificationCenter.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.recoverFromDisplayConfigurationChange()
+                }
+            }
+        }
+
+        @MainActor
+        func moveToActiveDesktopIfNeeded() {
+            guard let window, window.isVisible, let target = screenTargetProvider() else { return }
+            let sourceVisibleFrame = window.screen?.visibleFrame
+                ?? lastKnownVisibleFrame
+                ?? target.visibleFrame
+            let targetVisibleFrame = target.visibleFrame
+            let nextFrame: CGRect
+            if sourceVisibleFrame == targetVisibleFrame {
+                nextFrame = ShelfWindowConfigurator.constrainedFrame(
+                    window.frame,
+                    to: targetVisibleFrame
+                )
+            } else {
+                nextFrame = ShelfWindowConfigurator.rehomedFrame(
+                    window.frame,
+                    from: sourceVisibleFrame,
+                    to: targetVisibleFrame
+                )
+            }
+            setFrameIfChanged(nextFrame, on: window)
+            lastKnownVisibleFrame = targetVisibleFrame
+        }
+
+        @MainActor
+        func recoverFromDisplayConfigurationChange() {
+            guard let window, window.isVisible else { return }
+            let currentScreen = NSScreen.screens.max { lhs, rhs in
+                intersectionArea(window.frame, lhs.visibleFrame)
+                    < intersectionArea(window.frame, rhs.visibleFrame)
+            }
+            if let currentScreen,
+               intersectionArea(window.frame, currentScreen.visibleFrame) > 0 {
+                let visibleFrame = currentScreen.visibleFrame
+                setFrameIfChanged(
+                    ShelfWindowConfigurator.constrainedFrame(window.frame, to: visibleFrame),
+                    on: window
+                )
+                lastKnownVisibleFrame = visibleFrame
+                return
+            }
+            moveToActiveDesktopIfNeeded()
+        }
+
+        @MainActor
+        private func setFrameIfChanged(_ frame: CGRect, on window: NSWindow) {
+            guard window.frame != frame else { return }
+            window.setFrame(frame, display: true)
+        }
+
+        private func intersectionArea(_ first: CGRect, _ second: CGRect) -> CGFloat {
+            let intersection = first.intersection(second)
+            guard intersection.isNull == false else { return 0 }
+            return intersection.width * intersection.height
         }
 
         @MainActor
@@ -353,20 +499,32 @@ struct ShelfWindowConfigurator: NSViewRepresentable {
                 self.escapeKeyMonitor = nil
             }
             if let becomeKeyObserver {
-                NotificationCenter.default.removeObserver(becomeKeyObserver)
+                notificationCenter.removeObserver(becomeKeyObserver)
                 self.becomeKeyObserver = nil
             }
             if let resignKeyObserver {
-                NotificationCenter.default.removeObserver(resignKeyObserver)
+                notificationCenter.removeObserver(resignKeyObserver)
                 self.resignKeyObserver = nil
             }
             if let becomeActiveObserver {
-                NotificationCenter.default.removeObserver(becomeActiveObserver)
+                notificationCenter.removeObserver(becomeActiveObserver)
                 self.becomeActiveObserver = nil
             }
             if let resignActiveObserver {
-                NotificationCenter.default.removeObserver(resignActiveObserver)
+                notificationCenter.removeObserver(resignActiveObserver)
                 self.resignActiveObserver = nil
+            }
+            if let activeSpaceObserver {
+                workspaceNotificationCenter.removeObserver(activeSpaceObserver)
+                self.activeSpaceObserver = nil
+            }
+            if let activatedApplicationObserver {
+                workspaceNotificationCenter.removeObserver(activatedApplicationObserver)
+                self.activatedApplicationObserver = nil
+            }
+            if let screenParametersObserver {
+                notificationCenter.removeObserver(screenParametersObserver)
+                self.screenParametersObserver = nil
             }
         }
     }

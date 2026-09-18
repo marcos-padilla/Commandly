@@ -503,8 +503,11 @@ public enum LoginItemError: Error, Sendable, Equatable {
 public enum PrivacySettingsPane: String, Sendable, Equatable {
     case accessibility
     case calendars
+    /// Camera access for the user's explicit preview and selfie actions.
+    case camera
     case contacts
     case filesAndFolders
+    case screenRecording
 }
 
 /// Opens macOS System Settings privacy panes after user intent.

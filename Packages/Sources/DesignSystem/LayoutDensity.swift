@@ -61,7 +61,20 @@ public extension EnvironmentValues {
 public extension View {
     /// Sets layout density for this subtree.
     func commandlyLayoutDensity(_ density: CommandlyLayoutDensity) -> some View {
-        environment(\.commandlyLayoutDensity, density)
-            .animation(.easeInOut(duration: MotionDuration.normal.rawValue), value: density)
+        modifier(CommandlyLayoutDensityModifier(density: density))
+    }
+}
+
+private struct CommandlyLayoutDensityModifier: ViewModifier {
+    let density: CommandlyLayoutDensity
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.commandlyLayoutDensity, density)
+            .animation(
+                reduceMotion ? nil : .easeInOut(duration: MotionDuration.normal.rawValue),
+                value: density
+            )
     }
 }

@@ -113,6 +113,8 @@ public enum PermissionKind: String, Sendable, CaseIterable, Equatable {
     case notifications
     case calendar
     case contacts
+    /// Access to video input for an explicitly started camera preview or photo capture.
+    case camera
 }
 
 /// Current state of a permission.

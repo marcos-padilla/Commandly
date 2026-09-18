@@ -25,13 +25,19 @@ extension LauncherViewModel {
     }
 
     func presentApplicationActionsForSelection() {
-        if let bundleID = selectedApplicationBundleID {
-            presentApplicationActions(forBundleID: bundleID)
-        } else if let selectedItem,
-                  case .launchApplication = selectedItem.action {
-            presentRegisteredCommandActions(for: selectedItem)
-        } else {
-            statusMessage = "Select a command or application to see actions."
+        performWithCurrentRootSelection { [weak self] item in
+            guard let self else { return }
+            if case .colorPrimary(let resultID) = item.action {
+                dismissApplicationActionsPanel()
+                dismissRegisteredCommandActionsPanel()
+                colorSearch.presentActions(resultID: resultID)
+            } else if case .openInstalledApplication(let bundleID) = item.action {
+                presentApplicationActions(forBundleID: bundleID)
+            } else if commandWheelReference(for: item) != nil {
+                presentRegisteredCommandActions(for: item)
+            } else {
+                statusMessage = "Select a command or application to see actions."
+            }
         }
     }
 
@@ -113,6 +119,14 @@ extension LauncherViewModel {
                 section: .clipboard
             ),
             LauncherApplicationAction(
+                id: BuiltInCommandActionID.editApplicationAlias,
+                title: prefs.alias(for: bundleIdentifier) == nil ? "Set Alias…" : "Edit Alias…",
+                systemImage: "character.cursor.ibeam",
+                keyHint: nil,
+                isDestructive: false,
+                section: .manage
+            ),
+            LauncherApplicationAction(
                 id: BuiltInCommandActionID.toggleAutoQuit,
                 title: autoQuit ? "Disable Auto Quit" : "Enable Auto Quit",
                 systemImage: "xmark.circle",
@@ -145,6 +159,16 @@ extension LauncherViewModel {
                 section: .ranking
             )
         ]
+        if saveInstalledApplicationShortcut != nil {
+            actions.insert(
+                LauncherApplicationAction(
+                    id: InstalledApplicationShortcutActionID.edit,
+                    title: prefs.hotKeys[bundleIdentifier] == nil ? "Set Global Shortcut…" : "Edit Global Shortcut…",
+                    systemImage: "keyboard", keyHint: nil, isDestructive: false, section: .manage
+                ),
+                at: actions.firstIndex(where: { $0.section == .manage }) ?? actions.endIndex
+            )
+        }
         if commandWheelAssignmentStore != nil {
             actions.insert(
                 LauncherApplicationAction(
@@ -243,6 +267,56 @@ extension LauncherViewModel {
         }
 
         switch id {
+        case InstalledApplicationShortcutActionID.edit:
+            guard let saveInstalledApplicationShortcut else { return }
+            dismissApplicationActionsPanel()
+            installedApplicationShortcutEditor = InstalledApplicationShortcutEditorModel(
+                bundleIdentifier: bundleIdentifier, applicationName: app.name,
+                hotKey: applicationPreferencesStore.load().hotKeys[bundleIdentifier],
+                initialIssue: installedApplicationShortcutIssue(bundleIdentifier),
+                saveAssignment: saveInstalledApplicationShortcut,
+                onRecordingChange: onInstalledShortcutRecordingChange,
+                loadAssignments: { [weak self] in
+                    guard let self else { return [] }
+                    return self.applicationPreferencesStore.load().hotKeys.sorted { $0.key < $1.key }.map { bundleID, hotKey in
+                        InstalledApplicationShortcutSummary(
+                            bundleIdentifier: bundleID,
+                            applicationName: self.cachedApplications.first(where: { $0.bundleIdentifier == bundleID })?.name ?? bundleID,
+                            hotKey: hotKey
+                        )
+                    }
+                },
+                onSaved: { [weak self] in
+                    guard let self else { return }
+                    self.installedApplicationShortcutEditor = nil
+                    self.statusMessage = "Application shortcut updated."
+                    self.requestSearchFocus()
+                },
+                onCancel: { [weak self] in
+                    self?.installedApplicationShortcutEditor = nil
+                    self?.requestSearchFocus()
+                }
+            )
+
+        case BuiltInCommandActionID.editApplicationAlias:
+            dismissApplicationActionsPanel()
+            applicationAliasEditor = ApplicationAliasEditorModel(
+                bundleIdentifier: bundleIdentifier,
+                applicationName: app.name,
+                preferencesStore: applicationPreferencesStore,
+                onSaved: { [weak self] alias in
+                    guard let self else { return }
+                    self.applicationAliasEditor = nil
+                    self.statusMessage = alias == nil ? "Alias removed." : "Alias saved."
+                    self.scheduleSearch()
+                    self.requestSearchFocus()
+                },
+                onCancel: { [weak self] in
+                    self?.applicationAliasEditor = nil
+                    self?.requestSearchFocus()
+                }
+            )
+
         case BuiltInCommandActionID.openApplication:
             dismissApplicationActionsPanel()
             await openApplication(bundleIdentifier: bundleIdentifier)
@@ -322,6 +396,10 @@ extension LauncherViewModel {
                 statusMessage = "Application disabled."
             }
             applicationPreferencesStore.save(prefs)
+            onInstalledApplicationPreferencesChange()
+            if let issue = installedApplicationShortcutIssue(bundleIdentifier), !prefs.isDisabled(bundleIdentifier) {
+                statusMessage = "Application enabled. \(issue)"
+            }
             dismissApplicationActionsPanel()
             scheduleSearch()
 
@@ -356,7 +434,10 @@ extension LauncherViewModel {
                 prefs.disabledBundleIDs.remove(app.bundleIdentifier)
                 prefs.autoQuitBundleIDs.remove(app.bundleIdentifier)
                 prefs.ranking[app.bundleIdentifier] = nil
+                prefs.aliases[app.bundleIdentifier] = nil
+                prefs.hotKeys[app.bundleIdentifier] = nil
                 self.applicationPreferencesStore.save(prefs)
+                self.onInstalledApplicationPreferencesChange()
                 self.statusMessage = message
                 self.goBack()
                 self.scheduleSearch()

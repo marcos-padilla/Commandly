@@ -14,6 +14,8 @@ final class OnboardingViewModel {
     private let privacySettingsOpener: any PrivacySettingsOpening
     private let onFinished: () -> Void
     private var activationTask: Task<Void, Never>?
+    private var loginItemTask: Task<Void, Never>?
+    private let celebrationDelay: @MainActor () async -> Void
 
     let features: [OnboardingFeature]
     let permissionItems: [OnboardingPermissionItem]
@@ -37,7 +39,11 @@ final class OnboardingViewModel {
         initialStep: OnboardingStep = .welcome,
         features: [OnboardingFeature] = OnboardingFeature.showcase,
         permissionItems: [OnboardingPermissionItem] = OnboardingPermissionItem.allCases,
-        onFinished: @escaping () -> Void = {}
+        onFinished: @escaping () -> Void = {},
+        celebrationDelay: @escaping @MainActor () async -> Void = {
+            // Visual choreography, not synchronization with another operation.
+            try? await Task.sleep(nanoseconds: UInt64(MotionCelebrationNanoseconds.duration))
+        }
     ) {
         self.statusStore = statusStore
         self.settingsStore = settingsStore
@@ -48,6 +54,7 @@ final class OnboardingViewModel {
         self.features = features
         self.permissionItems = permissionItems
         self.onFinished = onFinished
+        self.celebrationDelay = celebrationDelay
 
         let settings = settingsStore.load()
         self.opensAtLogin = settings.opensAtLogin
@@ -148,7 +155,7 @@ final class OnboardingViewModel {
         loginItemErrorMessage = nil
         isUpdatingLoginItem = true
 
-        Task {
+        loginItemTask = Task {
             defer { isUpdatingLoginItem = false }
             do {
                 try await loginItemManager.setEnabled(enabled)
@@ -171,6 +178,10 @@ final class OnboardingViewModel {
     func setPrefersCommandlyEmojiPicker(_ enabled: Bool) {
         prefersCommandlyEmojiPicker = enabled
         persistSettings()
+    }
+
+    func waitForLoginItemUpdateForTesting() async {
+        await loginItemTask?.value
     }
 
     func handlePermissionAction(_ item: OnboardingPermissionItem) {
@@ -211,13 +222,17 @@ final class OnboardingViewModel {
         hotkeyPhase = .celebrating
 
         activationTask?.cancel()
+        let celebrationDelay = celebrationDelay
         activationTask = Task { [weak self] in
-            // Choreographed celebration delay before entering the app — not used as async sync.
-            let delay = UInt64(MotionCelebrationNanoseconds.duration)
-            try? await Task.sleep(nanoseconds: delay)
+            await celebrationDelay()
             guard !Task.isCancelled else { return }
             self?.finish()
         }
+    }
+
+    /// Allows tests with an injected clock to await completion without polling wall-clock time.
+    func waitForActivationForTesting() async {
+        await activationTask?.value
     }
 
     private func requestPermission(_ item: OnboardingPermissionItem) async {

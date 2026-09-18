@@ -22,6 +22,15 @@ struct PermissionsSettingsPage: View {
                 SettingsDivider()
 
                 permissionRow(
+                    kind: .camera,
+                    icon: "camera",
+                    title: "Camera",
+                    subtitle: "Preview your camera and capture a selfie when you start Camera."
+                )
+
+                SettingsDivider()
+
+                permissionRow(
                     kind: .contacts,
                     icon: "person",
                     title: "Contacts",
@@ -43,7 +52,20 @@ struct PermissionsSettingsPage: View {
                     kind: .accessibility,
                     icon: "accessibility",
                     title: "Accessibility",
-                    subtitle: "Window layouts and automation."
+                    subtitle: viewModel.windowSwitcherIsAvailable
+                        ? "Window layouts, switching, and explicitly enabled input highlighting."
+                        : "Window layouts and explicitly enabled input highlighting."
+                )
+
+                SettingsDivider()
+
+                permissionRow(
+                    kind: .screenRecording,
+                    icon: "record.circle",
+                    title: "Screen Recording",
+                    subtitle: viewModel.windowSwitcherIsAvailable
+                        ? "Selected screenshot regions and live Window Switcher previews."
+                        : "Capture a region you select. Window and display screenshots use the macOS picker."
                 )
             }
         }

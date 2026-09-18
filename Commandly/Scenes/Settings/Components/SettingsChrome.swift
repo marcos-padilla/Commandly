@@ -32,7 +32,9 @@ struct SettingsPageLayout<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            content()
+            VStack(alignment: .leading, spacing: Spacing.lg.rawValue) {
+                content()
+            }
                 .frame(maxWidth: maxWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .padding(.horizontal, Spacing.lg.rawValue + Spacing.xs.rawValue)
@@ -72,8 +74,8 @@ struct SettingsSection<Content: View>: View {
 
             if let footer {
                 Text(footer)
-                    .commandlyFont(size: 10)
-                    .foregroundStyle(.tertiary)
+                    .commandlyFont(size: 11)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
@@ -286,6 +288,8 @@ extension SettingsPane {
             keywords = "radial wheel profile page segment slot submenu command shortcut hotkey pointer cursor context application import export json animation labels keyboard"
         case .permissions:
             keywords = "privacy calendar contacts files folders accessibility automation access granted denied"
+        case .systemIntegration:
+            keywords = "companion background agent connection integration login approval install disable unregister signing"
         case .about:
             keywords = "version build bundle identifier information commandly"
         }

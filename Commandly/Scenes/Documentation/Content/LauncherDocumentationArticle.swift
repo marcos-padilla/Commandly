@@ -2,24 +2,26 @@ enum LauncherDocumentationArticle {
     static let article = CoreDocumentationArticle(
         id: "core.launcher",
         title: "Launcher Search & Navigation",
-        subtitle: "Find commands and apps, complete suggestions, and move without leaving the keyboard.",
+        subtitle: "Find applications, tools, local content, and commands without leaving the keyboard.",
         systemImage: "command",
         category: .gettingStarted,
         order: 10,
         documentation: LauncherApplicationDocumentation(
             category: .gettingStarted,
-            overview: "The launcher is Commandly’s keyboard-first home. Its single search field combines Commandly applications, installed Mac applications, and calculator results while keeping the best current selection ready to run.",
+            overview: "The launcher is Commandly’s keyboard-first home. Its single search field combines Commandly applications and tools, installed Mac applications, typed commands, calculator results, captured clipboard entries, and authorized files.",
             sections: [
                 DocumentationSection(
                     id: "launcher-search",
                     title: "Search",
                     blocks: [
                         .bullets("launcher-search-behavior", [
-                            "Type a feature name such as Clipboard History, File Search, or Timers & Focus.",
+                            "Type an application or tool name, or one of its built-in or custom tags.",
+                            "Type an exact supported command such as kill port 3000 or stop port 8080. Port Manager opens the matching review flow; typing the command never terminates a process by itself.",
+                            "A nonempty query can show up to six captured Clipboard History matches and ten authorized File Search matches. Return copies the selected clipboard entry or opens the selected file.",
+                            "If File Search needs folder access, the Files section offers a route to Permissions. If its local index is unavailable, the recovery row opens the full File Search application.",
                             "Type the name of an installed application to open it with its real app icon.",
                             "Type a calculator-shaped query; a Calculator card appears above normal results without replacing them.",
-                            "Registered application aliases are searchable after you add them in Settings.",
-                            "Disabled registered Commandly applications are excluded from discovery. Disabled installed Mac applications are hidden from the empty-query list but remain searchable by name so you can manage or re-enable them.",
+                            "Disabled registered Commandly applications and tools are excluded from discovery. Disabled installed Mac applications are hidden from the empty-query list but remain searchable by name so you can manage or re-enable them.",
                             "Search work is cancelled and restarted as you type so an older result cannot overwrite a newer query.",
                         ]),
                         .callout(
@@ -27,7 +29,7 @@ enum LauncherDocumentationArticle {
                             DocumentationCallout(
                                 kind: .privacy,
                                 title: "No search-history log",
-                                text: "Commandly does not persist or log your full launcher search history."
+                                text: "Commandly does not persist or log your full launcher search history. Inline clipboard and file queries, values, names, paths, and contents do not enter shared command history."
                             )
                         ),
                     ]
@@ -93,7 +95,7 @@ enum LauncherDocumentationArticle {
                     blocks: [
                         .paragraph(
                             "launcher-autocomplete-summary",
-                            "A muted ghost suffix can complete the best matching result or a recoverable calculator expression. Calculator completion can balance parentheses, finish a trailing operator, infer a conventional unit target, complete a function name, or offer a bounded typo correction."
+                            "A muted ghost suffix can complete the best public catalog result or a recoverable calculator expression. Private Clipboard History and Files rows never provide autocomplete. Calculator completion can balance parentheses, finish a trailing operator, infer a conventional unit target, complete a function name, or offer a bounded typo correction."
                         ),
                         .examples("launcher-autocomplete-examples", [
                             DocumentationExample(
@@ -159,7 +161,8 @@ enum LauncherDocumentationArticle {
             ],
             keywords: [
                 "search", "launcher", "navigation", "arrow keys", "autocomplete", "Tab",
-                "Return", "Escape", "Actions", "Command K", "Settings menu", "footer",
+                "Return", "Escape", "Actions", "Command K", "Settings menu", "footer", "tools",
+                "tags", "typed commands", "kill port", "clipboard", "files",
             ]
         )
     )

@@ -1,6 +1,8 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 import Contacts
+import CoreGraphics
 import EventKit
 import Foundation
 import SecurityKit
@@ -22,15 +24,68 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
     private let folderAccessStore: any FolderAccessStoring
     private let eventStoreFactory: @Sendable () -> EKEventStore
     private let contactStoreFactory: @Sendable () -> CNContactStore
+    private let accessibilityPreflight: @MainActor @Sendable () -> Bool
+    private let accessibilityRequest: @MainActor @Sendable () -> Bool
+    private let accessibilityWasRequested: @MainActor @Sendable () -> Bool
+    private let markAccessibilityRequested: @MainActor @Sendable () -> Void
+    private let screenRecordingPreflight: @MainActor @Sendable () -> Bool
+    private let screenRecordingRequest: @MainActor @Sendable () -> Bool
+    private let screenRecordingWasRequested: @MainActor @Sendable () -> Bool
+    private let markScreenRecordingRequested: @MainActor @Sendable () -> Void
+    private let cameraPreflight: @MainActor @Sendable () -> AVAuthorizationStatus
+    private let cameraRequest: @MainActor @Sendable () async -> Bool
 
     init(
         folderAccessStore: any FolderAccessStoring,
         eventStoreFactory: @escaping @Sendable () -> EKEventStore = { EKEventStore() },
-        contactStoreFactory: @escaping @Sendable () -> CNContactStore = { CNContactStore() }
+        contactStoreFactory: @escaping @Sendable () -> CNContactStore = { CNContactStore() },
+        accessibilityPreflight: @escaping @MainActor @Sendable () -> Bool = {
+            AXIsProcessTrusted()
+        },
+        accessibilityRequest: @escaping @MainActor @Sendable () -> Bool = {
+            // Literal key avoids importing a non-Sendable global CF constant into concurrency
+            // checks.
+            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+            return AXIsProcessTrustedWithOptions(options)
+        },
+        accessibilityWasRequested: @escaping @MainActor @Sendable () -> Bool = {
+            AccessibilityRequestMarker.wasRequested
+        },
+        markAccessibilityRequested: @escaping @MainActor @Sendable () -> Void = {
+            AccessibilityRequestMarker.markRequested()
+        },
+        screenRecordingPreflight: @escaping @MainActor @Sendable () -> Bool = {
+            CGPreflightScreenCaptureAccess()
+        },
+        screenRecordingRequest: @escaping @MainActor @Sendable () -> Bool = {
+            CGRequestScreenCaptureAccess()
+        },
+        screenRecordingWasRequested: @escaping @MainActor @Sendable () -> Bool = {
+            ScreenRecordingRequestMarker.wasRequested
+        },
+        markScreenRecordingRequested: @escaping @MainActor @Sendable () -> Void = {
+            ScreenRecordingRequestMarker.markRequested()
+        },
+        cameraPreflight: @escaping @MainActor @Sendable () -> AVAuthorizationStatus = {
+            AVCaptureDevice.authorizationStatus(for: .video)
+        },
+        cameraRequest: @escaping @MainActor @Sendable () async -> Bool = {
+            await AVCaptureDevice.requestAccess(for: .video)
+        }
     ) {
         self.folderAccessStore = folderAccessStore
         self.eventStoreFactory = eventStoreFactory
         self.contactStoreFactory = contactStoreFactory
+        self.accessibilityPreflight = accessibilityPreflight
+        self.accessibilityRequest = accessibilityRequest
+        self.accessibilityWasRequested = accessibilityWasRequested
+        self.markAccessibilityRequested = markAccessibilityRequested
+        self.screenRecordingPreflight = screenRecordingPreflight
+        self.screenRecordingRequest = screenRecordingRequest
+        self.screenRecordingWasRequested = screenRecordingWasRequested
+        self.markScreenRecordingRequested = markScreenRecordingRequested
+        self.cameraPreflight = cameraPreflight
+        self.cameraRequest = cameraRequest
     }
 
     func state(for kind: PermissionKind) async -> PermissionState {
@@ -40,13 +95,17 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
         case .contacts:
             return mapContactsStatus(CNContactStore.authorizationStatus(for: .contacts))
         case .accessibility:
-            return AXIsProcessTrusted() ? .authorized : .notDetermined
+            return await accessibilityState()
         case .files:
             let hasAccess = await MainActor.run {
                 folderAccessStore.hasUsableAccess
             }
             return hasAccess ? .authorized : .notDetermined
-        case .notifications, .appleEvents, .screenRecording:
+        case .screenRecording:
+            return await screenRecordingState()
+        case .camera:
+            return await cameraState()
+        case .notifications, .appleEvents:
             return .notDetermined
         }
     }
@@ -61,9 +120,66 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
             return await requestAccessibilityAccess()
         case .files:
             return await requestFilesAccess()
-        case .notifications, .appleEvents, .screenRecording:
+        case .screenRecording:
+            return await requestScreenRecordingAccess()
+        case .camera:
+            return await requestCameraAccess()
+        case .notifications, .appleEvents:
             return .notDetermined
         }
+    }
+
+    @MainActor
+    private func cameraState() -> PermissionState {
+        switch cameraPreflight() {
+        case .notDetermined: return .notDetermined
+        case .authorized: return .authorized
+        case .denied: return .denied
+        case .restricted: return .restricted
+        @unknown default: return .restricted
+        }
+    }
+
+    @MainActor
+    private func requestCameraAccess() async -> PermissionState {
+        let currentState = cameraState()
+        // AVFoundation retains the authorization decision. Denied and restricted users recover
+        // through System Settings; preflight never constructs a capture input or starts a camera.
+        guard currentState == .notDetermined, Task.isCancelled == false else {
+            return currentState
+        }
+        return await cameraRequest() ? .authorized : .denied
+    }
+
+    @MainActor
+    private func accessibilityState() -> PermissionState {
+        if accessibilityPreflight() {
+            return .authorized
+        }
+        return accessibilityWasRequested() ? .denied : .notDetermined
+    }
+
+    @MainActor
+    private func screenRecordingState() -> PermissionState {
+        if screenRecordingPreflight() {
+            return .authorized
+        }
+        return screenRecordingWasRequested() ? .denied : .notDetermined
+    }
+
+    @MainActor
+    private func requestScreenRecordingAccess() -> PermissionState {
+        if screenRecordingPreflight() {
+            return .authorized
+        }
+        guard Task.isCancelled == false else {
+            return screenRecordingWasRequested() ? .denied : .notDetermined
+        }
+
+        // Persist before invoking the synchronous TCC request so a termination during the system
+        // flow cannot make a later preflight failure look like permission was never requested.
+        markScreenRecordingRequested()
+        return screenRecordingRequest() ? .authorized : .denied
     }
 
     private func requestCalendarAccess() async -> PermissionState {
@@ -86,15 +202,16 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
         }
     }
 
-    private func requestAccessibilityAccess() async -> PermissionState {
-        if AXIsProcessTrusted() {
+    @MainActor
+    private func requestAccessibilityAccess() -> PermissionState {
+        if accessibilityPreflight() {
             return .authorized
         }
 
-        // Literal key avoids importing a non-Sendable global CF constant into concurrency checks.
-        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(options)
-        return trusted ? .authorized : .denied
+        // Persist before the synchronous TCC request so relaunching during the Settings flow cannot
+        // make a later failed preflight look like the permission was never requested.
+        markAccessibilityRequested()
+        return accessibilityRequest() ? .authorized : .denied
     }
 
     @MainActor
@@ -185,6 +302,32 @@ final class SystemPermissionService: PermissionServicing, @unchecked Sendable {
         @unknown default:
             return .notDetermined
         }
+    }
+}
+
+@MainActor
+private enum AccessibilityRequestMarker {
+    private static let key = "permissions.accessibility.requested.v1"
+
+    static var wasRequested: Bool {
+        UserDefaults.standard.bool(forKey: key)
+    }
+
+    static func markRequested() {
+        UserDefaults.standard.set(true, forKey: key)
+    }
+}
+
+@MainActor
+private enum ScreenRecordingRequestMarker {
+    private static let key = "permissions.screenRecording.requested.v1"
+
+    static var wasRequested: Bool {
+        UserDefaults.standard.bool(forKey: key)
+    }
+
+    static func markRequested() {
+        UserDefaults.standard.set(true, forKey: key)
     }
 }
 

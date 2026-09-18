@@ -30,6 +30,15 @@ struct ShelfApplicationTests {
         #expect(
             registry.allManifests().contains { $0.id == ShelfApplication.applicationID }
         )
+        #expect(
+            registry.resolvedSettings(for: ShelfApplication.newShelfToolID)?.hotKey
+                == ShelfGlobalShortcut.newShelf.hotKey
+        )
+        #expect(
+            registry.resolvedSettings(
+                for: ShelfApplication.newShelfFromClipboardToolID
+            )?.hotKey == ShelfGlobalShortcut.newShelfFromClipboard.hotKey
+        )
     }
 
     @Test @MainActor func launchRequestsFloatingShelfAndDismissesLauncher() {
@@ -147,7 +156,7 @@ struct ShelfApplicationTests {
         let newShelf = ShelfGlobalShortcut.newShelf
         let fromClipboard = ShelfGlobalShortcut.newShelfFromClipboard
 
-        #expect(newShelf.commandID == CommandID(rawValue: "shelf.shortcut.new"))
+        #expect(newShelf.commandID == ShelfApplication.newShelfToolID)
         #expect(
             newShelf.hotKey
                 == LauncherHotKey(keyCode: 49, modifiers: [.option, .shift])
@@ -156,8 +165,7 @@ struct ShelfApplicationTests {
         #expect(ShelfGlobalShortcut.resolve(newShelf.commandID)?.entryMode == .empty)
 
         #expect(
-            fromClipboard.commandID
-                == CommandID(rawValue: "shelf.shortcut.clipboard")
+            fromClipboard.commandID == ShelfApplication.newShelfFromClipboardToolID
         )
         #expect(
             fromClipboard.hotKey
@@ -204,6 +212,109 @@ struct ShelfApplicationTests {
                 )
         )
         #expect(window.frame.maxX <= visibleFrame.maxX)
+    }
+
+    @Test @MainActor func shelfRehomesManualPositionAcrossDisplaysAndClampsIt() {
+        let source = CGRect(x: 0, y: 24, width: 1_512, height: 982)
+        let target = CGRect(x: -1_920, y: 0, width: 1_920, height: 1_080)
+        let frame = CGRect(x: 430, y: 315, width: 520, height: 430)
+
+        let rehomed = ShelfWindowConfigurator.rehomedFrame(
+            frame,
+            from: source,
+            to: target
+        )
+        let sourceX = (frame.minX - source.minX) / (source.width - frame.width)
+        let sourceY = (frame.minY - source.minY) / (source.height - frame.height)
+        let targetX = (rehomed.minX - target.minX) / (target.width - frame.width)
+        let targetY = (rehomed.minY - target.minY) / (target.height - frame.height)
+
+        #expect(abs(sourceX - targetX) < 0.000_1)
+        #expect(abs(sourceY - targetY) < 0.000_1)
+        #expect(target.contains(rehomed))
+
+        let offscreen = CGRect(x: 10_000, y: -10_000, width: 520, height: 430)
+        let constrained = ShelfWindowConfigurator.constrainedFrame(offscreen, to: target)
+        #expect(constrained.maxX == target.maxX)
+        #expect(constrained.minY == target.minY)
+        #expect(target.contains(constrained))
+    }
+
+    @Test @MainActor func shelfCoordinatorFollowsActiveDesktopAndRemovesItsObserver() throws {
+        let source = try #require(NSScreen.main?.visibleFrame)
+        let target = CGRect(
+            x: source.maxX + 5_000,
+            y: source.minY - 320,
+            width: max(source.width - 140, 800),
+            height: max(source.height - 100, 700)
+        )
+        let request = ShelfPresentationRequest.initial.next(
+            entryMode: .empty,
+            screenTarget: WindowPresentationTarget(visibleFrame: source)
+        )
+        let appNotifications = NotificationCenter()
+        let workspaceNotifications = NotificationCenter()
+        let activeTarget = MutableWindowPresentationTarget(
+            WindowPresentationTarget(visibleFrame: source)
+        )
+        let coordinator = ShelfWindowConfigurator.Coordinator(
+            preferredCorner: .topRight,
+            presentationRequest: request,
+            interaction: ShelfBoardInteractionState(),
+            onEscape: { false },
+            onKeyDown: { _ in false },
+            notificationCenter: appNotifications,
+            workspaceNotificationCenter: workspaceNotifications,
+            screenTargetProvider: { activeTarget.value }
+        )
+        let window = NSWindow(
+            contentRect: CGRect(
+                x: source.minX + 280,
+                y: source.minY + 240,
+                width: LayoutConstants.shelfBoardSize,
+                height: LayoutConstants.shelfBoardSize
+            ),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            coordinator.tearDown()
+            window.orderOut(nil)
+        }
+
+        coordinator.attach(to: window)
+        let manuallyPositionedFrame = CGRect(
+            x: source.midX - 220,
+            y: source.midY - 120,
+            width: LayoutConstants.shelfBoardSize,
+            height: LayoutConstants.shelfBoardSize
+        )
+        window.setFrame(manuallyPositionedFrame, display: false)
+        activeTarget.value = WindowPresentationTarget(visibleFrame: target)
+
+        workspaceNotifications.post(
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
+
+        let expected = ShelfWindowConfigurator.rehomedFrame(
+            manuallyPositionedFrame,
+            from: source,
+            to: target
+        )
+        #expect(abs(window.frame.minX - expected.minX) <= 1)
+        #expect(abs(window.frame.minY - expected.minY) <= 1)
+        #expect(window.frame.size == expected.size)
+
+        coordinator.tearDown()
+        let frameAfterTearDown = window.frame
+        activeTarget.value = WindowPresentationTarget(visibleFrame: source)
+        workspaceNotifications.post(
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
+        #expect(window.frame == frameAfterTearDown)
     }
 
     @Test @MainActor func shelfWindowKeepsBackgroundDragDisabledAndMasksCorners() {

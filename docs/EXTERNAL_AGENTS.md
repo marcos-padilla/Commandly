@@ -1,0 +1,19 @@
+# Hermes and OpenClaw agents
+
+Commandly registers separate Hermes Agent and OpenClaw Agent applications with independently assignable launcher shortcuts. Each connects to the user's own API server. Opening a screen reads saved metadata; only Check & Connect, Refresh Agents and Send contact that server.
+
+Check & Connect performs authenticated `GET <base>/models`, bounds and validates the returned target IDs, then saves one versioned connection and credential per agent kind in Keychain. The base must end in `/v1`; a configured Hermes profile prefix is supported. Remote URLs require HTTPS; HTTP is restricted to literal localhost/127.0.0.1/::1. URL credentials, queries, fragments, encoded paths and traversal are rejected. The ephemeral transports disable cookies, cache and credential storage and refuse redirects. There is no server discovery scan, shell launch or credential import.
+
+Send calls the documented Chat Completions endpoint with a selected target, caller-owned text transcript and streaming enabled. OpenClaw receives a random conversation-specific `user` value for stable routing; Hermes receives full caller history without the persistent-session header, using its synchronous delegation behavior. No account identity or ambient application context is included. Up to eight independent conversations exist for the current launcher session; closing the application clears local transcripts. Connection replacement clears local conversations, and in-flight reads/deltas validate the saved connection revision.
+
+SSE framing accepts bounded text chunks, keepalive comments and Hermes tool-progress events. Progress is displayed without copying tool names, arguments or results into the transcript. A successful turn requires both a stop finish reason and terminal `[DONE]`. Incomplete, failed and canceled output is labeled and is not reused as conversation context or automatically retried. Stop cancels reception; it cannot undo actions the remote server already performed. Server-side history and credential revocation remain in the agent's own interface.
+
+The UI explains that sending may execute the external agent's configured tools. Commandly advertises no client tools, does not execute server-returned tool calls and does not grant approvals. A client-tool/approval event gives recovery guidance to the agent's own interface. This connector does not implement the separate Hermes Runs approval API or OpenClaw gateway WebSocket approval protocol. Those server interfaces remain necessary for approvals and server history administration.
+
+Limits: 128 discovered targets, 64 messages, 64 KiB per input, 1 MiB request text, 512 KiB response text, 4 MiB streaming wire data, eight local conversations, 20-second discovery and 120-second idle request timeout. No transcript, request, private URL, credential, tool content or raw server error is logged. DEBUG productivity fixtures use an unavailable service rather than touching real credentials/network.
+
+Keyboard/accessibility: Return sends from the composer; Escape cancels active reception or closes connection setup; Command-K opens the shared action menu. Every form field and icon control has an accessible label, transcript text supports selection, and connection setup scrolls at larger text sizes. VoiceOver and real-server acceptance remain unverified.
+
+Sources consulted September 17, 2026: [Hermes API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server), [OpenClaw Chat Completions API](https://docs.openclaw.ai/gateway/openai-http-api). The implementation uses their documented endpoint/stream contracts; no competitor assets or code were copied.
+
+Focused generated tests cover endpoint policy, streaming completion/tool progress and both launcher registrations. A live server connection and actual server-side tool/approval behavior still require the user's own configured servers and credentials.

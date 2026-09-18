@@ -457,6 +457,8 @@ public enum BuiltInCommandActionID {
     public static let showInfoInFinder = CommandActionID(rawValue: "app.show-info")
     public static let showPackageContents = CommandActionID(rawValue: "app.package-contents")
     public static let toggleFavorite = CommandActionID(rawValue: "app.toggle-favorite")
+    /// Opens the installed application's searchable nickname editor.
+    public static let editApplicationAlias = CommandActionID(rawValue: "app.edit-alias")
     public static let copyAppName = CommandActionID(rawValue: "app.copy-name")
     public static let copyAppPath = CommandActionID(rawValue: "app.copy-path")
     public static let copyBundleIdentifier = CommandActionID(rawValue: "app.copy-bundle-id")

@@ -46,6 +46,7 @@ xcodebuild \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath "${DERIVED_DATA_PATH}" \
+  CODE_SIGNING_ALLOWED=NO \
   -only-testing:CommandlyTests \
   test || fail "app tests failed"
 
@@ -56,6 +57,7 @@ xcodebuild \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath "${DERIVED_DATA_PATH}" \
+  CODE_SIGNING_ALLOWED=NO \
   build || fail "app build failed"
 
 echo "VERIFY PASSED"

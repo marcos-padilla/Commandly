@@ -1241,6 +1241,11 @@ final class FinderAIViewModel {
         Trash only. Do not request shell commands, AppleScript, permanent deletion, permission changes,
         hidden-file traversal, or access outside the authorized roots. Prefer the smallest exact action.
         Request at most one content read at a time and use the smallest useful byte limit.
+        For image format, aspect-preserving size, or quarter-turn rotation requests, use finder_convert_image.
+        It converts pixels locally after exact user approval and keeps the source unchanged; it does not
+        upload images or provide image interpretation, arbitrary editing, background removal, or shell access.
+        Specify one discovered source handle, an authorized destination handle, and an exact output name
+        with the chosen format's extension. Do not claim conversion happened without a completed tool result.
         """
 
     private static func serializedByteCount(of messages: [AIMessage]) -> Int {

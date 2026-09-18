@@ -5,6 +5,7 @@ import SwiftUI
 struct ProductivityLibraryView: View {
     @Bindable var viewModel: ProductivityLibraryViewModel
     @Environment(\.commandlyLayoutDensity) private var density
+    @State private var searchFocusRequest = 0
 
     var body: some View {
         LauncherApplicationScreen(
@@ -12,6 +13,7 @@ struct ProductivityLibraryView: View {
             searchPlaceholder: "Search your library…",
             searchAccessibilityIdentifier: "productivity-library-query",
             sidebarWidth: 286,
+            searchFocusRequest: searchFocusRequest,
             onBack: viewModel.goBack,
             onSubmit: performPrimaryAction,
             onMoveSelection: viewModel.moveSelection,
@@ -40,6 +42,21 @@ struct ProductivityLibraryView: View {
         }
         .task(id: viewModel.loadRequestID) {
             await viewModel.load()
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.pendingSnippet != nil },
+            set: { if !$0 { viewModel.cancelSnippetInput() } }
+        ), onDismiss: { searchFocusRequest += 1 }) {
+            SnippetInputSheet(viewModel: viewModel)
+        }
+        .onChange(of: viewModel.editorMode != nil) { wasEditing, isEditing in
+            if wasEditing && !isEditing { searchFocusRequest += 1 }
+        }
+        .onChange(of: viewModel.floatingNoteRevision) { _, _ in
+            viewModel.refreshForFloatingNoteChanges()
+        }
+        .onChange(of: viewModel.canRefreshFromFloatingNotes) { _, ready in
+            if ready { viewModel.refreshForFloatingNoteChanges() }
         }
         .alert("Delete this item?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -85,6 +102,10 @@ struct ProductivityLibraryView: View {
                 Spacer(minLength: 0)
 
                 Menu {
+                    if viewModel.canCreateFloatingNote {
+                        Button("Floating Note", systemImage: "note.text", action: viewModel.createFloatingNote)
+                        Divider()
+                    }
                     ForEach(ProductivityLibraryItemKind.allCases) { kind in
                         Button {
                             viewModel.beginCreating(kind: kind)
@@ -108,6 +129,18 @@ struct ProductivityLibraryView: View {
             .padding(.vertical, density.spacing(.xs))
 
             Divider().opacity(0.3)
+
+            if !viewModel.availableTags.isEmpty {
+                Picker("Tag", selection: $viewModel.selectedTag) {
+                    Text("All Tags").tag(nil as String?)
+                    ForEach(viewModel.availableTags, id: \.self) { tag in
+                        Text(tag).tag(Optional(tag))
+                    }
+                }
+                .padding(.horizontal, density.spacing(.sm))
+                .padding(.vertical, density.spacing(.xs))
+                .accessibilityIdentifier("productivity-library-tag-filter")
+            }
 
             sidebarContent
         }
@@ -203,6 +236,7 @@ struct ProductivityLibraryView: View {
             ProductivityLibraryEditor(viewModel: viewModel)
         } else if let item = viewModel.selectedItem {
             ProductivityLibraryItemDetail(viewModel: viewModel, item: item)
+                .id(item.id)
         } else {
             LauncherApplicationEmptyState(
                 systemImage: "square.grid.2x2",
@@ -268,6 +302,7 @@ private struct ProductivityLibraryItemDetail: View {
                         Text(item.title)
                             .commandlyFont(size: 17, weight: .semibold)
                             .textSelection(.enabled)
+                            .accessibilityAddTraits(.isHeader)
                         Text(item.kind.title)
                             .commandlyFont(size: 9.5, weight: .semibold)
                             .foregroundStyle(BrandPalette.accentSoft)
@@ -312,6 +347,12 @@ private struct ProductivityLibraryItemDetail: View {
                     .accessibilityLabel("Delete item")
                 }
 
+                if viewModel.canOpenFloatingNote {
+                    Button("Open Floating Note", systemImage: "macwindow", action: viewModel.openSelectedFloatingNote)
+                        .buttonStyle(ProductivityLibrarySecondaryButtonStyle())
+                        .accessibilityIdentifier("library-open-floating-note")
+                }
+
                 Divider().opacity(0.3)
 
                 VStack(alignment: .leading, spacing: density.spacing(.xs)) {
@@ -320,6 +361,9 @@ private struct ProductivityLibraryItemDetail: View {
                         .foregroundStyle(.tertiary)
                         .tracking(0.55)
                     LauncherApplicationMetadataRow(label: "Type", value: item.kind.title)
+                    if !item.tags.isEmpty {
+                        LauncherApplicationMetadataRow(label: "Tags", value: item.tags.joined(separator: ", "))
+                    }
                     LauncherApplicationMetadataRow(
                         label: "Updated",
                         value: item.updatedAt.formatted(date: .abbreviated, time: .shortened)
@@ -328,6 +372,8 @@ private struct ProductivityLibraryItemDetail: View {
             }
             .padding(density.spacing(.md))
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(item.kind.title), \(item.title)")
     }
 
     @ViewBuilder
@@ -367,6 +413,7 @@ private struct ProductivityLibraryItemDetail: View {
 private struct ProductivityLibraryEditor: View {
     @Bindable var viewModel: ProductivityLibraryViewModel
     @Environment(\.commandlyLayoutDensity) private var density
+    @FocusState private var isTitleFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -392,6 +439,7 @@ private struct ProductivityLibraryEditor: View {
                 VStack(alignment: .leading, spacing: 6) {
                     editorLabel("NAME")
                     TextField("A memorable name or emoji keyword", text: $viewModel.draft.title)
+                        .focused($isTitleFocused)
                         .textFieldStyle(.plain)
                         .commandlyFont(size: 12, weight: .medium)
                         .padding(.horizontal, 10)
@@ -403,6 +451,7 @@ private struct ProductivityLibraryEditor: View {
                         }
                         .disabled(viewModel.isSaving)
                         .accessibilityIdentifier("productivity-library-title")
+                        .onAppear { isTitleFocused = true }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -435,9 +484,21 @@ private struct ProductivityLibraryEditor: View {
                     }
                 }
 
+                VStack(alignment: .leading, spacing: 6) {
+                    editorLabel("TAGS")
+                    TextField("work, writing, personal", text: $viewModel.draft.tags)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Tags separated by commas")
+                        .accessibilityIdentifier("productivity-library-tags")
+                        .disabled(viewModel.isSaving)
+                    Text("Separate with commas. Up to 12 tags, 32 characters each.")
+                        .commandlyFont(size: 11)
+                        .foregroundStyle(.secondary)
+                }
+
                 if viewModel.draft.kind == .snippet {
                     Label(
-                        "{{clipboard}} is replaced with current clipboard text when copied.",
+                        "Insert {{clipboard}}, {{date}}, {{time}}, {{datetime}}, or {{uuid}}. Use {{input:Name}} to ask for a value each time you copy.",
                         systemImage: "wand.and.stars"
                     )
                     .commandlyFont(size: 10)
@@ -448,6 +509,13 @@ private struct ProductivityLibraryEditor: View {
                     Label(validation, systemImage: "exclamationmark.circle")
                         .commandlyFont(size: 10.5, weight: .medium)
                         .foregroundStyle(SemanticColors.color(for: .danger))
+                }
+
+                if viewModel.hasPersistenceConflict {
+                    Button("Save as New Item", action: viewModel.saveDraftAsNew)
+                        .buttonStyle(ProductivityLibrarySecondaryButtonStyle())
+                        .disabled(viewModel.isBusy)
+                        .accessibilityIdentifier("library-save-conflict-copy")
                 }
 
                 HStack(spacing: density.spacing(.xs)) {

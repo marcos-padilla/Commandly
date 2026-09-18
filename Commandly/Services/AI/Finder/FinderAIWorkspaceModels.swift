@@ -1,4 +1,5 @@
 import Foundation
+import Infrastructure
 import SearchKit
 
 /// Identifies one in-memory Finder AI conversation boundary.
@@ -196,6 +197,7 @@ nonisolated enum FinderAICollisionPolicy: String, Sendable, Codable, Equatable {
 }
 
 nonisolated enum FinderAIMutationOperation: Sendable, Equatable {
+    case convertImage(FinderAIImageConversionRequest)
     case createFolder(parent: FinderAIDirectoryReference, name: String)
     case rename(item: FinderAIItemID, newName: String)
     case duplicate(items: [FinderAIItemID], collisionPolicy: FinderAICollisionPolicy)
@@ -240,6 +242,7 @@ nonisolated enum FinderAIPlanWarning: Hashable, Sendable, Equatable {
 }
 
 nonisolated enum FinderAIMutationPreviewKind: String, Sendable, Equatable {
+    case convertImage
     case createFolder
     case rename
     case duplicate
@@ -271,13 +274,16 @@ nonisolated struct FinderAIMutationPreview: Sendable, Equatable, Identifiable {
     let sourceNames: [String]
     let destinationDescription: String?
     let resultingNames: [String]
+    /// Exact local conversion settings; image contents never enter provider results.
+    let imageConversion: ImageConversionOptions?
 
     init(
         id: UUID,
         kind: FinderAIMutationPreviewKind,
         sourceLocations: [FinderAIApprovalLocation],
         destinations: [FinderAIApprovalDestination],
-        resultingNames: [String]
+        resultingNames: [String],
+        imageConversion: ImageConversionOptions? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -289,6 +295,7 @@ nonisolated struct FinderAIMutationPreview: Sendable, Equatable, Identifiable {
             ? nil
             : destinationDescriptions.joined(separator: " · ")
         self.resultingNames = resultingNames
+        self.imageConversion = imageConversion
     }
 }
 
@@ -347,6 +354,10 @@ nonisolated enum FinderAIWorkspaceError: Error, Sendable, Equatable {
     case planAlreadyConsumed
     case itemChangedSincePreview
     case unreadableText
+    case invalidImage
+    case unsupportedImageFormat
+    case imageConversionFailed
+    case imageTemporaryCleanupFailed
     case operationFailed
 }
 

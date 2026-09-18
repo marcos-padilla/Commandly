@@ -1,5 +1,6 @@
 import AIKit
 import Foundation
+import Infrastructure
 import SearchKit
 
 nonisolated enum FinderAIToolExecutionOutcome: Sendable, Equatable {
@@ -25,6 +26,7 @@ nonisolated enum FinderAIToolApprovalRequest: Sendable, Equatable {
                 ? "Share File Contents"
                 : "Share \(plan.items.count) Files’ Contents"
         case .mutation(_, let plan):
+            if plan.operations.count == 1, plan.operations.first?.kind == .convertImage { return "Convert Image?" }
             switch plan.risk {
             case .createsItems: return "Create Files?"
             case .changesLocation: return "Change Files?"
@@ -174,6 +176,19 @@ nonisolated struct FinderAIToolExecutor: FinderAIToolExecuting {
                     in: session
                 )
                 return .requiresApproval(.textRead(call: call, plan: plan))
+
+            case ToolName.convertImage.rawValue:
+                let arguments = try Arguments(call,
+                    allowed: ["item_id", "destination_type", "destination_id", "output_name", "format", "longest_edge", "clockwise_quarter_turns"],
+                    required: ["item_id", "destination_type", "destination_id", "output_name", "format"])
+                guard let format = ImageConversionFormat(rawValue: try arguments.string("format")) else { throw ExecutorError.invalidArguments }
+                let options = ImageConversionOptions(format: format, longestEdge: try arguments.optionalInteger("longest_edge"),
+                    clockwiseQuarterTurns: try arguments.optionalInteger("clockwise_quarter_turns") ?? 0)
+                let request = FinderAIImageConversionRequest(source: FinderAIItemID(rawValue: try arguments.uuid("item_id")),
+                    destination: try arguments.directoryReference(typeKey: "destination_type", idKey: "destination_id"),
+                    outputName: try arguments.string("output_name"), options: options)
+                try request.validate()
+                return try await pendingMutation(call, operation: .convertImage(request), session: session)
 
             case ToolName.createFolder.rawValue:
                 let arguments = try Arguments(
@@ -343,6 +358,7 @@ private extension FinderAIToolExecutor {
         case metadata = "finder_get_metadata"
         case reveal = "finder_reveal"
         case readText = "finder_read_text"
+        case convertImage = "finder_convert_image"
         case createFolder = "finder_create_folder"
         case rename = "finder_rename"
         case duplicate = "finder_duplicate"
@@ -426,6 +442,22 @@ private extension FinderAIToolExecutor {
             ],
             required: ["item_ids"],
             effect: .readOnly,
+            confirmation: .always
+        ),
+        definition(
+            .convertImage,
+            description: "Prepare one local still-image conversion. Requires exact local user approval; source pixels are never sent to the provider. Creates a new file without overwrite; original stays unchanged. Source limit 64 MiB/40 million pixels; output limit 192 MiB/40 million pixels. Native encoder availability is checked locally.",
+            properties: [
+                "item_id": handleSchema("Source image item UUID discovered by search or listing."),
+                "destination_type": directoryTypeSchema,
+                "destination_id": handleSchema("Authorized destination directory UUID."),
+                "output_name": .string(allowedValues: nil, description: "Exact new filename component with matching extension: .png, .jpg/.jpeg, .heic, or .tif/.tiff. Never an absolute path or URL. Existing names fail."),
+                "format": .string(allowedValues: ImageConversionFormat.allCases.map(\.rawValue), description: "Native format. JPEG/HEIC flatten transparency on white at 0.9 quality; PNG/TIFF retain alpha. All outputs are freshly rendered 8-bit sRGB with source metadata removed."),
+                "longest_edge": .integer(minimum: 1, maximum: 16_384, description: "Optional output longest edge in pixels, preserving aspect ratio; omitted keeps original dimensions. Enlargement cannot add detail."),
+                "clockwise_quarter_turns": .integer(minimum: 0, maximum: 3, description: "Optional clockwise rotation: 0=no rotation, 1=90°, 2=180°, 3=270°. Defaults to zero.")
+            ],
+            required: ["item_id", "destination_type", "destination_id", "output_name", "format"],
+            effect: .mutating,
             confirmation: .always
         ),
         definition(
@@ -533,6 +565,14 @@ private extension FinderAIToolExecutor {
             return ("stale_plan", "The files changed; review a new plan before continuing.")
         case .unreadableText:
             return ("unreadable_text", "The approved file does not contain supported text.")
+        case .invalidImage:
+            return ("invalid_image", "The source is not a supported single-frame still image.")
+        case .unsupportedImageFormat:
+            return ("unsupported_image_format", "This Mac cannot encode the selected image format. Review a different format in a new plan.")
+        case .imageConversionFailed:
+            return ("image_conversion_failed", "The image conversion could not be completed. The original image was not changed.")
+        case .imageTemporaryCleanupFailed:
+            return ("image_cleanup_failed", "An incomplete conversion temporary file may remain in the approved destination folder. The original image was not changed.")
         case .operationFailed:
             return ("operation_failed", "The Finder operation could not be completed.")
         }

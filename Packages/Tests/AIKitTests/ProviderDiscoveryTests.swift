@@ -217,7 +217,7 @@ struct ProviderDiscoveryTests {
         let models = try await adapter.models(configuration: testConfiguration(.googleGemini))
 
         #expect(models.map(\.id) == ["models/gemini-2.5-pro"])
-        #expect(models.first?.capabilities == [.textInput, .textOutput, .toolCalling])
+        #expect(models.first?.capabilities == [.textInput, .textOutput, .toolCalling, .imageInput])
         #expect(models.first?.capabilityEvidence == .curated)
         #expect(adapter.descriptor.capabilities == [.modelDiscovery, .textGeneration, .toolCalling])
         let request = try #require(await transport.recordedRequests().first)

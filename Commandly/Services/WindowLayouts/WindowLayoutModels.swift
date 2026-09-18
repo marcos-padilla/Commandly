@@ -7,7 +7,8 @@ struct NormalizedWindowRect: Codable, Equatable, Hashable, Sendable {
     let height: Double
 
     var isValid: Bool {
-        x >= 0 && y >= 0 && width > 0 && height > 0
+        [x, y, width, height].allSatisfy(\.isFinite)
+            && x >= 0 && y >= 0 && width > 0 && height > 0
             && x + width <= 1.000_001 && y + height <= 1.000_001
     }
 }

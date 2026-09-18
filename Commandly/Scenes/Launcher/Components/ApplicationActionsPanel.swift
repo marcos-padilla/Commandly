@@ -11,7 +11,13 @@ struct LauncherActionPanel: View {
     var onDismiss: () -> Void
     var onBack: (() -> Void)?
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
+    @State private var selection = LauncherMenuSelection<CommandActionID>()
+
+    private var enabledIDs: [CommandActionID] {
+        actions.filter(\.isEnabled).map(\.id)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,29 +35,49 @@ struct LauncherActionPanel: View {
                     .commandlyFont(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
             }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, density.spacing(.md))
-                .padding(.top, density.spacing(.sm))
-                .padding(.bottom, density.spacing(.xs))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, density.spacing(.md))
+            .padding(.top, density.spacing(.sm))
+            .padding(.bottom, density.spacing(.xs))
 
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                        if index > 0, actions[index - 1].section != action.section {
-                            Divider()
-                                .overlay(LauncherPalette.separator)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, density.spacing(.sm))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        if actions.isEmpty {
+                            Text("No matching actions")
+                                .commandlyFont(size: 12)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, density.spacing(.lg))
                         }
-                        LauncherActionPanelRow(action: action) {
-                            onSelect(action.id)
+                        ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                            if index > 0, actions[index - 1].section != action.section {
+                                Divider()
+                                    .overlay(LauncherPalette.separator)
+                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, density.spacing(.sm))
+                            }
+                            LauncherActionPanelRow(
+                                action: action,
+                                isSelected: selection.selectedID == action.id,
+                                onHover: { selection.select(action.id, in: enabledIDs) },
+                                onSelect: { onSelect(action.id) }
+                            )
+                            .id(action.id)
                         }
                     }
+                    .padding(.horizontal, density.spacing(.xs))
+                    .padding(.bottom, density.spacing(.xs))
                 }
-                .padding(.horizontal, density.spacing(.xs))
-                .padding(.bottom, density.spacing(.xs))
+                .onChange(of: selection.selectedID) { _, selectedID in
+                    guard let selectedID else { return }
+                    withAnimation(reduceMotion ? nil : CommandlyMotion.hover) {
+                        proxy.scrollTo(selectedID)
+                    }
+                }
             }
             .frame(maxHeight: 280)
 
@@ -62,13 +88,24 @@ struct LauncherActionPanel: View {
                 Image(systemName: "magnifyingglass")
                     .commandlyFont(size: 11, weight: .medium)
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
                 TextField("Search for actions…", text: $query)
                     .textFieldStyle(.plain)
                     .commandlyFont(size: 12, weight: .medium)
                     .focused($isSearchFocused)
+                    .accessibilityLabel("Search actions")
+                    .accessibilityIdentifier("launcher-actions-query")
+                    .onKeyPress(.upArrow) {
+                        selection.move(by: -1, in: enabledIDs)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        selection.move(by: 1, in: enabledIDs)
+                        return .handled
+                    }
                     .onSubmit {
-                        if let first = actions.first {
-                            onSelect(first.id)
+                        if let id = selection.activationID(in: enabledIDs) {
+                            onSelect(id)
                         }
                     }
             }
@@ -83,7 +120,12 @@ struct LauncherActionPanel: View {
         }
         .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
         .onAppear {
-            isSearchFocused = true
+            selection.reconcile(with: enabledIDs)
+            // The overlay must be attached before its field can become first responder.
+            DispatchQueue.main.async { isSearchFocused = true }
+        }
+        .onChange(of: enabledIDs) { _, ids in
+            selection.reconcile(with: ids)
         }
         .onKeyPress(.escape) {
             if let onBack {
@@ -130,10 +172,13 @@ struct LauncherActionPanelItem: Identifiable, Sendable, Equatable, Hashable {
 
 private struct LauncherActionPanelRow: View {
     let action: LauncherActionPanelItem
+    let isSelected: Bool
+    let onHover: () -> Void
     let onSelect: () -> Void
     @State private var isHovered = false
     @Environment(\.commandlyLayoutDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button(action: onSelect) {
@@ -142,9 +187,10 @@ private struct LauncherActionPanelRow: View {
                     .commandlyFont(size: 12, weight: .semibold)
                     .foregroundStyle(action.isDestructive ? Color.red : Color.primary.opacity(0.85))
                     .frame(width: 18, alignment: .center)
+                    .accessibilityHidden(true)
 
                 Text(action.title)
-                    .commandlyFont(size: 12, weight: .medium)
+                    .commandlyFont(size: 12, weight: isSelected ? .semibold : .medium)
                     .foregroundStyle(action.isDestructive ? Color.red : Color.primary)
                     .lineLimit(1)
 
@@ -170,16 +216,29 @@ private struct LauncherActionPanelRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
-                    .fill(isHovered ? LauncherPalette.hover : Color.clear)
+                    .fill(
+                        isSelected ? LauncherPalette.selection
+                            : isHovered ? LauncherPalette.hover : Color.clear
+                    )
             )
+            .overlay {
+                if isSelected, contrast == .increased {
+                    RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.6), lineWidth: 1)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(action.isEnabled == false)
         .opacity(action.isEnabled ? 1 : 0.5)
-        .onHover { isHovered = $0 }
+        .onHover {
+            isHovered = $0
+            if $0 { onHover() }
+        }
         .animation(reduceMotion ? nil : CommandlyMotion.hover, value: isHovered)
         .accessibilityLabel(action.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("launcher-action-\(action.id.rawValue)")
     }
 }

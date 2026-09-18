@@ -18,6 +18,7 @@ if ! xcodebuild \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath "${DERIVED_DATA_PATH}" \
+  CODE_SIGNING_ALLOWED=NO \
   -only-testing:CommandlyTests \
   test; then
   echo "Xcode tests failed" >&2

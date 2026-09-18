@@ -8,6 +8,7 @@ enum LauncherApplicationKind: String, CaseIterable, Codable, Identifiable, Senda
     case `extension`
     case command
     case application
+    case tool
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum LauncherApplicationKind: String, CaseIterable, Codable, Identifiable, Senda
         case .extension: return "Extension"
         case .command: return "Command"
         case .application: return "Application"
+        case .tool: return "Tool"
         }
     }
 
@@ -28,6 +30,7 @@ enum LauncherApplicationKind: String, CaseIterable, Codable, Identifiable, Senda
         case .extension: return "puzzlepiece.extension"
         case .command: return "terminal"
         case .application: return "app"
+        case .tool: return "wrench.and.screwdriver"
         }
     }
 }
@@ -97,9 +100,19 @@ struct LauncherConfigurationField: Codable, Equatable, Identifiable, Sendable {
     let title: String
     let description: String?
     let placeholder: String?
+    /// Optional heading used by the generic Applications inspector.
+    ///
+    /// An omitted or empty value keeps the field in the default Configuration section.
+    let section: String?
     let kind: LauncherConfigurationFieldKind
     let defaultValue: LauncherConfigurationValue
     let options: [LauncherConfigurationOption]
+    /// Inclusive lower bound for integer and decimal controls.
+    let minimumValue: Double?
+    /// Inclusive upper bound for integer and decimal controls.
+    let maximumValue: Double?
+    /// Increment used by bounded integer and decimal controls.
+    let step: Double?
 
     init(
         id: String,
@@ -107,18 +120,26 @@ struct LauncherConfigurationField: Codable, Equatable, Identifiable, Sendable {
         title: String,
         description: String? = nil,
         placeholder: String? = nil,
+        section: String? = nil,
         kind: LauncherConfigurationFieldKind,
         defaultValue: LauncherConfigurationValue,
-        options: [LauncherConfigurationOption] = []
+        options: [LauncherConfigurationOption] = [],
+        minimumValue: Double? = nil,
+        maximumValue: Double? = nil,
+        step: Double? = nil
     ) {
         self.id = id
         self.variable = variable
         self.title = title
         self.description = description
         self.placeholder = placeholder
+        self.section = section
         self.kind = kind
         self.defaultValue = defaultValue
         self.options = options
+        self.minimumValue = minimumValue
+        self.maximumValue = maximumValue
+        self.step = step
     }
 }
 
@@ -176,6 +197,8 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
     let title: String
     let subtitle: String?
     let systemImage: String
+    /// Built-in discovery terms shown in Settings and always available to launcher search.
+    let defaultTags: [String]
     let order: Int
     let isEnabledByDefault: Bool
     let defaultHotKey: LauncherHotKey?
@@ -190,6 +213,7 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
         title: String,
         subtitle: String? = nil,
         systemImage: String,
+        defaultTags: [String] = [],
         order: Int = 0,
         isEnabledByDefault: Bool = true,
         defaultHotKey: LauncherHotKey? = nil,
@@ -203,6 +227,7 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
+        self.defaultTags = Self.normalizedTags(defaultTags)
         self.order = order
         self.isEnabledByDefault = isEnabledByDefault
         self.defaultHotKey = defaultHotKey
@@ -215,11 +240,12 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
         manifest: CommandManifest,
         parentID: CommandID? = nil,
         kind: LauncherApplicationKind,
+        defaultTags: [String]? = nil,
         order: Int = 0,
         isEnabledByDefault: Bool = true,
         defaultHotKey: LauncherHotKey? = nil,
         configurationFields: [LauncherConfigurationField] = [],
-        documentation: LauncherApplicationDocumentation
+        documentation: LauncherApplicationDocumentation? = nil
     ) {
         self.init(
             id: manifest.id,
@@ -228,6 +254,7 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
             title: manifest.title,
             subtitle: manifest.subtitle,
             systemImage: manifest.systemImage,
+            defaultTags: defaultTags ?? manifest.keywords,
             order: order,
             isEnabledByDefault: isEnabledByDefault,
             defaultHotKey: defaultHotKey,
@@ -255,14 +282,77 @@ struct LauncherApplicationDefinition: Identifiable, Sendable {
             order: order
         )
     }
+
+    /// Creates one application-owned tool that can be searched and assigned its own shortcut.
+    static func tool(
+        id: CommandID,
+        parentID: CommandID,
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        category: CommandCategory = .productivity,
+        order: Int = 0,
+        keywords: [String] = [],
+        arguments: [CommandArgument] = [],
+        defaultHotKey: LauncherHotKey? = nil
+    ) -> LauncherApplicationDefinition {
+        let manifest = CommandManifest(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            category: category,
+            mode: .action,
+            keywords: keywords,
+            arguments: arguments,
+            badgeTitle: "Tool"
+        )
+        return LauncherApplicationDefinition(
+            manifest: manifest,
+            parentID: parentID,
+            kind: .tool,
+            defaultTags: keywords,
+            order: order,
+            defaultHotKey: defaultHotKey
+        )
+    }
+
+    private static func normalizedTags(_ tags: [String]) -> [String] {
+        var seen: Set<String> = []
+        return tags.compactMap { value in
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard normalized.isEmpty == false else { return nil }
+            let key = normalized.folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            )
+            guard seen.insert(key).inserted else { return nil }
+            return normalized
+        }
+    }
 }
 
 /// User values resolved against a definition's defaults.
 struct LauncherApplicationResolvedSettings: Equatable, Sendable {
     let alias: String
+    let tags: [String]
     let hotKey: LauncherHotKey?
     let isEnabled: Bool
     let configuration: [String: LauncherConfigurationValue]
+
+    init(
+        alias: String,
+        tags: [String] = [],
+        hotKey: LauncherHotKey?,
+        isEnabled: Bool,
+        configuration: [String: LauncherConfigurationValue]
+    ) {
+        self.alias = alias
+        self.tags = tags
+        self.hotKey = hotKey
+        self.isEnabled = isEnabled
+        self.configuration = configuration
+    }
 
     func value(for variable: String) -> LauncherConfigurationValue? {
         configuration[variable]

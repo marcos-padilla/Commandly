@@ -49,19 +49,22 @@ struct ProductivityLibraryDraft: Equatable {
     var kind: ProductivityLibraryItemKind
     var title: String
     var content: String
+    var tags: String
 
     init(
         kind: ProductivityLibraryItemKind = .snippet,
         title: String = "",
-        content: String = ""
+        content: String = "",
+        tags: String = ""
     ) {
         self.kind = kind
         self.title = title
         self.content = content
+        self.tags = tags
     }
 
     init(item: ProductivityLibraryItem) {
-        self.init(kind: item.kind, title: item.title, content: item.content)
+        self.init(kind: item.kind, title: item.title, content: item.content, tags: item.tags.joined(separator: ", "))
     }
 }
 
@@ -72,11 +75,14 @@ enum ProductivityLibraryActionID {
     static let requestDelete = CommandActionID(rawValue: "productivity-library.delete")
     static let saveDraft = CommandActionID(rawValue: "productivity-library.save")
     static let cancelEditor = CommandActionID(rawValue: "productivity-library.cancel-editor")
+    static let openFloatingNote = CommandActionID(rawValue: "productivity-library.open-floating-note")
 }
 
 @Observable
 @MainActor
 final class ProductivityLibraryViewModel: LauncherApplicationModel {
+    @ObservationIgnored private let floatingNotes: (any FloatingNotePresenting)?
+    @ObservationIgnored private var loadedFloatingRevision = 0
     @ObservationIgnored
     private let persistence: any ProductivityLibraryPersisting
     @ObservationIgnored
@@ -97,12 +103,17 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     private var persistenceTask: Task<Void, Never>?
     @ObservationIgnored
     private var primaryActionTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var pendingInitialCreateKind: ProductivityLibraryItemKind?
+    @ObservationIgnored private var editorBaseItem: ProductivityLibraryItem?
+    @ObservationIgnored private var pendingDeletionBaseItem: ProductivityLibraryItem?
 
     private(set) var items: [ProductivityLibraryItem] = []
     private(set) var selectedID: UUID?
     private(set) var loadState: ProductivityLibraryLoadState = .idle
     private(set) var statusMessage: String?
     private(set) var isSaving = false
+    private(set) var hasPersistenceConflict = false
     private(set) var isPerformingPrimaryAction = false
     private(set) var pendingDeletionID: UUID?
     private(set) var loadRequestID = 0
@@ -116,13 +127,21 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     var showsActionsMenu = false
     var editorMode: ProductivityLibraryEditorMode?
     var draft = ProductivityLibraryDraft()
+    private(set) var pendingSnippet: ProductivityLibraryItem?
+    private(set) var snippetFields: [String] = []
+    var snippetInputs: [String: String] = [:]
+    var selectedTag: String? {
+        didSet { refreshSelection() }
+    }
 
     init(
         services: ProductivityLibraryApplicationServices,
         onGoBack: @escaping () -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        initialCreateKind: ProductivityLibraryItemKind? = nil
     ) {
         self.persistence = services.persistence
+        self.floatingNotes = services.floatingNotes
         self.pasteboard = services.pasteboard
         self.urlOpener = services.urlOpener
         self.quicklinkValidator = services.quicklinkValidator
@@ -130,6 +149,7 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
         self.makeID = services.makeID
         self.onGoBack = onGoBack
         self.onDismiss = onDismiss
+        self.pendingInitialCreateKind = initialCreateKind
     }
 
     var filteredItems: [ProductivityLibraryItem] {
@@ -137,11 +157,42 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return items.filter { item in
             guard activeKind == nil || item.kind == activeKind else { return false }
+            guard selectedTag == nil || item.tags.contains(where: {
+                $0.localizedCaseInsensitiveCompare(selectedTag ?? "") == .orderedSame
+            }) else { return false }
             guard needle.isEmpty == false else { return true }
             return item.title.localizedCaseInsensitiveContains(needle)
                 || item.content.localizedCaseInsensitiveContains(needle)
                 || item.kind.title.localizedCaseInsensitiveContains(needle)
+                || item.tags.contains { $0.localizedCaseInsensitiveContains(needle) }
         }
+    }
+
+    var availableTags: [String] {
+        ProductivityLibraryTags.normalized(items.flatMap(\.tags), limit: Int.max)
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    var canCopyPreparedSnippet: Bool {
+        pendingSnippet != nil && !isBusy
+            && snippetFields.allSatisfy { snippetInputs[$0]?.isEmpty == false }
+    }
+
+    func cancelSnippetInput() {
+        if pendingSnippet != nil { primaryActionTask?.cancel() }
+        clearSnippetInput()
+    }
+
+    private func clearSnippetInput() {
+        pendingSnippet = nil
+        snippetFields = []
+        snippetInputs = [:]
+    }
+
+    func copyPreparedSnippet() {
+        guard canCopyPreparedSnippet, let item = pendingSnippet else { return }
+        let inputs = snippetInputs
+        executePrimaryAction(item, inputs: inputs)
     }
 
     var selectedItem: ProductivityLibraryItem? {
@@ -163,6 +214,8 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
             _ = try preparedDraft(draft)
             return nil
         } catch let error as ProductivityLibraryValidationError {
+            return error.message
+        } catch let error as SnippetTemplate.Failure {
             return error.message
         } catch {
             return "This item can’t be saved."
@@ -221,7 +274,7 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
 
     var menuActions: [CommandActionDescriptor] {
         guard let selectedItem, editorMode == nil else { return [] }
-        return [
+        var actions = [
             CommandActionDescriptor(
                 id: ProductivityLibraryActionID.useSelected,
                 title: selectedItem.kind.primaryActionTitle,
@@ -243,18 +296,57 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
                 isEnabled: isBusy == false
             )
         ]
+        if selectedItem.kind == .quickNote, floatingNotes != nil {
+            actions.insert(CommandActionDescriptor(
+                id: ProductivityLibraryActionID.openFloatingNote,
+                title: "Open Floating Note", isEnabled: isBusy == false
+            ), at: 1)
+        }
+        return actions
+    }
+
+    var floatingNoteRevision: Int { floatingNotes?.savedRevision ?? 0 }
+    var canCreateFloatingNote: Bool { floatingNotes != nil && !isBusy }
+    var canOpenFloatingNote: Bool { floatingNotes != nil && selectedItem?.kind == .quickNote && !isBusy }
+    var canRefreshFromFloatingNotes: Bool {
+        loadState == .loaded && editorMode == nil && !isBusy
+            && pendingDeletionID == nil && pendingSnippet == nil
+    }
+
+    func refreshForFloatingNoteChanges() {
+        guard canRefreshFromFloatingNotes, loadedFloatingRevision != floatingNoteRevision else { return }
+        requestReload()
+    }
+
+    func openSelectedFloatingNote() {
+        guard canOpenFloatingNote, let item = selectedItem, let floatingNotes else { return }
+        showsActionsMenu = false
+        onDismiss()
+        floatingNotes.openNote(item)
+    }
+
+    func createFloatingNote() {
+        guard canCreateFloatingNote, let floatingNotes else { return }
+        onDismiss()
+        floatingNotes.newNote()
     }
 
     func load(force: Bool = false) async {
         guard force || loadState == .idle || loadState == .failed else { return }
+        let noteRevision = floatingNoteRevision
         loadState = .loading
         statusMessage = nil
         do {
             let loadedItems = try await persistence.loadItems()
             try Task.checkCancellation()
             items = Self.sorted(loadedItems)
+            loadedFloatingRevision = noteRevision
             loadState = .loaded
             refreshSelection()
+            if let pendingInitialCreateKind {
+                self.pendingInitialCreateKind = nil
+                beginCreating(kind: pendingInitialCreateKind)
+            }
         } catch is CancellationError {
             if loadState == .loading { loadState = .idle }
         } catch {
@@ -289,6 +381,8 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     func beginCreating(kind: ProductivityLibraryItemKind = .snippet) {
         guard loadState == .loaded, isBusy == false else { return }
         draft = ProductivityLibraryDraft(kind: kind)
+        editorBaseItem = nil
+        hasPersistenceConflict = false
         editorMode = .creating
         showsActionsMenu = false
         statusMessage = nil
@@ -297,6 +391,8 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     func beginEditingSelected() {
         guard let selectedItem, isBusy == false else { return }
         draft = ProductivityLibraryDraft(item: selectedItem)
+        editorBaseItem = selectedItem
+        hasPersistenceConflict = false
         editorMode = .editing(selectedItem.id)
         showsActionsMenu = false
         statusMessage = nil
@@ -305,8 +401,18 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     func cancelEditor() {
         guard isSaving == false else { return }
         editorMode = nil
+        editorBaseItem = nil
+        hasPersistenceConflict = false
         draft = ProductivityLibraryDraft()
         statusMessage = nil
+    }
+
+    /// Explicit conflict recovery preserves the current draft under a new item identity.
+    func saveDraftAsNew() {
+        guard hasPersistenceConflict, editorMode != nil, isBusy == false else { return }
+        editorMode = .creating
+        editorBaseItem = nil
+        saveDraft()
     }
 
     func presentActions(for id: UUID) {
@@ -317,19 +423,20 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     func requestDeleteSelected() {
         guard let selectedItem, isBusy == false else { return }
         pendingDeletionID = selectedItem.id
+        pendingDeletionBaseItem = selectedItem
         showsActionsMenu = false
     }
 
     func cancelDelete() {
         pendingDeletionID = nil
+        pendingDeletionBaseItem = nil
     }
 
     func confirmDelete() {
-        guard let id = pendingDeletionID, isBusy == false else { return }
-        pendingDeletionID = nil
-        let updatedItems = items.filter { $0.id != id }
+        guard pendingDeletionID != nil, let expected = pendingDeletionBaseItem, isBusy == false else { return }
+        cancelDelete()
         beginPersisting(
-            updatedItems,
+            [.delete(expected: expected)],
             selectedID: nil,
             successMessage: "Item deleted.",
             closesEditor: false
@@ -344,49 +451,48 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
         } catch let error as ProductivityLibraryValidationError {
             statusMessage = error.message
             return
+        } catch let error as SnippetTemplate.Failure {
+            statusMessage = error.message
+            return
         } catch {
             statusMessage = "This item can’t be saved."
             return
         }
 
         let timestamp = now()
-        var updatedItems = items
+        let mutation: ProductivityLibraryMutation
         let savedID: UUID
         switch editorMode {
         case .creating:
             savedID = makeID()
-            updatedItems.append(
-                ProductivityLibraryItem(
-                    id: savedID,
-                    kind: draft.kind,
-                    title: prepared.title,
-                    content: prepared.content,
-                    createdAt: timestamp,
-                    updatedAt: timestamp
-                )
-            )
+            mutation = .create(ProductivityLibraryItem(
+                id: savedID, kind: draft.kind, title: prepared.title, content: prepared.content,
+                createdAt: timestamp, updatedAt: timestamp, tags: ProductivityLibraryTags.parse(draft.tags)
+            ))
         case .editing(let id):
-            guard let index = updatedItems.firstIndex(where: { $0.id == id }) else {
-                statusMessage = "That item is no longer available."
-                self.editorMode = nil
+            guard let expected = editorBaseItem, expected.id == id else {
+                statusMessage = "That item is no longer available. Your draft is still here."
+                hasPersistenceConflict = true
                 return
             }
             savedID = id
-            updatedItems[index].kind = draft.kind
-            updatedItems[index].title = prepared.title
-            updatedItems[index].content = prepared.content
-            updatedItems[index].updatedAt = timestamp
+            var updated = expected
+            updated.kind = draft.kind
+            updated.title = prepared.title
+            updated.content = prepared.content
+            updated.updatedAt = timestamp
+            updated.tags = ProductivityLibraryTags.parse(draft.tags)
+            mutation = .replace(updated, expected: expected)
         }
         beginPersisting(
-            updatedItems,
-            selectedID: savedID,
-            successMessage: "Item saved.",
-            closesEditor: true
+            [mutation], selectedID: savedID, successMessage: "Item saved.", closesEditor: true
         )
     }
 
     func perform(_ actionID: CommandActionID) {
         switch actionID {
+        case ProductivityLibraryActionID.openFloatingNote:
+            openSelectedFloatingNote()
         case ProductivityLibraryActionID.useSelected:
             useSelectedItem()
         case ProductivityLibraryActionID.createItem:
@@ -415,6 +521,10 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
     }
 
     func handleEscape() -> Bool {
+        if pendingSnippet != nil {
+            cancelSnippetInput()
+            return true
+        }
         if pendingDeletionID != nil {
             cancelDelete()
             return true
@@ -438,6 +548,7 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
         persistenceTask?.cancel()
         primaryActionTask?.cancel()
         showsActionsMenu = false
+        cancelSnippetInput()
     }
 
     func flushPersistenceForTesting() async {
@@ -474,13 +585,16 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
             return (title, content)
         case .emojiKeyword:
             return (title, draft.content.trimmingCharacters(in: .whitespacesAndNewlines))
-        case .snippet, .quickNote:
+        case .snippet:
+            _ = try SnippetTemplate(draft.content)
+            return (title, draft.content)
+        case .quickNote:
             return (title, draft.content)
         }
     }
 
     private func beginPersisting(
-        _ newItems: [ProductivityLibraryItem],
+        _ changes: [ProductivityLibraryMutation],
         selectedID: UUID?,
         successMessage: String,
         closesEditor: Bool
@@ -488,24 +602,32 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
         guard isBusy == false else { return }
         isSaving = true
         statusMessage = nil
-        let sortedItems = Self.sorted(newItems)
+        hasPersistenceConflict = false
         persistenceTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.isSaving = false }
             do {
-                try await self.persistence.saveItems(sortedItems)
+                let savedItems = try await self.persistence.applyChanges(changes)
                 try Task.checkCancellation()
+                let sortedItems = Self.sorted(savedItems)
                 self.items = sortedItems
                 self.query = ""
                 self.filter = .all
+                self.selectedTag = nil
                 self.selectedID = selectedID ?? sortedItems.first?.id
                 if closesEditor {
                     self.editorMode = nil
+                    self.editorBaseItem = nil
                     self.draft = ProductivityLibraryDraft()
                 }
                 self.statusMessage = successMessage
             } catch is CancellationError {
                 return
+            } catch ProductivityLibraryPersistenceError.conflict {
+                self.hasPersistenceConflict = true
+                self.statusMessage = self.editorMode == nil
+                    ? "This item changed in another window. Reload the library before deleting it."
+                    : "This item changed in another window. Your draft is intact; save it as a new item to keep both versions."
             } catch {
                 self.statusMessage = "Your changes couldn’t be saved."
             }
@@ -514,6 +636,29 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
 
     private func useSelectedItem() {
         guard let selectedItem, isBusy == false else { return }
+        if selectedItem.kind == .snippet {
+            do {
+                let template = try SnippetTemplate(selectedItem.content)
+                if !template.fields.isEmpty {
+                    pendingSnippet = selectedItem
+                    snippetFields = template.fields
+                    snippetInputs = [:]
+                    statusMessage = nil
+                    showsActionsMenu = false
+                    return
+                }
+            } catch let error as SnippetTemplate.Failure {
+                statusMessage = error.message
+                return
+            } catch {
+                statusMessage = "This snippet couldn’t be prepared."
+                return
+            }
+        }
+        executePrimaryAction(selectedItem)
+    }
+
+    private func executePrimaryAction(_ selectedItem: ProductivityLibraryItem, inputs: [String: String] = [:]) {
         isPerformingPrimaryAction = true
         statusMessage = nil
         showsActionsMenu = false
@@ -523,18 +668,16 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
             do {
                 switch selectedItem.kind {
                 case .snippet:
-                    var output = selectedItem.content
-                    if output.contains("{{clipboard}}") {
-                        let clipboardText = await self.pasteboard.readString() ?? ""
-                        try Task.checkCancellation()
-                        output = output.replacingOccurrences(
-                            of: "{{clipboard}}",
-                            with: clipboardText
-                        )
-                    }
+                    let template = try SnippetTemplate(selectedItem.content)
+                    let clipboardText = template.needsClipboard ? await self.pasteboard.readString() ?? "" : ""
+                    try Task.checkCancellation()
+                    let output = try template.expanded(
+                        clipboard: clipboardText, date: self.now(), uuid: self.makeID(), inputs: inputs
+                    )
                     try Task.checkCancellation()
                     await self.pasteboard.writeString(output)
                     try Task.checkCancellation()
+                    self.clearSnippetInput()
                     self.statusMessage = "Snippet copied."
                 case .quickNote:
                     await self.pasteboard.writeString(selectedItem.content)
@@ -555,6 +698,8 @@ final class ProductivityLibraryViewModel: LauncherApplicationModel {
                 }
             } catch is CancellationError {
                 return
+            } catch let error as SnippetTemplate.Failure {
+                self.statusMessage = error.message
             } catch is ProductivityLibraryValidationError {
                 self.statusMessage = "This Quicklink uses an invalid or unsafe URL."
             } catch {

@@ -6,6 +6,37 @@
 	<string>Commandly</string>
 	<key>CFBundleDisplayName</key>
 	<string>Commandly</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Commandly Markdown Variant</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.businessmate360.commandly.markdown-variant</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mdx</string>
+					<string>rmd</string>
+					<string>qmd</string>
+					<string>mdoc</string>
+					<string>mdc</string>
+					<string>mmd</string>
+					<string>livemd</string>
+					<string>mkd</string>
+					<string>mkdn</string>
+					<string>mkdown</string>
+					<string>mdwn</string>
+					<string>mdown</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>27.0</string>
 	<key>NSHumanReadableCopyright</key>
@@ -16,8 +47,12 @@
 	<string>Commandly uses your calendar to surface upcoming meetings and related actions from the launcher.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Commandly uses your contacts so you can find people and start conversations quickly from the launcher.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Commandly uses your camera when you start Camera Preview so you can check your appearance and take a photo to save or copy.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Commandly uses the microphone only when you start Dictation, to transcribe speech on this Mac. The Volume Mixer uses the same audio permission to re-route an app&apos;s sound when you change its volume or output; it never records.</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Commandly talks to Finder so you can open Get Info for an application from the launcher actions panel.</string>
+	<string>Commandly talks to Finder when you request Get Info, copy the path of its selected item or current folder, or empty the Trash from the menu bar panel. It talks to System Events only when you switch the system appearance from that panel.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -25,5 +60,38 @@
 	</dict>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMessage</key>
+			<string>quickFixSelection</string>
+			<key>NSPortName</key>
+			<string>Commandly</string>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Quick Fix Selection Locally</string>
+			</dict>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+			</array>
+			<key>NSReturnTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+			</array>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSServiceCategory</key>
+				<string>public.text</string>
+			</dict>
+			<key>NSRestricted</key>
+			<false/>
+			<key>NSTimeout</key>
+			<string>15000</string>
+			<key>NSDescription</key>
+			<string>Apply eligible local spelling and grammar corrections to the selected text in the requesting editor.</string>
+		</dict>
+	</array>
 </dict>
 </plist>

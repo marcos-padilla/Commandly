@@ -1,3 +1,4 @@
+import Infrastructure
 import DesignSystem
 import SwiftUI
 
@@ -286,6 +287,9 @@ struct FinderAIView: View {
                         title: mutationTitle(operation),
                         detail: mutationDetail(operation)
                     )
+                    if let conversion = operation.imageConversion {
+                        imageConversionReview(conversion)
+                    }
                 }
                 if plan.warnings.isEmpty == false {
                     Text(plan.warnings.map(warningTitle).sorted().joined(separator: " · "))
@@ -448,6 +452,7 @@ struct FinderAIView: View {
 
     private func mutationIcon(_ kind: FinderAIMutationPreviewKind) -> String {
         switch kind {
+        case .convertImage: "photo"
         case .createFolder: "folder.badge.plus"
         case .rename: "pencil"
         case .duplicate: "plus.square.on.square"
@@ -460,6 +465,7 @@ struct FinderAIView: View {
     private func mutationTitle(_ operation: FinderAIMutationPreview) -> String {
         let sources = operation.sourceNames.joined(separator: ", ")
         return switch operation.kind {
+        case .convertImage: "Convert \(sources)"
         case .createFolder: "Create \(operation.resultingNames.joined(separator: ", "))"
         case .rename: "Rename \(sources)"
         case .duplicate: "Duplicate \(sources)"
@@ -476,6 +482,20 @@ struct FinderAIView: View {
             return "\(destination) · Result: \(results)"
         }
         return destination ?? (results.isEmpty ? nil : "Result: \(results)")
+    }
+
+    private func imageConversionReview(_ options: ImageConversionOptions) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Format: \(options.format.title) · \(options.longestEdge.map { "Longest edge: \($0) px" } ?? "Original dimensions") · Rotate \(options.clockwiseQuarterTurns * 90)° clockwise")
+                .commandlyFont(size: 10, weight: .medium)
+            Text(options.format.preservesTransparency
+                 ? "Transparency preserved. Source metadata removed; output is 8-bit sRGB."
+                 : "Transparency flattened on white at 90% quality. Source metadata removed; output is 8-bit sRGB.")
+                .commandlyFont(size: 9.5).foregroundStyle(.secondary)
+            Text("Creates a new image without overwriting. The original stays unchanged. Image pixels stay on this Mac.")
+                .commandlyFont(size: 9.5, weight: .medium).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func warningTitle(_ warning: FinderAIPlanWarning) -> String {

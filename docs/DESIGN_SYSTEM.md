@@ -63,6 +63,13 @@ The root launcher treats search as an embedded canvas row with no independent bo
 footer keeps contextual Actions at the leading edge and one labeled Settings gear menu at the
 trailing edge for Documentation, Settings, and Quit.
 
+Search completions use the same size and weight as the editable query so the suggested suffix
+aligns with the input. Result subtitles and kind labels use secondary text contrast. Selected
+results and searchable-menu actions share the neutral selection palette, with an additional
+outline under Increased Contrast. Filter menus mark the applied choice with a checkmark, separate
+from the row highlighted for keyboard activation. Settings sidebar search uses a quiet field fill
+and a focus-only outline; it does not add another glass surface.
+
 Browser-style launcher applications—and custom application headers that place a query at the
 top—use the same embedded search treatment. Search remains a flat, transparent part of the
 application canvas, while the compact Back and filter/sort controls use native Liquid Glass to
@@ -85,6 +92,10 @@ Reusable interactive chrome lives in the app target under `Commandly/Scenes/Shar
 
 - `CommandlyBackButton` — compact circular Liquid Glass back control with restrained hover feedback
 - `CommandlyOptionMenu` — compact Liquid Glass sort/filter trigger and searchable overlay; screens supply `CommandlyOptionItem` values and selection handling
+
+Searchable action and filter menus share stable Up/Down selection over visible, enabled items;
+Return activates that selection and empty results never activate a hidden fallback action.
+Changing Comfortable/Compact density suppresses its layout animation when Reduce Motion is on.
 
 Reusable launcher-application composition lives under `Commandly/Scenes/Launcher/Applications/`:
 

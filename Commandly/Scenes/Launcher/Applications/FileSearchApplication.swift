@@ -88,4 +88,6 @@ struct FileSearchApplication: LauncherApplication {
     }
 }
 
-extension FileSearchViewModel: LauncherApplicationModel {}
+extension FileSearchViewModel: LauncherApplicationModel {
+    var presentsOwnActionsMenu: Bool { true }
+}

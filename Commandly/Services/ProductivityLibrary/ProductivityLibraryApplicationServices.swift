@@ -10,6 +10,7 @@ struct ProductivityLibraryApplicationServices {
     let quicklinkValidator: ProductivityQuicklinkValidator
     let now: () -> Date
     let makeID: () -> UUID
+    let floatingNotes: (any FloatingNotePresenting)?
 
     init(
         persistence: any ProductivityLibraryPersisting,
@@ -17,7 +18,8 @@ struct ProductivityLibraryApplicationServices {
         urlOpener: any URLOpening,
         quicklinkValidator: ProductivityQuicklinkValidator = ProductivityQuicklinkValidator(),
         now: @escaping () -> Date = { Date() },
-        makeID: @escaping () -> UUID = { UUID() }
+        makeID: @escaping () -> UUID = { UUID() },
+        floatingNotes: (any FloatingNotePresenting)? = nil
     ) {
         self.persistence = persistence
         self.pasteboard = pasteboard
@@ -25,13 +27,22 @@ struct ProductivityLibraryApplicationServices {
         self.quicklinkValidator = quicklinkValidator
         self.now = now
         self.makeID = makeID
+        self.floatingNotes = floatingNotes
+    }
+
+    func withFloatingNotes(_ presenter: any FloatingNotePresenting) -> Self {
+        Self(persistence: persistence, pasteboard: pasteboard, urlOpener: urlOpener,
+             quicklinkValidator: quicklinkValidator, now: now, makeID: makeID,
+             floatingNotes: presenter)
     }
 
     static var live: ProductivityLibraryApplicationServices {
-        ProductivityLibraryApplicationServices(
-            persistence: JSONProductivityLibraryStore(),
+        let persistence = JSONProductivityLibraryStore()
+        return ProductivityLibraryApplicationServices(
+            persistence: persistence,
             pasteboard: SystemPasteboard(),
-            urlOpener: WorkspaceURLOpener()
+            urlOpener: WorkspaceURLOpener(),
+            floatingNotes: FloatingNoteCoordinator(persistence: persistence)
         )
     }
 

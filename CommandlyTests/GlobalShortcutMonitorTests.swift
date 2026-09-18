@@ -140,7 +140,7 @@ struct GlobalShortcutMonitorTests {
     }
 
     @Test @MainActor
-    func runtimeCatalogKeepsExistingShortcutsAheadOfWheelProfiles() throws {
+    func runtimeCatalogKeepsRegisteredShortcutsAheadOfWheelProfiles() throws {
         var configuration = CommandWheelDefaults.configuration
         configuration.isEnabled = true
         configuration.contextAwareProfileSelectionEnabled = true
@@ -160,11 +160,7 @@ struct GlobalShortcutMonitorTests {
         )
 
         #expect(bindings.first?.route == .launcher)
-        #expect(
-            bindings.dropFirst().prefix(ShelfGlobalShortcut.allCases.count).map(\.route)
-                == ShelfGlobalShortcut.allCases.map(RuntimeGlobalShortcutRoute.shelf)
-        )
-        #expect(bindings[1 + ShelfGlobalShortcut.allCases.count].route == .application(applicationID))
+        #expect(bindings[1].route == .application(applicationID))
         #expect(
             bindings.last?.route == .commandWheel(
                 profileID: configuration.defaultProfileID,

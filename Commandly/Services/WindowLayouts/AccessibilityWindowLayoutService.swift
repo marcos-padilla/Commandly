@@ -29,7 +29,10 @@ enum WindowLayoutServiceError: Error, Equatable {
 @MainActor
 protocol WindowLayoutApplying: AnyObject {
     func apply(rect: NormalizedWindowRect) async throws
+    func cancelPending()
 }
+
+extension WindowLayoutApplying { func cancelPending() {} }
 
 /// Remembers the application that was active before Commandly raised its launcher.
 ///

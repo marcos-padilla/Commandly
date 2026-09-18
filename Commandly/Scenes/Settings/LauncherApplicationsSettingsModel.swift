@@ -6,6 +6,7 @@ struct LauncherApplicationSettingsRow: Identifiable {
     let definition: LauncherApplicationDefinition
     let depth: Int
     let hasChildren: Bool
+    let childCount: Int
     let isExpanded: Bool
     let isEffectivelyEnabled: Bool
     let settings: LauncherApplicationResolvedSettings
@@ -38,10 +39,12 @@ final class LauncherApplicationsSettingsModel {
         self.hotkeyIssues = hotkeyIssues
         self.expandedIDs = Set(
             registry.allDefinitions()
-                .filter { registry.children(of: $0.id).isEmpty == false }
+                .filter { $0.kind == .group }
                 .map(\.id)
         )
-        self.selectedID = registry.allDefinitions().first(where: { $0.kind != .group })?.id
+        self.selectedID = registry.allDefinitions().first(where: {
+            $0.kind != .group && $0.kind != .tool
+        })?.id
     }
 
     var rows: [LauncherApplicationSettingsRow] {
@@ -66,6 +69,12 @@ final class LauncherApplicationsSettingsModel {
         return registry.preferences(for: selectedID)
     }
 
+    var selectedIsEffectivelyEnabled: Bool {
+        _ = revision
+        guard let selectedID else { return false }
+        return registry.isEffectivelyEnabled(selectedID)
+    }
+
     func select(_ id: CommandID) {
         selectedID = id
     }
@@ -80,6 +89,22 @@ final class LauncherApplicationsSettingsModel {
 
     func setAlias(_ alias: String, for id: CommandID) {
         updatePreferences(for: id) { $0.alias = alias }
+    }
+
+    func setTags(_ tags: [String], for id: CommandID) {
+        let builtInKeys = Set(
+            (registry.definition(for: id)?.defaultTags ?? []).map(Self.normalizedTagKey)
+        )
+        let normalized = Self.normalizedTags(tags).filter {
+            builtInKeys.contains(Self.normalizedTagKey($0)) == false
+        }
+        updatePreferences(for: id) {
+            $0.tags = normalized
+            // Alias is the legacy single-tag field. Once the plural editor is used, the
+            // visible tag list becomes authoritative so removing a migrated alias really
+            // removes it from discovery.
+            $0.alias = nil
+        }
     }
 
     func setEnabled(_ isEnabled: Bool, for id: CommandID) {
@@ -114,7 +139,26 @@ final class LauncherApplicationsSettingsModel {
     }
 
     func hotkeyIssue(for id: CommandID) -> String? {
-        hotkeyIssues()[id]?.message
+        guard let issue = hotkeyIssues()[id] else { return nil }
+        if case .duplicate(let ownerID) = issue,
+           let owner = registry.definition(for: ownerID) {
+            return "This shortcut is already assigned to \(owner.title)."
+        }
+        return issue.message
+    }
+
+    func hotkeyDescription(for id: CommandID) -> String {
+        if registry.isBackgroundInvokingCommand(id) {
+            return "Run this tool directly from anywhere without opening Commandly."
+        }
+        if registry.definition(for: id)?.kind == .tool {
+            return "Open this tool directly from anywhere."
+        }
+        return "Open this application directly from anywhere."
+    }
+
+    func commands(for id: CommandID) -> [LauncherApplicationCommandDefinition] {
+        registry.commands(for: id)
     }
 
     private func updatePreferences(
@@ -145,6 +189,7 @@ final class LauncherApplicationsSettingsModel {
             definition: definition,
             depth: depth,
             hasChildren: children.isEmpty == false,
+            childCount: children.count,
             isExpanded: expanded,
             isEffectivelyEnabled: registry.isEffectivelyEnabled(definition.id),
             settings: settings
@@ -160,6 +205,36 @@ final class LauncherApplicationsSettingsModel {
         return definition.title.localizedCaseInsensitiveContains(needle)
             || (definition.subtitle?.localizedCaseInsensitiveContains(needle) ?? false)
             || (settings?.alias.localizedCaseInsensitiveContains(needle) ?? false)
+            || (settings?.tags.contains(where: {
+                $0.localizedCaseInsensitiveContains(needle)
+            }) ?? false)
             || definition.kind.title.localizedCaseInsensitiveContains(needle)
+    }
+
+    private static func normalizedTags(_ tags: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+        for value in tags {
+            let tag = value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(64)
+            guard tag.isEmpty == false else { continue }
+            let normalized = String(tag)
+            let key = normalized.folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            )
+            guard seen.insert(key).inserted else { continue }
+            result.append(normalized)
+            if result.count == 32 { break }
+        }
+        return result
+    }
+
+    private static func normalizedTagKey(_ tag: String) -> String {
+        tag.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
     }
 }

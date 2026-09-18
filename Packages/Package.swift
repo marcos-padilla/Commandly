@@ -17,7 +17,9 @@ let package = Package(
         .library(name: "ExtensionKit", targets: ["ExtensionKit"]),
         .library(name: "Observability", targets: ["Observability"]),
         .library(name: "CalculatorKit", targets: ["CalculatorKit"]),
-        .library(name: "AIKit", targets: ["AIKit"])
+        .library(name: "AIKit", targets: ["AIKit"]),
+        .library(name: "MarkdownPreviewKit", targets: ["MarkdownPreviewKit"]),
+        .library(name: "SystemCompanionKit", targets: ["SystemCompanionKit"])
     ],
     targets: [
         .target(
@@ -64,6 +66,12 @@ let package = Package(
             name: "AIKit",
             dependencies: []
         ),
+        .target(
+            name: "MarkdownPreviewKit",
+            dependencies: []
+        ),
+        .target(name: "SystemCompanionKit", dependencies: ["Infrastructure"]),
+        .testTarget(name: "SystemCompanionKitTests", dependencies: ["SystemCompanionKit", "Infrastructure"]),
         .testTarget(
             name: "AppCoreTests",
             dependencies: ["AppCore"]
@@ -103,6 +111,10 @@ let package = Package(
         .testTarget(
             name: "AIKitTests",
             dependencies: ["AIKit"]
+        ),
+        .testTarget(
+            name: "MarkdownPreviewKitTests",
+            dependencies: ["MarkdownPreviewKit"]
         )
     ]
 )

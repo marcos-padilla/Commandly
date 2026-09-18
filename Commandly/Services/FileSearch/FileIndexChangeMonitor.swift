@@ -1,9 +1,15 @@
 import CoreServices
 import Foundation
 
+@MainActor
+protocol FileIndexChangeMonitoring: AnyObject {
+    func start(paths: [String], onChange: @escaping @Sendable ([String]) -> Void)
+    func stop()
+}
+
 /// Recursive, low-latency filesystem monitoring for authorized index roots.
 @MainActor
-final class FileIndexChangeMonitor {
+final class FileIndexChangeMonitor: FileIndexChangeMonitoring {
     private var stream: FSEventStreamRef?
     private var callbackBox: CallbackBox?
     private let queue = DispatchQueue(label: "com.commandly.file-index.events", qos: .utility)

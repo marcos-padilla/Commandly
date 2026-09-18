@@ -253,6 +253,10 @@ private struct ApplicationHierarchyRow: View {
 
     private var accessibilityValue: String {
         var parts = [row.definition.kind.title]
+        if row.hasChildren {
+            parts.append(row.isExpanded ? "Expanded" : "Collapsed")
+            parts.append("\(row.childCount) items")
+        }
         if row.settings.alias.isEmpty == false {
             parts.append("Alias \(row.settings.alias)")
         }

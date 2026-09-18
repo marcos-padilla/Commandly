@@ -4,6 +4,8 @@ import Foundation
 nonisolated protocol ProductivityLibraryPersisting: Sendable {
     func loadItems() async throws -> [ProductivityLibraryItem]
     func saveItems(_ items: [ProductivityLibraryItem]) async throws
+    /// Atomically reads, validates expected versions, and writes one transaction without suspension.
+    func applyChanges(_ changes: [ProductivityLibraryMutation]) async throws -> [ProductivityLibraryItem]
 }
 
 /// Store failures intentionally contain no file paths or user-authored contents.
@@ -12,6 +14,7 @@ enum ProductivityLibraryPersistenceError: Error, Equatable, Sendable {
     case unsupportedVersion
     case readFailed
     case writeFailed
+    case conflict
 }
 
 /// Actor-confined, versioned JSON storage in the user's Application Support directory.
@@ -24,7 +27,7 @@ actor JSONProductivityLibraryStore: ProductivityLibraryPersisting {
         let items: [ProductivityLibraryItem]
     }
 
-    private nonisolated static let currentVersion = 1
+    private nonisolated static let currentVersion = 2
     private let explicitFileURL: URL?
 
     /// Creates the production store, or a store at an injected URL for deterministic tests.
@@ -32,7 +35,19 @@ actor JSONProductivityLibraryStore: ProductivityLibraryPersisting {
         self.explicitFileURL = fileURL
     }
 
-    func loadItems() async throws -> [ProductivityLibraryItem] {
+    func loadItems() async throws -> [ProductivityLibraryItem] { try readItems() }
+
+    func saveItems(_ items: [ProductivityLibraryItem]) async throws { try writeItems(items) }
+
+    func applyChanges(_ changes: [ProductivityLibraryMutation]) async throws -> [ProductivityLibraryItem] {
+        // No await between the read, version check and atomic file replacement. All live editors
+        // share this injected actor, so unrelated notes survive concurrent writes.
+        let updated = try ProductivityLibraryMutation.applying(changes, to: readItems())
+        try writeItems(updated)
+        return updated
+    }
+
+    private func readItems() throws -> [ProductivityLibraryItem] {
         try Task.checkCancellation()
         let fileURL = try resolvedFileURL()
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
@@ -41,7 +56,7 @@ actor JSONProductivityLibraryStore: ProductivityLibraryPersisting {
             let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
             try Task.checkCancellation()
             let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-            guard envelope.version == Self.currentVersion else {
+            guard (1...Self.currentVersion).contains(envelope.version) else {
                 throw ProductivityLibraryPersistenceError.unsupportedVersion
             }
             return envelope.items
@@ -54,7 +69,7 @@ actor JSONProductivityLibraryStore: ProductivityLibraryPersisting {
         }
     }
 
-    func saveItems(_ items: [ProductivityLibraryItem]) async throws {
+    private func writeItems(_ items: [ProductivityLibraryItem]) throws {
         try Task.checkCancellation()
         let fileURL = try resolvedFileURL()
         do {
@@ -110,6 +125,14 @@ actor InMemoryProductivityLibraryStore: ProductivityLibraryPersisting {
         try Task.checkCancellation()
         self.items = items
         saveCount += 1
+    }
+
+    func applyChanges(_ changes: [ProductivityLibraryMutation]) async throws -> [ProductivityLibraryItem] {
+        try Task.checkCancellation()
+        let updated = try ProductivityLibraryMutation.applying(changes, to: items)
+        items = updated
+        saveCount += 1
+        return updated
     }
 
     func snapshot() -> [ProductivityLibraryItem] {

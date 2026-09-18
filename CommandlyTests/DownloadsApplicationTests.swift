@@ -133,6 +133,81 @@ struct DownloadsApplicationTests {
         #expect(model.statusMessage == "Copied download.")
     }
 
+    @Test @MainActor
+    func focusedDownloadToolsOpenOrCopyTheNewestItemAfterLoading() async throws {
+        let newest = item(
+            name: "Newest.dmg",
+            addedAt: Date(timeIntervalSince1970: 1_800_150_000),
+            modifiedAt: Date(timeIntervalSince1970: 1_800_150_000)
+        )
+        let opener = RecordingDownloadOpener()
+        let pasteboard = InMemoryPasteboard()
+        var dismissCount = 0
+        let application = DownloadsApplication(
+            services: DownloadsApplicationServices(
+                provider: FixedRecentDownloadsProvider(items: [newest]),
+                urlOpener: opener,
+                fileRevealer: RecordingDownloadRevealer(),
+                pasteboard: pasteboard
+            )
+        )
+        let context = LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: { dismissCount += 1 },
+                openSettings: {},
+                goBack: {}
+            ),
+            settings: LauncherApplicationResolvedSettings(
+                alias: "",
+                hotKey: nil,
+                isEnabled: true,
+                configuration: [:]
+            )
+        )
+
+        #expect(application.toolDefinitions.map(\.id) == [
+            DownloadsApplication.openToolID,
+            DownloadsApplication.openNewestToolID,
+            DownloadsApplication.copyNewestToolID,
+        ])
+        #expect(application.toolDefinitions.allSatisfy {
+            $0.kind == .tool && $0.parentID == DownloadsApplication.applicationID
+        })
+
+        guard case .present(let openSession) = application.launch(
+            toolID: DownloadsApplication.openNewestToolID,
+            arguments: CommandArguments(),
+            in: context
+        ) else {
+            Issue.record("Expected Open Newest Download to present a session")
+            return
+        }
+        let openModel = try #require(openSession.model(as: DownloadsViewModel.self))
+        openModel.load()
+        await openModel.waitForLoadForTesting()
+        await openModel.waitForOperationForTesting()
+
+        #expect(await opener.recordedURLs() == [newest.url])
+        #expect(dismissCount == 1)
+
+        guard case .present(let copySession) = application.launch(
+            toolID: DownloadsApplication.copyNewestToolID,
+            arguments: CommandArguments(),
+            in: context
+        ) else {
+            Issue.record("Expected Copy Newest Download to present a session")
+            return
+        }
+        let copyModel = try #require(copySession.model(as: DownloadsViewModel.self))
+        copyModel.load()
+        await copyModel.waitForLoadForTesting()
+        await copyModel.waitForOperationForTesting()
+
+        #expect(pasteboard.currentFileURLs == [newest.url])
+        #expect(copyModel.statusMessage == "Copied download.")
+        #expect(dismissCount == 1)
+    }
+
     @Test @MainActor func filteringSelectionEmptyAndFailureStatesRemainKeyboardUsable() async {
         let baseDate = Date(timeIntervalSince1970: 1_800_200_000)
         let first = item(name: "Archive.zip", addedAt: baseDate, modifiedAt: baseDate)

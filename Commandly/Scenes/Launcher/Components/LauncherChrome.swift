@@ -31,7 +31,7 @@ struct LauncherSearchField: View {
             ZStack(alignment: .leading) {
                 if autocompleteSuffix.isEmpty == false, query.isEmpty == false {
                     Text(query + autocompleteSuffix)
-                        .commandlyFont(size: 15, weight: .medium)
+                        .commandlyFont(size: 16, weight: .medium)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .allowsHitTesting(false)
@@ -67,6 +67,7 @@ struct LauncherSearchField: View {
                         return onCancel == nil ? .ignored : .handled
                     }
                     .accessibilityLabel("Search apps and commands")
+                    .accessibilityIdentifier("launcher-query")
                     .accessibilityValue(
                         autocompleteSuffix.isEmpty
                             ? query
@@ -84,6 +85,7 @@ struct LauncherSearchField: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
+                .help("Clear search")
             }
 
             if let autocompleteActionLabel {
@@ -162,6 +164,7 @@ struct LauncherResultRow: View {
     @State private var isHovered = false
     @Environment(\.commandlyLayoutDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button(action: action) {
@@ -181,7 +184,7 @@ struct LauncherResultRow: View {
                     if let subtitle = item.subtitle {
                         Text(subtitle)
                             .commandlyFont(size: 12, weight: .regular)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .layoutPriority(-1)
                     }
@@ -190,7 +193,7 @@ struct LauncherResultRow: View {
 
                 Text(item.badge.title)
                     .commandlyFont(size: 11, weight: .medium)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .layoutPriority(1)
             }
@@ -200,6 +203,12 @@ struct LauncherResultRow: View {
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
                     .fill(rowFill)
             )
+            .overlay {
+                if isSelected, contrast == .increased {
+                    RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.6), lineWidth: 1)
+                }
+            }
             .contentShape(
                 RoundedRectangle(cornerRadius: CornerRadius.md.rawValue, style: .continuous))
         }
@@ -224,8 +233,8 @@ struct LauncherResultRow: View {
     }
 
     private var rowFill: Color {
-        if isSelected { return Color.primary.opacity(0.105) }
-        if isHovered { return Color.primary.opacity(0.052) }
+        if isSelected { return LauncherPalette.selection }
+        if isHovered { return LauncherPalette.hover }
         return .clear
     }
 
@@ -290,7 +299,7 @@ struct LauncherRootFooterBar: View {
         .frame(minHeight: LauncherChromeMetrics.footerHeight)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color.primary.opacity(0.075))
+                .fill(LauncherPalette.separator)
                 .frame(height: 1)
         }
         .accessibilityElement(children: .contain)
@@ -304,7 +313,6 @@ struct LauncherFooterBar: View {
     let contextSystemImage: String
     let actions: [CommandActionDescriptor]
     var menuActions: [CommandActionDescriptor] = []
-    @Binding var showsActionsMenu: Bool
     var onAction: (CommandActionID) -> Void
     @Environment(\.commandlyLayoutDensity) private var density
 
@@ -327,14 +335,15 @@ struct LauncherFooterBar: View {
 
             ForEach(actions) { action in
                 if action.id == BuiltInCommandActionID.openActions {
-                    LauncherUpwardMenuButton(
-                        actions: menuActions,
+                    LauncherFooterActionButton(
+                        title: action.title,
+                        keys: action.keyHint?.symbols ?? [],
                         isEnabled: action.isEnabled,
-                        onAction: onAction
-                    ) {
-                        footerLabel(action)
-                    }
-                    .accessibilityLabel(action.title)
+                        action: { onAction(action.id) }
+                    )
+                    // A native shortcut also works on explanatory screens with no focused
+                    // SwiftUI input; onKeyPress alone has no receiver in that state.
+                    .keyboardShortcut("k", modifiers: .command)
                 } else if action.id == BuiltInCommandActionID.copy {
                     LauncherFooterCopyActionButton(
                         title: action.title,

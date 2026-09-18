@@ -27,10 +27,31 @@ struct CalculatorNormalizer: Sendable {
             ("×", "*"),
             ("⋅", "*"),
             ("·", "*"),
+            ("∗", "*"),
+            ("∙", "*"),
+            ("⨉", "*"),
+            ("✕", "*"),
+            ("＊", "*"),
             ("÷", "/"),
+            ("∕", "/"),
+            ("⁄", "/"),
+            ("／", "/"),
+            ("＋", "+"),
             ("−", "-"),
             ("–", "-"),
             ("—", "-"),
+            ("－", "-"),
+            ("％", "%"),
+            ("（", "("),
+            ("）", ")"),
+            ("［", "("),
+            ("］", ")"),
+            ("｛", "("),
+            ("｝", ")"),
+            ("[", "("),
+            ("]", ")"),
+            ("{", "("),
+            ("}", ")"),
             ("π", "pi"),
             ("τ", "tau"),
         ]
@@ -39,6 +60,12 @@ struct CalculatorNormalizer: Sendable {
         }
 
         text = replaceUnicodeMath(in: text)
+        // Structured formula queries are parsed by focused evaluators. Preserve
+        // their words here so general aliases such as "sum of" and "percent"
+        // do not turn a complete command into a partial arithmetic expression.
+        if CalculatorExpanded.looksLikeQuery(text.lowercased()) {
+            return NormalizedInput(original: raw, text: text, displayExpression: text)
+        }
         text = replaceNaturalLanguageAliases(in: text)
         text = replaceNumberWords(in: text)
         text = replaceAnswerAliases(in: text, previousAnswer: context.previousAnswer, previousValue: context.previousValue)
@@ -48,6 +75,7 @@ struct CalculatorNormalizer: Sendable {
         text = replaceContextualX(in: text)
 
         text = normalizeNumberSeparators(text, locale: context.locale)
+        text = replacingMatches(#"(?<=\d)_(?=\d)"#, with: "", in: text)
         text = expandMagnitudeWords(text)
 
         let display = text
@@ -77,18 +105,53 @@ struct CalculatorNormalizer: Sendable {
     }
 
     private func replaceUnicodeMath(in input: String) -> String {
-        var text = input
+        var text = replaceSuperscriptExponents(in: input)
         let replacements: [(String, String)] = [
             ("½", "(1/2)"), ("¼", "(1/4)"), ("¾", "(3/4)"),
-            ("⅓", "(1/3)"), ("⅔", "(2/3)"), ("⅛", "(1/8)"),
-            ("²", "^2"), ("³", "^3"), ("√", "sqrt "),
+            ("⅓", "(1/3)"), ("⅔", "(2/3)"),
+            ("⅕", "(1/5)"), ("⅖", "(2/5)"), ("⅗", "(3/5)"), ("⅘", "(4/5)"),
+            ("⅙", "(1/6)"), ("⅚", "(5/6)"),
+            ("⅛", "(1/8)"), ("⅜", "(3/8)"), ("⅝", "(5/8)"), ("⅞", "(7/8)"),
+            ("√", "sqrt "),
         ]
         for (source, replacement) in replacements {
             text = text.replacingOccurrences(of: source, with: replacement)
         }
+        text = replacingMatches(
+            #"(?<![\d.])(\d+(?:\.\d+)?)\((\d+/\d+)\)"#,
+            with: "($1+$2)",
+            in: text
+        )
         text = replacingMatches(#"\|\s*([^|]+?)\s*\|"#, with: "abs($1)", in: text)
         text = replacingMatches(#"\*\*"#, with: "^", in: text)
         return text
+    }
+
+    private func replaceSuperscriptExponents(in input: String) -> String {
+        let superscripts: [Character: Character] = [
+            "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+            "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+            "⁺": "+", "⁻": "-",
+        ]
+        let characters = Array(input)
+        var result = ""
+        var index = 0
+
+        while index < characters.count {
+            guard superscripts[characters[index]] != nil else {
+                result.append(characters[index])
+                index += 1
+                continue
+            }
+
+            var exponent = ""
+            while index < characters.count, let translated = superscripts[characters[index]] {
+                exponent.append(translated)
+                index += 1
+            }
+            result.append("^(\(exponent))")
+        }
+        return result
     }
 
     private func expandMagnitudeWords(_ input: String) -> String {
@@ -163,6 +226,17 @@ struct CalculatorNormalizer: Sendable {
 
     private func rewriteNaturalFunctions(in input: String) -> String {
         var text = input
+        text = replacingMatches(#"^double\s+(.+)$"#, with: "2*($1)", in: text)
+        text = replacingMatches(#"^twice\s+(.+)$"#, with: "2*($1)", in: text)
+        text = replacingMatches(#"^triple\s+(.+)$"#, with: "3*($1)", in: text)
+        text = replacingMatches(#"^quadruple\s+(.+)$"#, with: "4*($1)", in: text)
+        text = replacingMatches(#"^half\s+of\s+(.+)$"#, with: "($1)/2", in: text)
+        text = replacingMatches(#"^(?:one\s+third|1/3)\s+of\s+(.+)$"#, with: "($1)/3", in: text)
+        text = replacingMatches(#"^(?:two\s+thirds|2/3)\s+of\s+(.+)$"#, with: "2*($1)/3", in: text)
+        text = replacingMatches(#"^reciprocal\s+of\s+(.+)$"#, with: "1/($1)", in: text)
+        text = replacingMatches(#"^additive\s+inverse\s+of\s+(.+)$"#, with: "-($1)", in: text)
+        text = replacingMatches(#"^square\s+of\s+(.+)$"#, with: "($1)^2", in: text)
+        text = replacingMatches(#"^cube\s+of\s+(.+)$"#, with: "($1)^3", in: text)
         text = replacingMatches(#"^fifth\s+root\s+of\s+(.+)$"#, with: "nthroot($1,5)", in: text)
         text = replacingMatches(#"^remainder\s+of\s+(.+?)\s*/\s*(.+)$"#, with: "$1 mod $2", in: text)
         text = replacingMatches(#"^(.+?)\s+remainder\s+(.+)$"#, with: "$1 mod $2", in: text)
@@ -176,6 +250,31 @@ struct CalculatorNormalizer: Sendable {
         text = replacingMatches(#"^least\s+common\s+multiple\s+of\s+(.+?)\s+and\s+(.+)$"#, with: "lcm($1,$2)", in: text)
         text = replacingMatches(#"^round\s+(.+?)\s+to\s+([0-9]+)\s+decimal\s+places?$"#, with: "round($1,$2)", in: text)
         text = replacingMatches(#"^standard\s+deviation\s+of\s+(.+)$"#, with: "stddev($1)", in: text)
+        let aggregateFunctions: [(aliases: String, function: String)] = [
+            ("sum|total", "sum"),
+            ("average|mean", "average"),
+            ("median", "median"),
+            ("mode", "mode"),
+            ("product", "product"),
+            ("range", "range"),
+            ("variance", "variance"),
+            ("minimum|min", "min"),
+            ("maximum|max", "max"),
+        ]
+        for entry in aggregateFunctions {
+            text = replacingMatches(
+                "^(?:\(entry.aliases))\\s+of\\s+(.+)$",
+                with: "\(entry.function)($1)",
+                in: text
+            )
+        }
+        if aggregateFunctions.contains(where: { text.hasPrefix("\($0.function)(") }) {
+            text = replacingMatches(
+                #"(?<!hundred)(?<!thousand)(?<!million)(?<!billion),?\s+and\s+"#,
+                with: ",",
+                in: text
+            )
+        }
         text = replacingMatches(#"^(.+?)\s+raised\s+to\s+the\s+tenth\s+power$"#, with: "($1)^10", in: text)
         text = replacingMatches(#"^(.+?)\s*\^\s*tenth\s+power$"#, with: "($1)^10", in: text)
         if text.hasPrefix("min(") || text.hasPrefix("max(") {

@@ -6,12 +6,14 @@ import CommandKit
 enum ClipboardHistoryEditorMode: Equatable {
     case newEntry
     case edit(UUID)
+    case organize(UUID)
     case append
 
     var title: String {
         switch self {
         case .newEntry: return "New Clipboard Entry"
         case .edit: return "Edit Clipboard Entry"
+        case .organize: return "Rename & Organize"
         case .append: return "Append to Clipboard"
         }
     }
@@ -22,6 +24,8 @@ enum ClipboardHistoryEditorMode: Equatable {
             return "Save a reusable text value to history and make it the current clipboard."
         case .edit:
             return "Update this history entry and make the edited value current."
+        case .organize:
+            return "Add an optional name and collection. The copied content stays the same."
         case .append:
             return "Add this text after the current string clipboard, separated by a new line."
         }
@@ -31,6 +35,8 @@ enum ClipboardHistoryEditorMode: Equatable {
 enum ClipboardHistoryActionID {
     static let newEntry = CommandActionID(rawValue: "clipboard.new-entry")
     static let editEntry = CommandActionID(rawValue: "clipboard.edit-entry")
+    static let organizeEntry = CommandActionID(rawValue: "clipboard.organize-entry")
+    static let togglePin = CommandActionID(rawValue: "clipboard.toggle-pin")
     static let append = CommandActionID(rawValue: "clipboard.append")
     static let saveEditor = CommandActionID(rawValue: "clipboard.save-editor")
     static let cancelEditor = CommandActionID(rawValue: "clipboard.cancel-editor")
@@ -38,6 +44,7 @@ enum ClipboardHistoryActionID {
 
 enum ClipboardHistoryFilter: String, CaseIterable, Identifiable, Sendable {
     case all
+    case pinned
     case text
     case image
     case file
@@ -47,6 +54,7 @@ enum ClipboardHistoryFilter: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .all: return "All Types"
+        case .pinned: return "Pinned"
         case .text: return "Text"
         case .image: return "Image"
         case .file: return "File"
@@ -55,7 +63,7 @@ enum ClipboardHistoryFilter: String, CaseIterable, Identifiable, Sendable {
 
     func matches(_ type: ClipboardContentType) -> Bool {
         switch self {
-        case .all: return true
+        case .all, .pinned: return true
         case .text: return type == .text
         case .image: return type == .image
         case .file: return type == .fileURL
@@ -79,9 +87,14 @@ final class ClipboardHistoryViewModel {
     var filter: ClipboardHistoryFilter = .all {
         didSet { refreshSelection() }
     }
+    var selectedCollection: String? {
+        didSet { refreshSelection() }
+    }
     var selectedID: UUID?
     var showsActionsMenu = false
     var editorText = ""
+    var editorName = ""
+    var editorCollection = ""
     private(set) var editorMode: ClipboardHistoryEditorMode?
     private(set) var statusMessage: String?
     private(set) var shouldScrollToSelection = false
@@ -112,37 +125,66 @@ final class ClipboardHistoryViewModel {
         // registers query/filter dependencies (including when entries is empty).
         // Matching uses capture-time metadata only — never runs Vision/PDFKit here.
         let activeFilter = filter
+        let collection = selectedCollection
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let needle = trimmed.lowercased()
         return store.entries.filter { entry in
             guard activeFilter.matches(entry.contentType) else { return false }
+            guard activeFilter != .pinned || entry.organization.isPinned else { return false }
+            guard collection == nil || entry.organization.collection == collection else { return false }
             guard trimmed.isEmpty == false else { return true }
             return entry.preview.lowercased().contains(needle)
+                || (entry.organization.name?.lowercased().contains(needle) ?? false)
+                || (entry.organization.collection?.lowercased().contains(needle) ?? false)
                 || (entry.text?.lowercased().contains(needle) ?? false)
                 || (entry.searchableText?.lowercased().contains(needle) ?? false)
                 || entry.classificationLabels.contains { $0.lowercased().contains(needle) }
                 || (entry.sourceAppName?.lowercased().contains(needle) ?? false)
+        }.sorted { left, right in
+            if left.organization.isPinned != right.organization.isPinned {
+                return left.organization.isPinned
+            }
+            return left.createdAt > right.createdAt
         }
+    }
+
+    var availableCollections: [String] {
+        Array(Set(store.entries.compactMap(\.organization.collection)))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    var isOrganizationEditor: Bool {
+        if case .organize = editorMode { return true }
+        return false
+    }
+
+    var canSaveEditor: Bool {
+        guard editorMode != nil else { return false }
+        if isOrganizationEditor {
+            return (ClipboardEntryOrganization.normalized(editorName)?.count ?? 0)
+                <= ClipboardEntryOrganization.maximumNameLength
+                && (ClipboardEntryOrganization.normalized(editorCollection)?.count ?? 0)
+                <= ClipboardEntryOrganization.maximumCollectionLength
+        }
+        return editorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     var sections: [(title: String, entries: [ClipboardHistoryEntry])] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: filteredEntries) { entry -> String in
-            if calendar.isDateInToday(entry.createdAt) { return "Today" }
-            if calendar.isDateInYesterday(entry.createdAt) { return "Yesterday" }
-            return entry.createdAt.formatted(date: .abbreviated, time: .omitted)
+        var result: [(title: String, entries: [ClipboardHistoryEntry])] = []
+        for entry in filteredEntries {
+            let title: String
+            if entry.organization.isPinned { title = "Pinned" }
+            else if calendar.isDateInToday(entry.createdAt) { title = "Today" }
+            else if calendar.isDateInYesterday(entry.createdAt) { title = "Yesterday" }
+            else { title = entry.createdAt.formatted(date: .abbreviated, time: .omitted) }
+            if let index = result.firstIndex(where: { $0.title == title }) {
+                result[index].entries.append(entry)
+            } else {
+                result.append((title, [entry]))
+            }
         }
-        let order = ["Today", "Yesterday"]
-        let keys = grouped.keys.sorted { left, right in
-            let leftIndex = order.firstIndex(of: left) ?? Int.max
-            let rightIndex = order.firstIndex(of: right) ?? Int.max
-            if leftIndex != rightIndex { return leftIndex < rightIndex }
-            return left > right
-        }
-        return keys.compactMap { key in
-            guard let entries = grouped[key], entries.isEmpty == false else { return nil }
-            return (key, entries)
-        }
+        return result
     }
 
     var selectedEntry: ClipboardHistoryEntry? {
@@ -157,7 +199,7 @@ final class ClipboardHistoryViewModel {
                     title: "Save",
                     isPrimary: true,
                     keyHint: .return,
-                    isEnabled: editorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                    isEnabled: canSaveEditor
                 ),
                 CommandActionDescriptor(
                     id: ClipboardHistoryActionID.cancelEditor,
@@ -195,6 +237,16 @@ final class ClipboardHistoryViewModel {
                 id: ClipboardHistoryActionID.append,
                 title: "Append to Clipboard",
                 isEnabled: true
+            ),
+            CommandActionDescriptor(
+                id: ClipboardHistoryActionID.organizeEntry,
+                title: "Rename & Organize",
+                isEnabled: selectedEntry != nil
+            ),
+            CommandActionDescriptor(
+                id: ClipboardHistoryActionID.togglePin,
+                title: selectedEntry?.organization.isPinned == true ? "Unpin Entry" : "Pin Entry",
+                isEnabled: selectedEntry != nil
             ),
             CommandActionDescriptor(
                 id: ClipboardHistoryActionID.editEntry,
@@ -273,6 +325,10 @@ final class ClipboardHistoryViewModel {
             beginNewEntry()
         case ClipboardHistoryActionID.editEntry:
             beginEditingSelected()
+        case ClipboardHistoryActionID.organizeEntry:
+            beginOrganizingSelected()
+        case ClipboardHistoryActionID.togglePin:
+            toggleSelectedPin()
         case ClipboardHistoryActionID.append:
             beginAppend()
         case ClipboardHistoryActionID.saveEditor:
@@ -339,6 +395,32 @@ final class ClipboardHistoryViewModel {
         statusMessage = nil
     }
 
+    func beginOrganizingSelected() {
+        guard let entry = selectedEntry else { return }
+        editorMode = .organize(entry.id)
+        editorName = entry.organization.name ?? ""
+        editorCollection = entry.organization.collection ?? ""
+        showsActionsMenu = false
+        statusMessage = nil
+    }
+
+    func toggleSelectedPin() {
+        guard let entry = selectedEntry else { return }
+        do {
+            try store.setPinned(entry.organization.isPinned == false, id: entry.id)
+            refreshSelection()
+            statusMessage = entry.organization.isPinned ? "Entry unpinned." : "Entry pinned."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+        showsActionsMenu = false
+    }
+
+    func performPrimary() {
+        guard let action = footerActions.first(where: { $0.isPrimary && $0.isEnabled }) else { return }
+        perform(action.id)
+    }
+
     func saveEditor() {
         guard let editorMode else { return }
         let savedID: UUID?
@@ -349,6 +431,14 @@ final class ClipboardHistoryViewModel {
             savedID = store.updateTextEntry(id: id, text: editorText) ? id : nil
         case .append:
             savedID = store.appendTextToCurrentClipboard(editorText)
+        case .organize(let id):
+            do {
+                try store.updateOrganization(id: id, name: editorName, collection: editorCollection)
+                savedID = id
+            } catch {
+                statusMessage = error.localizedDescription
+                return
+            }
         }
         guard let savedID else {
             statusMessage = "Enter some text before saving."
@@ -356,15 +446,24 @@ final class ClipboardHistoryViewModel {
         }
         self.editorMode = nil
         editorText = ""
+        editorName = ""
+        editorCollection = ""
         query = ""
         filter = .all
+        selectedCollection = nil
         selectedID = savedID
-        statusMessage = "Clipboard updated."
+        if case .organize = editorMode {
+            statusMessage = "Entry organization updated."
+        } else {
+            statusMessage = "Clipboard updated."
+        }
     }
 
     func cancelEditor() {
         editorMode = nil
         editorText = ""
+        editorName = ""
+        editorCollection = ""
         statusMessage = nil
     }
 

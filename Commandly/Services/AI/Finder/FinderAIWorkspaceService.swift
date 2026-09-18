@@ -61,6 +61,7 @@ actor FinderAIWorkspaceService: FinderAIWorkspaceQuerying, FinderAIWorkspaceAppr
     private let folderAccessStore: any FolderAccessStoring
     private let searchService: any FileSearching
     private let fileRevealer: any FileRevealing
+    private let imageConverter: any ImageDataConverting
     private let trashMover: any FinderAITrashMoving
     private let directAuthorizedRoots: [URL]
     private let fileManager: FileManager
@@ -84,6 +85,7 @@ actor FinderAIWorkspaceService: FinderAIWorkspaceQuerying, FinderAIWorkspaceAppr
         protectedUserHomeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         protectedVolumeRoots: [URL]? = nil,
         commandlyOwnedDataDirectories: [URL]? = nil,
+        imageConverter: any ImageDataConverting = NativeImageConversionService(),
         planLifetime: TimeInterval = 120,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -91,6 +93,7 @@ actor FinderAIWorkspaceService: FinderAIWorkspaceQuerying, FinderAIWorkspaceAppr
         self.searchService = searchService
         self.fileRevealer = fileRevealer
         self.trashMover = trashMover
+        self.imageConverter = imageConverter
         self.directAuthorizedRoots = directAuthorizedRoots.map(\.standardizedFileURL)
         self.fileManager = fileManager
         self.protectedUserHomeDirectory = protectedUserHomeDirectory.standardizedFileURL
@@ -508,12 +511,17 @@ actor FinderAIWorkspaceService: FinderAIWorkspaceQuerying, FinderAIWorkspaceAppr
                 // prevents known-invalid batches from partially executing; this second check closes
                 // the longer window introduced by earlier actions in the same batch.
                 try await preflight([action], in: approval.sessionID)
-                let resultingName = try execute(action)
+                let resultingName: String?
+                if case .convertImage(let conversion) = action {
+                    resultingName = try await executeImageConversion(conversion, sessionID: approval.sessionID, expiresAt: stored.view.expiresAt)
+                } else {
+                    resultingName = try execute(action)
+                }
                 results.append(action.result(status: .completed, resultingName: resultingName))
                 invalidateSourceHandle(for: action, in: approval.sessionID)
             } catch {
                 results.append(action.result(
-                    status: .failed(mapOperationError(error)),
+                    status: error is CancellationError ? .cancelled : .failed(mapOperationError(error)),
                     resultingName: nil
                 ))
             }
@@ -603,7 +611,17 @@ private extension FinderAIWorkspaceService {
         var isConsumed = false
     }
 
+    struct ResolvedImageConversion {
+        let source: ResolvedItem
+        let destination: ResolvedDirectory
+        let output: URL
+        let options: ImageConversionOptions
+        let sourceRootIdentity: FinderAIImageDirectoryIdentity
+        let destinationRootIdentity: FinderAIImageDirectoryIdentity
+    }
+
     enum ResolvedMutationAction {
+        case convertImage(ResolvedImageConversion)
         case createFolder(
             parent: ResolvedDirectory,
             destination: URL,
@@ -618,6 +636,7 @@ private extension FinderAIWorkspaceService {
 
         var rootIDs: [FinderAIRootID] {
             switch self {
+            case .convertImage(let value): return [value.source.root.id, value.destination.root.id]
             case .createFolder(_, _, _, let rootID): return [rootID]
             case .rename(let source, _, _), .duplicate(let source, _), .trash(let source):
                 return [source.root.id]
@@ -628,6 +647,7 @@ private extension FinderAIWorkspaceService {
 
         var source: ResolvedItem? {
             switch self {
+            case .convertImage(let value): return value.source
             case .createFolder: return nil
             case .rename(let source, _, _), .duplicate(let source, _),
                  .copy(let source, _, _), .move(let source, _, _), .trash(let source):
@@ -637,6 +657,7 @@ private extension FinderAIWorkspaceService {
 
         var destinationURL: URL? {
             switch self {
+            case .convertImage(let value): return value.output
             case .createFolder(_, let destination, _, _), .rename(_, let destination, _),
                  .duplicate(_, let destination), .copy(_, _, let destination),
                  .move(_, _, let destination):
@@ -648,6 +669,7 @@ private extension FinderAIWorkspaceService {
 
         var destinationDirectory: ResolvedDirectory? {
             switch self {
+            case .convertImage(let value): return value.destination
             case .createFolder(let parent, _, _, _): return parent
             case .copy(_, let destination, _), .move(_, let destination, _): return destination
             case .rename, .duplicate, .trash: return nil
@@ -656,6 +678,7 @@ private extension FinderAIWorkspaceService {
 
         var destinationRootID: FinderAIRootID? {
             switch self {
+            case .convertImage(let value): value.destination.root.id
             case .createFolder(_, _, _, let rootID):
                 rootID
             case .rename(let source, _, _), .duplicate(let source, _):
@@ -669,6 +692,7 @@ private extension FinderAIWorkspaceService {
 
         var previewKind: FinderAIMutationPreviewKind {
             switch self {
+            case .convertImage: return .convertImage
             case .createFolder: return .createFolder
             case .rename: return .rename
             case .duplicate: return .duplicate
@@ -680,6 +704,7 @@ private extension FinderAIWorkspaceService {
 
         var displayName: String {
             switch self {
+            case .convertImage(let value): return value.source.summary.displayName
             case .createFolder(_, _, let displayName, _): return displayName
             case .rename(let source, _, _), .duplicate(let source, _),
                  .copy(let source, _, _), .move(let source, _, _), .trash(let source):
@@ -718,8 +743,9 @@ private extension FinderAIWorkspaceService {
 
 private extension FinderAIWorkspaceService {
     func refreshRoots(in sessionID: FinderAISessionID) async throws -> [RootRecord] {
-        guard var session = sessions[sessionID] else { throw FinderAIWorkspaceError.unknownSession }
+        guard sessions[sessionID] != nil else { throw FinderAIWorkspaceError.unknownSession }
         let candidates = await resolvedRootCandidates()
+        guard var session = sessions[sessionID] else { throw FinderAIWorkspaceError.unknownSession }
         var oldBySource = Dictionary(
             uniqueKeysWithValues: session.roots.values.map { ($0.source, $0) }
         )
@@ -1265,6 +1291,9 @@ private extension FinderAIWorkspaceService {
         sourcePaths: inout Set<String>
     ) async throws -> PlannedOperation {
         switch operation {
+        case .convertImage(let request):
+            return try await planImageConversion(request, sessionID: sessionID, reservedDestinations: &reservedDestinations, sourcePaths: &sourcePaths)
+
         case .createFolder(let parentReference, let name):
             try validateNewName(name)
             let parent = try await resolveDirectory(parentReference, in: sessionID)
@@ -1646,6 +1675,12 @@ private extension FinderAIWorkspaceService {
     ) async throws {
         for action in actions {
             try Task.checkCancellation()
+            if case .convertImage(let conversion) = action {
+                guard try imageDirectoryIdentity(at: conversion.source.root.url) == conversion.sourceRootIdentity,
+                      try imageDirectoryIdentity(at: conversion.destination.root.url) == conversion.destinationRootIdentity else {
+                    throw FinderAIWorkspaceError.itemChangedSincePreview
+                }
+            }
             if let storedSource = action.source {
                 let current = try await resolveStoredItem(storedSource, in: sessionID)
                 guard current.identity == storedSource.identity else {
@@ -1680,6 +1715,9 @@ private extension FinderAIWorkspaceService {
 
     func execute(_ action: ResolvedMutationAction) throws -> String? {
         switch action {
+        case .convertImage:
+            // Image conversion must run through the asynchronous, post-codec revalidation path.
+            throw FinderAIWorkspaceError.invalidApproval
         case .createFolder(_, let destination, _, _):
             try fileManager.createDirectory(
                 at: destination,
@@ -1715,7 +1753,7 @@ private extension FinderAIWorkspaceService {
         switch action {
         case .rename, .move, .trash:
             shouldInvalidate = true
-        case .createFolder, .duplicate, .copy:
+        case .createFolder, .duplicate, .copy, .convertImage:
             shouldInvalidate = false
         }
         guard shouldInvalidate, let sourceID = action.source?.recordID,
@@ -1727,6 +1765,14 @@ private extension FinderAIWorkspaceService {
     func mapOperationError(_ error: Error) -> FinderAIWorkspaceError {
         if let error = error as? FinderAIWorkspaceError { return error }
         if error is CancellationError { return .operationFailed }
+        if let error = error as? ImageConversionError {
+            return switch error {
+            case .invalidImage, .animatedImageUnsupported, .fileReadFailed: .invalidImage
+            case .inputTooLarge, .outputTooLarge, .invalidDimensions: .limitExceeded
+            case .unsupportedFormat: .unsupportedImageFormat
+            case .encodingFailed: .imageConversionFailed
+            }
+        }
         let nsError = error as NSError
         guard nsError.domain == NSCocoaErrorDomain else { return .operationFailed }
         switch nsError.code {
@@ -1740,6 +1786,94 @@ private extension FinderAIWorkspaceService {
             return .unauthorized
         default:
             return .operationFailed
+        }
+    }
+}
+
+
+private extension FinderAIWorkspaceService {
+    func planImageConversion(_ request: FinderAIImageConversionRequest, sessionID: FinderAISessionID,
+                             reservedDestinations: inout Set<String>, sourcePaths: inout Set<String>) async throws -> PlannedOperation {
+        try request.validate()
+        try validateNewName(request.outputName)
+        guard await imageConverter.supportedFormats().contains(request.options.format) else {
+            throw FinderAIWorkspaceError.unsupportedImageFormat
+        }
+        try Task.checkCancellation()
+        let source = try await resolveItem(request.source, in: sessionID)
+        try reserveSource(source, in: sessionID, used: &sourcePaths)
+        guard source.summary.kind == .file,
+              source.summary.contentTypeIdentifier.flatMap(UTType.init)?.conforms(to: .image) == true else {
+            throw FinderAIWorkspaceError.unsupportedItemKind
+        }
+        guard let bytes = source.summary.byteCount, bytes > 0, bytes <= 64 * 1_024 * 1_024 else {
+            throw FinderAIWorkspaceError.limitExceeded
+        }
+        let destination = try await resolveDirectory(request.destination, in: sessionID)
+        let scopes = try startAccessing(uniqueRoots([source.root, destination.root]))
+        defer { stopAccessing(scopes) }
+        try validateImageAncestors(source.url.deletingLastPathComponent(), root: source.root)
+        try validateImageAncestors(destination.url, root: destination.root)
+        let output = destination.url.appendingPathComponent(request.outputName).standardizedFileURL
+        try reserveExactDestination(output, in: destination.root, reserved: &reservedDestinations)
+        let conversion = ResolvedImageConversion(source: source, destination: destination, output: output, options: request.options,
+            sourceRootIdentity: try imageDirectoryIdentity(at: source.root.url),
+            destinationRootIdentity: try imageDirectoryIdentity(at: destination.root.url))
+        return PlannedOperation(actions: [.convertImage(conversion)],
+            preview: FinderAIMutationPreview(id: UUID(), kind: .convertImage,
+                sourceLocations: [approvalLocation(for: source.url, root: source.root)],
+                destinations: [.authorizedLocation(approvalLocation(for: output, root: destination.root))],
+                resultingNames: [request.outputName], imageConversion: request.options), warnings: [], risk: .createsItems)
+    }
+
+    func executeImageConversion(_ conversion: ResolvedImageConversion, sessionID: FinderAISessionID, expiresAt: Date) async throws -> String {
+        let source = conversion.source
+        let data = try FinderAIImageFileIO.read(root: source.root.url, rootIdentity: conversion.sourceRootIdentity,
+            components: imagePathComponents(source.url, root: source.root), maximumBytes: 64 * 1_024 * 1_024) { descriptor in
+                guard try identity(ofOpenedDescriptor: descriptor) == source.identity else {
+                    throw FinderAIWorkspaceError.itemChangedSincePreview
+                }
+            }
+        let result = try await imageConverter.convertImageData(data, options: conversion.options)
+        try Task.checkCancellation()
+        try validatePlan(expiresAt, sessionID: sessionID, requested: sessionID)
+        try await preflight([.convertImage(conversion)], in: sessionID)
+        try validateImageAncestors(source.url.deletingLastPathComponent(), root: source.root)
+        try validateImageAncestors(conversion.destination.url, root: conversion.destination.root)
+        guard result.format == conversion.options.format, !result.data.isEmpty,
+              result.data.count <= 192 * 1_024 * 1_024, (1...16_384).contains(result.pixelWidth),
+              (1...16_384).contains(result.pixelHeight), result.pixelWidth * result.pixelHeight <= 40_000_000 else {
+            throw FinderAIWorkspaceError.imageConversionFailed
+        }
+        let expectedDirectory = FinderAIImageDirectoryIdentity(device: conversion.destination.identity.systemNumber,
+                                                               inode: conversion.destination.identity.fileNumber)
+        try FinderAIImageFileIO.write(result.data, root: conversion.destination.root.url,
+            rootIdentity: conversion.destinationRootIdentity,
+            directoryComponents: imagePathComponents(conversion.destination.url, root: conversion.destination.root),
+            name: conversion.output.lastPathComponent) { descriptor in
+                guard try FinderAIImageFileIO.identity(ofDirectory: descriptor) == expectedDirectory,
+                      try identity(at: source.url) == source.identity else { throw FinderAIWorkspaceError.itemChangedSincePreview }
+            }
+        return conversion.output.lastPathComponent
+    }
+
+    func imageDirectoryIdentity(at url: URL) throws -> FinderAIImageDirectoryIdentity {
+        let value = try identity(at: url)
+        guard value.fileType == FileAttributeType.typeDirectory.rawValue else { throw FinderAIWorkspaceError.unsupportedItemKind }
+        return FinderAIImageDirectoryIdentity(device: value.systemNumber, inode: value.fileNumber)
+    }
+
+    func imagePathComponents(_ url: URL, root: RootRecord) -> [String] {
+        url.standardizedFileURL.path.dropFirst(root.url.standardizedFileURL.path.count).split(separator: "/").map(String.init)
+    }
+
+    func validateImageAncestors(_ directory: URL, root: RootRecord) throws {
+        guard isLexicallyContained(directory, in: root.url) else { throw FinderAIWorkspaceError.unauthorized }
+        var path = root.url
+        guard try metadataValues(at: path).kind == .directory else { throw FinderAIWorkspaceError.unsupportedItemKind }
+        for component in imagePathComponents(directory, root: root) {
+            path.appendPathComponent(component)
+            guard try metadataValues(at: path).kind == .directory else { throw FinderAIWorkspaceError.unsupportedItemKind }
         }
     }
 }

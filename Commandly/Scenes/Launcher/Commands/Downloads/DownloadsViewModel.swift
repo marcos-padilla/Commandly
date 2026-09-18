@@ -17,6 +17,11 @@ enum DownloadsLoadState: Equatable {
     case failed(RecentDownloadsError)
 }
 
+enum DownloadsInitialAction: Sendable {
+    case openNewest
+    case copyNewest
+}
+
 private enum DownloadOperation: Sendable {
     case open(URL)
     case reveal(URL)
@@ -37,6 +42,7 @@ final class DownloadsViewModel {
     @ObservationIgnored private var operationTask: Task<Void, Never>?
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var operationGeneration = 0
+    @ObservationIgnored private var pendingInitialAction: DownloadsInitialAction?
 
     var query = "" {
         didSet {
@@ -59,7 +65,8 @@ final class DownloadsViewModel {
         pasteboard: any PasteboardAccessing,
         resultLimit: Int = NativeRecentDownloadsService.defaultLimit,
         onGoBack: @escaping () -> Void = {},
-        onDismiss: @escaping () -> Void = {}
+        onDismiss: @escaping () -> Void = {},
+        initialAction: DownloadsInitialAction? = nil
     ) {
         self.provider = provider
         self.urlOpener = urlOpener
@@ -68,6 +75,7 @@ final class DownloadsViewModel {
         self.resultLimit = min(max(1, resultLimit), NativeRecentDownloadsService.maximumLimit)
         self.onGoBack = onGoBack
         self.onDismiss = onDismiss
+        self.pendingInitialAction = initialAction
     }
 
     deinit {
@@ -199,15 +207,18 @@ final class DownloadsViewModel {
                         ? "No recent downloads found."
                         : "Recent downloads refreshed."
                 }
+                performPendingInitialAction()
             } catch is CancellationError {
                 guard loadGeneration == generation else { return }
                 loadState = items.isEmpty ? .idle : .loaded
             } catch let error as RecentDownloadsError {
                 guard loadGeneration == generation else { return }
+                pendingInitialAction = nil
                 loadState = .failed(error)
                 statusMessage = error.errorDescription
             } catch {
                 guard loadGeneration == generation else { return }
+                pendingInitialAction = nil
                 let error = RecentDownloadsError.scanFailed
                 loadState = .failed(error)
                 statusMessage = error.errorDescription
@@ -301,6 +312,17 @@ final class DownloadsViewModel {
             id: \.id
         )
         shouldScrollToSelection = true
+    }
+
+    private func performPendingInitialAction() {
+        guard let pendingInitialAction else { return }
+        self.pendingInitialAction = nil
+        switch pendingInitialAction {
+        case .openNewest:
+            perform(DownloadsActionID.openNewest)
+        case .copyNewest:
+            perform(DownloadsActionID.copyNewest)
+        }
     }
 
     private func beginOperation(_ operation: DownloadOperation?) {

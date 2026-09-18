@@ -254,6 +254,50 @@ struct ProductivityLibraryTests {
     }
 
     @Test @MainActor
+    func applicationToolsOpenEachDedicatedCreateFlow() async throws {
+        let application = ProductivityLibraryApplication(
+            services: ProductivityLibraryApplicationServices(
+                persistence: InMemoryProductivityLibraryStore(),
+                pasteboard: InMemoryPasteboard(),
+                urlOpener: RecordingProductivityLibraryURLOpener()
+            )
+        )
+        let expectedCreateTools: [(CommandID, ProductivityLibraryItemKind)] = [
+            (ProductivityLibraryApplicationID.newSnippetTool, .snippet),
+            (ProductivityLibraryApplicationID.newQuickNoteTool, .quickNote),
+            (ProductivityLibraryApplicationID.newQuicklinkTool, .quicklink),
+            (ProductivityLibraryApplicationID.newEmojiKeywordTool, .emojiKeyword),
+        ]
+
+        #expect(application.toolDefinitions.count == 6)
+        #expect(application.toolDefinitions.first?.id == ProductivityLibraryApplicationID.openTool)
+        #expect(application.toolDefinitions.allSatisfy { $0.kind == .tool })
+        #expect(application.toolDefinitions.allSatisfy {
+            $0.parentID == ProductivityLibraryApplication.id
+        })
+
+        for (toolID, expectedKind) in expectedCreateTools {
+            guard case .present(let session) = application.launch(
+                toolID: toolID,
+                arguments: CommandArguments(),
+                in: makeApplicationContext()
+            ) else {
+                Issue.record("Expected \(toolID.rawValue) to present a session")
+                continue
+            }
+            let model = try #require(
+                session.model(as: ProductivityLibraryViewModel.self)
+            )
+
+            #expect(model.editorMode == nil)
+            await model.load()
+            #expect(model.editorMode == .creating)
+            #expect(model.draft.kind == expectedKind)
+            session.stop()
+        }
+    }
+
+    @Test @MainActor
     func stoppingSessionCancelsBlockedPersistenceBeforeItCommits() async throws {
         let store = SuspendedProductivityLibraryStore()
         let fixedID = try #require(
@@ -298,6 +342,23 @@ struct ProductivityLibraryTests {
             ),
             onGoBack: {},
             onDismiss: onDismiss
+        )
+    }
+
+    @MainActor
+    private func makeApplicationContext() -> LauncherApplicationContext {
+        LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: {},
+                openSettings: {},
+                goBack: {}
+            ),
+            settings: LauncherApplicationResolvedSettings(
+                alias: "",
+                hotKey: nil,
+                isEnabled: true,
+                configuration: [:]
+            )
         )
     }
 
@@ -347,6 +408,12 @@ private actor SuspendedProductivityLibraryStore: ProductivityLibraryPersisting {
         }
         try Task.checkCancellation()
         self.items = items
+    }
+
+    func applyChanges(_ changes: [ProductivityLibraryMutation]) async throws -> [ProductivityLibraryItem] {
+        let updated = try ProductivityLibraryMutation.applying(changes, to: items)
+        try await saveItems(updated)
+        return updated
     }
 
     func waitUntilSaveStarts() async {

@@ -17,6 +17,17 @@ enum CalculatorScientific {
         "deg", "rad", "sind", "cosd", "tand",
     ]
 
+    /// Functions that can unambiguously consume one following value without
+    /// call parentheses, such as `2 + sqrt 9` or `3 * abs -4`.
+    static let prefixFunctionNames: Set<String> = [
+        "sqrt", "cbrt", "abs",
+        "sin", "cos", "tan", "asin", "acos", "atan",
+        "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+        "log", "log10", "log2", "ln", "exp",
+        "floor", "ceil", "round", "truncate", "trunc", "factorial",
+        "deg", "rad", "sind", "cosd", "tand",
+    ]
+
     static func constantValue(_ name: String) -> Double? {
         switch name.lowercased() {
         case "pi": return Double.pi

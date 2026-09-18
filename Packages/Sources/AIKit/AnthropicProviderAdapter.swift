@@ -78,7 +78,7 @@ public struct AnthropicProviderAdapter: AIProviderAdapter {
                 displayName: displayName,
                 contextWindow: value["max_input_tokens"]?.integerValue,
                 maximumOutputTokens: value["max_tokens"]?.integerValue,
-                capabilities: [.textInput, .textOutput, .toolCalling],
+                capabilities: Set<AIModelCapability>([.textInput, .textOutput, .toolCalling]).union(AIImageInput.supports(providerID: .anthropic, modelID: id) ? [.imageInput] : []),
                 capabilityEvidence: providerReportsTools == true ? .providerReported : .curated
             )
         }
@@ -174,7 +174,7 @@ public struct AnthropicProviderAdapter: AIProviderAdapter {
         if let temperature = request.temperature {
             body["temperature"] = .number(temperature)
         }
-        return .object(body)
+        return try request.attachingImage(to: .object(body), providerID: .anthropic)
     }
 
     private func makeMessage(_ message: AIMessage) throws -> AIJSONValue {

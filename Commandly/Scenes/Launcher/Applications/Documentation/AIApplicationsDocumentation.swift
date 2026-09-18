@@ -32,6 +32,7 @@ extension RegisteredApplicationDocumentation {
                     .bullets("finder-ai.tools.items", [
                         "Finder AI can list authorized roots, search the existing local index, list one directory level, inspect metadata, and reveal items in Finder.",
                         "It can propose creating folders, renaming, duplicating, copying, moving, or moving items to Trash.",
+                        "Ask it to convert one image to PNG, JPEG, HEIC, or TIFF, optionally resize its longest edge while preserving aspect ratio, or rotate by 90-degree steps. Native encoder availability is checked on this Mac.",
                         "The model receives random session handles and root-relative display locations, never raw absolute paths as tool arguments.",
                         "A bounded agent loop stops after eight provider rounds or 24 tool calls."
                     ]),
@@ -53,6 +54,7 @@ extension RegisteredApplicationDocumentation {
                         "Search, folder listing, metadata, and reveal are bounded read-only tools.",
                         "Reading file contents pauses on a list of the exact files and maximum byte count before any content is sent to a cloud provider.",
                         "Every file mutation pauses on an immutable preview with destinations, resulting names, risk, and warnings.",
+                        "Image conversion approval lists the exact source, destination filename, format, size, rotation, transparency, and metadata treatment. Conversion creates a new image without overwriting and keeps the original unchanged; its pixels are processed locally and are not uploaded.",
                         "Approval applies once, expires after two minutes, and is invalid if the item changes before execution.",
                         "Trash is the only destructive primitive; there is no permanent-delete fallback."
                     ]),
@@ -74,14 +76,15 @@ extension RegisteredApplicationDocumentation {
                         "The first release uses non-streaming provider responses.",
                         "The reviewed runtime supports OpenAI, Anthropic, Gemini, Mistral, Groq, xAI, OpenRouter, and loopback Ollama.",
                         "Search coverage depends on Commandly's current local file index and the folders you selected.",
-                        "File actions are not an atomic transaction; a multi-item operation can partially complete and reports each result."
+                        "File actions are not an atomic transaction; a multi-item operation can partially complete and reports each result.",
+                        "Image conversion supports a single still image up to 64 MiB/40 million pixels, output up to 192 MiB/40 million pixels, and dimensions up to 16,384 pixels per side. Fresh output is 8-bit sRGB with source metadata removed; JPEG/HEIC flatten transparency on white at 90% quality."
                     ])
                 ]
             )
         ],
         keywords: [
             "AI", "BYOK", "Keychain", "Finder", "tools", "approval", "model", "OpenAI",
-            "Anthropic", "Gemini", "Mistral", "Groq", "xAI", "OpenRouter", "Ollama", "Trash"
+            "Anthropic", "Gemini", "Mistral", "Groq", "xAI", "OpenRouter", "Ollama", "Trash", "image conversion", "resize", "PNG", "JPEG", "HEIC", "TIFF"
         ]
     )
 }

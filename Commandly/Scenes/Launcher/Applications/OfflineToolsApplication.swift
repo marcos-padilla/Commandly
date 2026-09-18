@@ -1,8 +1,11 @@
 import CommandKit
+import Infrastructure
 import SwiftUI
 
 @MainActor
-struct OfflineToolsApplication: LauncherApplication {
+struct OfflineToolsApplication: LauncherApplication, LauncherApplicationToolBackgroundInvoking {
+    static let pickScreenColorToolID = CommandID(rawValue: "tools.color.pick-screen")
+
     let definition: LauncherApplicationDefinition
     private let manifest: CommandManifest
     private let tool: OfflineToolKind
@@ -32,6 +35,36 @@ struct OfflineToolsApplication: LauncherApplication {
         )
     }
 
+    var toolDefinitions: [LauncherApplicationDefinition] {
+        let openTool = LauncherApplicationDefinition.tool(
+            id: CommandID(rawValue: "\(definition.id.rawValue).tool.open"),
+            parentID: definition.id,
+            title: "Open \(definition.title)",
+            subtitle: definition.subtitle,
+            systemImage: definition.systemImage,
+            keywords: ["open", "launch"] + tool.keywords
+        )
+        guard tool == .color else { return [openTool] }
+        return [
+            openTool,
+            LauncherApplicationDefinition.tool(
+                id: Self.pickScreenColorToolID,
+                parentID: definition.id,
+                title: "Pick Screen Color",
+                subtitle: "Sample a pixel and copy its Hex value",
+                systemImage: "eyedropper",
+                order: 1,
+                keywords: [
+                    "picker", "pick color", "screen color", "eyedropper", "rgb", "hex", "copy"
+                ]
+            )
+        ]
+    }
+
+    var backgroundToolIDs: Set<CommandID> {
+        tool == .color ? [Self.pickScreenColorToolID] : []
+    }
+
     func launch(in context: LauncherApplicationContext) -> LauncherApplicationLaunch {
         let model = OfflineToolsViewModel(
             tool: tool,
@@ -43,6 +76,23 @@ struct OfflineToolsApplication: LauncherApplication {
                 OfflineToolsView(viewModel: $0)
             }
         )
+    }
+
+    func invokeToolInBackground(
+        toolID: CommandID,
+        arguments: CommandArguments,
+        settings: LauncherApplicationResolvedSettings
+    ) async -> CommandResult {
+        _ = arguments
+        _ = settings
+        guard tool == .color, toolID == Self.pickScreenColorToolID else {
+            return .failure(message: "That offline tool is unavailable.")
+        }
+        guard let color = await services.colorSampler.sample() else {
+            return .cancelled
+        }
+        await services.pasteboard.writeString(color.hex)
+        return .success(message: "Screen color copied.")
     }
 }
 

@@ -6,15 +6,18 @@ import CommandKit
 struct ClipboardHistoryView: View {
     @Bindable var viewModel: ClipboardHistoryViewModel
     @State private var lastPointerLocation: CGPoint?
+    @State private var searchFocusRequest = 0
     @Environment(\.commandlyLayoutDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         LauncherApplicationScreen(
             query: $viewModel.query,
             searchPlaceholder: viewModel.searchPlaceholder,
             searchAccessibilityIdentifier: "clipboard-history-query",
+            searchFocusRequest: searchFocusRequest,
             onBack: viewModel.goBack,
-            onSubmit: { viewModel.perform(BuiltInCommandActionID.copy) },
+            onSubmit: viewModel.performPrimary,
             onMoveSelection: viewModel.moveSelection,
             onEscape: {
                 if viewModel.handleEscape() == false {
@@ -27,10 +30,23 @@ struct ClipboardHistoryView: View {
                     CommandlyOptionItem(id: $0.rawValue, title: $0.title)
                 },
                 selectionID: viewModel.filter.rawValue,
-                accessibilityLabelText: "Filter by type"
+                accessibilityLabelText: "Filter clipboard entries"
             ) { item in
                 if let filter = ClipboardHistoryFilter(rawValue: item.id) {
                     viewModel.filter = filter
+                }
+            }
+            if viewModel.availableCollections.isEmpty == false {
+                CommandlyOptionMenu(
+                    items: [CommandlyOptionItem(id: "all", title: "All Collections")]
+                        + viewModel.availableCollections.map {
+                            CommandlyOptionItem(id: "collection:" + $0, title: $0)
+                        },
+                    selectionID: viewModel.selectedCollection.map { "collection:" + $0 } ?? "all",
+                    accessibilityLabelText: "Filter by collection"
+                ) { item in
+                    viewModel.selectedCollection = item.id == "all"
+                        ? nil : String(item.id.dropFirst("collection:".count))
                 }
             }
         } sidebar: {
@@ -38,6 +54,10 @@ struct ClipboardHistoryView: View {
         } detail: {
             detailPane
         }
+        .onChange(of: viewModel.editorMode != nil) { wasEditing, isEditing in
+            if wasEditing && !isEditing { searchFocusRequest += 1 }
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Clipboard History")
     }
 
@@ -83,7 +103,7 @@ struct ClipboardHistoryView: View {
             }
             .onChange(of: viewModel.selectedID) { _, newValue in
                 guard let newValue, viewModel.shouldScrollToSelection else { return }
-                withAnimation(.easeOut(duration: MotionDuration.fast.rawValue)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: MotionDuration.fast.rawValue)) {
                     proxy.scrollTo(newValue, anchor: .center)
                 }
             }
@@ -105,6 +125,7 @@ struct ClipboardHistoryView: View {
                 }
             }
         )
+        .id(entry.organization)
     }
 
     private var detailPane: some View {
@@ -127,6 +148,7 @@ struct ClipboardHistoryView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(entry.id)
             } else {
                 LauncherApplicationEmptyState(
                     systemImage: "clipboard",
@@ -155,7 +177,10 @@ struct ClipboardHistoryView: View {
                 .accessibilityLabel("Cancel clipboard editor")
             }
 
-            TextEditor(text: $viewModel.editorText)
+            if viewModel.isOrganizationEditor {
+                ClipboardOrganizationFields(viewModel: viewModel)
+            } else {
+                TextEditor(text: $viewModel.editorText)
                 .commandlyFont(size: 13, design: .monospaced)
                 .scrollContentBackground(.hidden)
                 .padding(density.spacing(.xs))
@@ -166,6 +191,7 @@ struct ClipboardHistoryView: View {
                         .strokeBorder(LauncherPalette.separator, lineWidth: 1)
                 }
                 .accessibilityLabel(mode.title)
+            }
 
             HStack {
                 Text("⌘↵ Save")
@@ -176,7 +202,7 @@ struct ClipboardHistoryView: View {
                     viewModel.saveEditor()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.editorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(viewModel.canSaveEditor == false)
                 .keyboardShortcut(.return, modifiers: [.command])
             }
         }
@@ -254,6 +280,19 @@ struct ClipboardHistoryView: View {
                     .commandlyFont(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    viewModel.toggleSelectedPin()
+                } label: {
+                    Image(systemName: entry.organization.isPinned ? "pin.slash" : "pin")
+                }
+                .buttonStyle(.borderless)
+                .help(entry.organization.isPinned ? "Unpin Entry" : "Pin Entry")
+                .accessibilityLabel(entry.organization.isPinned ? "Unpin clipboard entry" : "Pin clipboard entry")
+                Button("Organize") {
+                    viewModel.beginOrganizingSelected()
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Rename and organize clipboard entry")
                 if entry.contentType == .text {
                     Button("Edit") {
                         viewModel.beginEditingSelected()
@@ -269,6 +308,12 @@ struct ClipboardHistoryView: View {
             }
 
             infoRow(label: "Source", value: entry.sourceAppName ?? "Unknown")
+            if let name = entry.organization.name {
+                infoRow(label: "Name", value: name)
+            }
+            if let collection = entry.organization.collection {
+                infoRow(label: "Collection", value: collection)
+            }
             infoRow(label: "Content type", value: entry.contentType.title)
             if entry.contentType == .text {
                 infoRow(label: "Characters", value: "\(entry.characterCount)")

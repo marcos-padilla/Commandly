@@ -103,9 +103,9 @@ activation. This is notification-driven invalidation, not continuous polling.
 
 Select a page and slot in the visual editor, then choose one of:
 
-- **Command** searches registered commands and installed applications through the same shared
-  providers used by launcher search. Application rows keep their display name for the segment and
-  persist the exact typed bundle-identifier reference.
+- **Command** searches registered Commandly applications/tools and installed applications through
+  the same shared providers used by launcher search. Installed-application rows keep their display
+  name for the segment and persist the exact typed bundle-identifier reference.
 - **Submenu** creates or links a child page.
 - **Recent commands** freezes a bounded list from shared successful-command history for the
   invocation.
@@ -123,12 +123,16 @@ The editor provides buttons and menus for every drag operation. Reordering never
 If a command is removed, disabled, or no longer accepts saved arguments, the editor keeps the
 reference and marks it unavailable rather than silently substituting or deleting it.
 
+Application-owned tools are normal assignable manifests. A typed-command phrase is only launcher
+query syntax, so it is not a second wheel entry; assign its target tool, including any reusable typed
+arguments the manifest permits.
+
 ### Add from search
 
-Right-click a registered command or installed-application result and choose **Add to Command
-Wheel…**. Choose the profile, page, and slot. Occupied slots show their current content and require
-an explicit replacement. The same assignment panel can move or remove an existing reference,
-create a child page, or reveal the profile in Settings.
+Right-click a registered application/tool command or installed-application result and choose **Add
+to Command Wheel…**. Choose the profile, page, and slot. Occupied slots show their current content
+and require an explicit replacement. The same assignment panel can move or remove an existing
+reference, create a child page, or reveal the profile in Settings.
 
 Installed applications use Commandly's shared parameterized Open Application command. Search and
 Command Wheel therefore pass the same bundle-identifier argument through the same executor.
@@ -193,8 +197,8 @@ application activity. See [Permissions](PERMISSIONS.md) and [Security Model](SEC
 ### The shortcut does nothing
 
 - Confirm the feature and profile are enabled.
-- Check the shortcut recorder for a conflict with the launcher, Shelf, another profile, or a
-  shortcut macOS refused to register.
+- Check the shortcut recorder for a conflict with the launcher, a registered application/tool
+  shortcut (including Shelf's defaults), another profile, or a shortcut macOS refused to register.
 - Record a different modified shortcut and retry. Changes apply while Commandly is running.
 
 ### Releasing does not execute

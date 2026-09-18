@@ -40,9 +40,11 @@ is paragraph text, bullet lists, numbered steps, shortcut tables, input/output e
 callouts for tips, privacy, permissions, limitations, or important notes. Stable IDs support tests,
 search, and future deep links.
 
-Registration rejects launchable applications with missing or malformed documentation. Validation
+Registration rejects a `LauncherApplication` with missing or malformed documentation. Validation
 requires non-empty content and unique section, block, shortcut, and example IDs. Groups may omit an
-article because they are hierarchy nodes rather than launchable experiences.
+article because they are hierarchy nodes. Application-owned Tool definitions may also omit one
+because they are stable entry points into the owning application's implementation, not independent
+feature articles; their owning article should explain the workflow and its safety boundaries.
 
 ## Adding or changing a launcher application
 
@@ -50,10 +52,11 @@ article because they are hierarchy nodes rather than launchable experiences.
    `docs/LAUNCHER_APPLICATIONS.md`.
 2. Add a focused documentation contribution beside the application under
    `Commandly/Scenes/Launcher/Applications/Documentation`.
-3. Pass it to `LauncherApplicationDefinition(manifest:documentation:)`. That initializer requires
-   the contribution, so a normal application registration cannot compile without documentation.
-4. Describe every implemented workflow, action, keyboard shortcut, configuration field, privacy
-   boundary, permission, and material limitation. Use structured examples for input-driven tools.
+3. Pass it to `LauncherApplicationDefinition(manifest:documentation:)`. Registry validation rejects
+   a `LauncherApplication` whose definition does not provide the contribution.
+4. Describe every implemented workflow, declared tool, typed-command form, action, keyboard
+   shortcut, configuration field, privacy boundary, permission, and material limitation. Use
+   structured examples for input-driven tools.
 5. Register the application normally. Do not add a documentation-screen branch: the article is
    included through `LauncherApplicationRegistry` the next time the documentation catalog refreshes
    (including when the Documentation window opens).

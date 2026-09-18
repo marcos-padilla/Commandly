@@ -14,6 +14,10 @@ extension RegisteredApplicationDocumentation {
                         "In Settings → Permissions, use Manage Folders to select the locations Commandly may search.",
                         "Return to Search Files. Commandly builds its local index and refreshes results as indexed information becomes available."
                     ]),
+                    .bullets("files.access.root-recovery", [
+                        "When a root launcher query needs File Search but no folders are authorized, the Files section shows a recovery row that opens Settings → Permissions.",
+                        "If the local index is unavailable, the Files section shows a recovery row that opens the full File Search application so you can inspect or rebuild the index."
+                    ]),
                     .callout(
                         "files.access.permission",
                         DocumentationCallout(
@@ -101,4 +105,3 @@ extension RegisteredApplicationDocumentation {
         keywords: ["Finder", "index", "FTS", "OCR", "PDF", "Quick Look", "open with", "share", "copy", "move", "duplicate", "trash"]
     )
 }
-

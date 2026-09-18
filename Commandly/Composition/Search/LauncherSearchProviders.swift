@@ -47,17 +47,20 @@ struct ApplicationSearchProvider: SearchProviding, Sendable {
     private let favoriteBundleIDs: Set<String>
     private let disabledBundleIDs: Set<String>
     private let ranking: [String: AppUsageRanking]
+    private let aliases: [String: String]
 
     init(
         applications: [InstalledApplicationSnapshot],
         favoriteBundleIDs: Set<String> = [],
         disabledBundleIDs: Set<String> = [],
-        ranking: [String: AppUsageRanking] = [:]
+        ranking: [String: AppUsageRanking] = [:],
+        aliases: [String: String] = [:]
     ) {
         self.applications = applications
         self.favoriteBundleIDs = favoriteBundleIDs
         self.disabledBundleIDs = disabledBundleIDs
         self.ranking = ranking
+        self.aliases = aliases
     }
 
     func search(_ query: SearchQuery) async throws -> SearchResult {
@@ -70,14 +73,14 @@ struct ApplicationSearchProvider: SearchProviding, Sendable {
             if disabled && trimmed.isEmpty {
                 continue
             }
-            guard let baseScore = SearchMatchScorer.score(
+            let titleScore = SearchMatchScorer.score(
                 query: query.text,
                 title: app.name,
                 subtitle: app.bundleIdentifier,
                 keywords: [app.name]
-            ) else {
-                continue
-            }
+            )
+            let aliasScore = ApplicationAlias.score(query: query.text, alias: aliases[app.bundleIdentifier])
+            guard let baseScore = [titleScore, aliasScore].compactMap({ $0 }).max() else { continue }
             var score = baseScore
             if favoriteBundleIDs.contains(app.bundleIdentifier) {
                 score += 0.18
@@ -90,7 +93,7 @@ struct ApplicationSearchProvider: SearchProviding, Sendable {
                 SearchItem(
                     id: app.bundleIdentifier,
                     title: app.name,
-                    subtitle: app.bundleIdentifier,
+                    subtitle: aliases[app.bundleIdentifier].map { "Alias: \($0)" } ?? app.bundleIdentifier,
                     providerID: id,
                     score: score
                 )

@@ -41,6 +41,8 @@ final class FileSearchViewModel {
     private var searchTask: Task<Void, Never>?
     @ObservationIgnored
     private var indexStatusTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var fileCopyTask: Task<Void, Never>?
     private var indexStatus: FileSearchIndexStatus = .idle
 
     var query = "" {
@@ -310,6 +312,10 @@ final class FileSearchViewModel {
         actionOptions = []
     }
 
+    func waitForFileCopyForTesting() async {
+        await fileCopyTask?.value
+    }
+
     func performPanelAction(_ actionID: CommandActionID) {
         guard let item = actionTarget else { return }
         switch actionID {
@@ -328,7 +334,7 @@ final class FileSearchViewModel {
             statusMessage = showsDetails ? "Details shown." : "Details hidden."
             dismissActionPanel()
         case BuiltInCommandActionID.copyFile:
-            Task { [weak self] in
+            fileCopyTask = Task { [weak self] in
                 await self?.pasteboard.writeFileURLs([item.url])
                 self?.statusMessage = "File copied."
                 self?.dismissActionPanel()

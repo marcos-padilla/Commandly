@@ -26,7 +26,7 @@ struct ShelfInstantActionsView: View {
     private func actionButton(_ destination: NativeShareDestination) -> some View {
         let isTargeted = interaction.targetedAction == destination
         return Button {
-            Task {
+            model.perform { model in
                 await model.share(to: destination)
             }
         } label: {
@@ -46,7 +46,7 @@ struct ShelfInstantActionsView: View {
         .accessibilityHint("Drop files here, or activate to share staged Shelf items")
         .dropDestination(for: URL.self) { urls, _ in
             guard interaction.isDraggingShelfItems == false else { return }
-            Task {
+            model.perform { model in
                 await model.share(urls, to: destination)
             }
             interaction.endDropSession()

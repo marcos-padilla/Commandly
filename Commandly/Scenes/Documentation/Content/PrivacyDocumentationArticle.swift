@@ -18,7 +18,7 @@ enum PrivacyDocumentationArticle {
                             "A permission is tied to a user benefit and requested only after you activate the relevant control or action.",
                             "Permission denial does not block onboarding completion or unrelated features.",
                             "For Calendar, Contacts, selected folders, and Accessibility, Settings provides a recovery path when access is denied or restricted. Feature-specific access such as Finder Automation is recovered in System Settings.",
-                            "Commandly documents each entitlement and requests interactive permissions only in context. Temporary uninstall exceptions grant broader read-write filesystem scope than selected folders; that scope is disclosed below and limited by Commandly's review-first workflow.",
+                            "Commandly documents each entitlement and requests interactive permissions only in context. Temporary application-maintenance exceptions grant broader read-write filesystem scope than selected folders; that scope is disclosed below and limited by Commandly's review-first uninstall and Storage Cleaner workflows.",
                         ]),
                     ]
                 ),
@@ -27,11 +27,11 @@ enum PrivacyDocumentationArticle {
                     title: "Current permissions and access",
                     blocks: [
                         .bullets("privacy-active-permissions-list", [
-                            "Files and Folders: lets File Search index and manage folders you explicitly select. Commandly stores versioned security-scoped bookmarks so it can restore that scope later.",
+                            "Files and Folders: lets File Search index and manage folders you explicitly select. Commandly stores versioned security-scoped bookmarks so it can restore that scope later. Storage Cleaner uses a separate one-time folder choice for an exact duplicate scan and does not persist that grant.",
                             "Downloads read access: lets Recent Downloads list, open, reveal, and copy the URL of top-level downloads. It does not grant that application permission to modify Downloads.",
                             "Accessibility: required when you apply a Window Layout. Commandly prompts in that workflow and provides recovery steps if access is denied.",
                             "Automation for Finder: macOS may request it when File Search or an installed application's actions ask Finder to show an Info window. Recover it in System Settings → Privacy & Security → Automation → Commandly → Finder.",
-                            "Application uninstall scope: sandbox temporary file-access exceptions let Commandly discover a selected app's related files under the real user Library, /Applications, and /Library. Nothing is removed automatically; Commandly presents a review list and trashes only the items you explicitly confirm.",
+                            "Application maintenance scope: sandbox temporary file-access exceptions let Uninstall discover a selected app's related files under the real user Library, /Applications, and /Library, and let Storage Cleaner scan bounded reviewed locations in the real user Library for identifier-based leftovers and third-party caches. Nothing is removed automatically; both workflows trash only the items you explicitly confirm.",
                             "Open at Login: uses the native login-item service. It is not a TCC privacy permission, but macOS may require approval in Login Items settings.",
                             "Calendar and Contacts: optional onboarding permissions reserved for future schedule and people applications. Current Commandly screens do not surface calendar events or contacts.",
                             "Clipboard History: pasteboard monitoring and on-device text recognition do not show a TCC prompt. Monitoring runs in the background while Commandly is running, and captured content must never be logged.",
@@ -40,15 +40,17 @@ enum PrivacyDocumentationArticle {
                 ),
                 DocumentationSection(
                     id: "privacy-uninstall-scope",
-                    title: "Application uninstall access",
+                    title: "Uninstall and Storage Cleaner access",
                     blocks: [
                         .paragraph(
                             "privacy-uninstall-scope-summary",
-                            "Uninstall discovery uses temporary home-relative and absolute-path read-write sandbox exceptions for locations where macOS applications and their support files commonly live, including ~/Library, /Applications, and /Library. This is broader filesystem scope than a folder selected through File Search, so Commandly keeps the workflow explicit and review-first."
+                            "Uninstall and Storage Cleaner Library discovery use temporary home-relative and absolute-path read-write sandbox exceptions for locations where macOS applications and their support files commonly live, including ~/Library, /Applications, and /Library. This is broader filesystem scope than a folder selected through File Search, so Commandly keeps both workflows explicit, bounded, and review-first."
                         ),
                         .bullets("privacy-uninstall-scope-guardrails", [
                             "You start uninstall from the selected installed application's actions panel.",
                             "Commandly matches the app's bundle identifier and known helper prefixes, then shows the discovered bundle and related files before acting.",
+                            "Opening Storage Cleaner starts a bounded scan of reviewed user Library locations. Identifier candidates are compared with installed bundle/helper prefixes; Apple, Commandly, shared-group, ambiguous, hidden, and symbolic-link entries are skipped.",
+                            "Third-party caches remain unchecked by default. Exact duplicate scanning uses a separate folder you choose, content hashes stay in memory, and one copy always remains unchecked.",
                             "Only reviewed items that you confirm are sent to Trash through native macOS APIs.",
                             "Protected or unavailable paths can fail. Commandly reports partial failures instead of claiming a complete wipe."
                         ]),
@@ -57,7 +59,7 @@ enum PrivacyDocumentationArticle {
                             DocumentationCallout(
                                 kind: .privacy,
                                 title: "No background cleanup",
-                                text: "The entitlement grants filesystem access. Commandly limits its use of that scope to a user-selected app, a review screen, and explicit confirmation; it does not perform background cleanup."
+                                text: "The entitlement grants filesystem access. Commandly limits its use to a user-selected uninstall or an explicitly opened Storage Cleaner scan, a review screen, and exact confirmation. It does not perform background cleanup, permanent deletion, or Trash emptying."
                             )
                         ),
                     ]

@@ -58,7 +58,7 @@ struct ShelfDetailsView: View {
                 guard let target = renameTarget else { return }
                 let proposedName = renameText
                 renameTarget = nil
-                Task {
+                model.perform { model in
                     await model.rename(target.id, to: proposedName)
                 }
             }
@@ -68,7 +68,7 @@ struct ShelfDetailsView: View {
         .alert("Move to Trash?", isPresented: $confirmsTrash) {
             Button("Cancel", role: .cancel) {}
             Button("Move to Trash", role: .destructive) {
-                Task {
+                model.perform { model in
                     await model.moveSelectedToTrash()
                 }
             }
@@ -149,7 +149,7 @@ struct ShelfDetailsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
-                Task {
+                model.perform { model in
                     await model.addFromClipboard()
                 }
             } label: {

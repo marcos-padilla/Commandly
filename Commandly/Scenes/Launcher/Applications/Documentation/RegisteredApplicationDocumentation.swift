@@ -39,7 +39,7 @@ enum RegisteredApplicationDocumentation {
                     .bullets("settings.panes.items", [
                         "General controls Commandly's appearance and everyday launcher preferences.",
                         "AI connects BYOK providers, validates credentials or local endpoints, and selects the active model.",
-                        "Applications manages registered Commandly applications, including aliases, enablement, global hotkeys, and each application's non-secret settings.",
+                        "Applications manages registered Commandly applications and their tools, including built-in and custom tags, enablement, global shortcuts, typed-command syntax, and non-secret settings.",
                         "Permissions explains each optional macOS capability and provides recovery links when access is unavailable.",
                         "About shows Commandly's version, build, and project information."
                     ]),
@@ -54,7 +54,10 @@ enum RegisteredApplicationDocumentation {
                 ]
             )
         ],
-        keywords: ["preferences", "general", "applications", "permissions", "about", "alias", "hotkey"]
+        keywords: [
+            "preferences", "general", "applications", "tools", "tags", "permissions", "about",
+            "hotkey", "typed commands"
+        ]
     )
 
     static let clipboardHistory = LauncherApplicationDocumentation(

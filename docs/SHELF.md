@@ -7,16 +7,19 @@ inspiration, not a source for copied branding, assets, wording, or layout.
 
 ## User behavior
 
-Open **Shelf** from the launcher, use the menu-bar commands, or press the system-wide shortcuts
-**New Shelf** (`⌥⇧Space`) and **New Shelf From Clipboard** (`⌥⇧A`). Commandly captures the active
-display before taking focus, then opens the single floating board in that display's preferred corner
-on the active macOS Space, including over another application's full-screen Space. Shelf configures
-that cross-application overlay role and its captured display placement before Commandly activates.
+Open **Shelf** from the launcher, use the menu-bar commands, or invoke the **New Shelf** and **New
+Shelf From Clipboard** application tools. Those tools default to `⌥⇧Space` and `⌥⇧A`, respectively,
+and either shortcut can be replaced or cleared in Applications settings. Commandly captures the
+active display before taking focus, then opens the single floating board in that display's preferred
+corner on the active macOS Space, including over another application's full-screen Space. Shelf
+configures that cross-application overlay role and its captured display placement before Commandly activates.
 The same live board follows every Space until it is explicitly closed, preserving its items,
-selection, and detail state. Its active behind-window material and clear Liquid Glass surface keep
-sampling the desktop when another application has focus instead of becoming a solid inactive panel.
-Repeating either command replaces the current board with a fresh empty or clipboard-seeded board,
-respectively.
+selection, detail state, and manually chosen relative position. When the active desktop or
+frontmost application moves to another display, Shelf re-homes the board to that display. Display
+resolution, Dock/menu-bar geometry, and disconnect changes clamp the board into a reachable visible
+frame. Its active behind-window material and clear Liquid Glass surface keep sampling the desktop
+when another application has focus instead of becoming a solid inactive panel. Repeating either
+command replaces the current board with a fresh empty or clipboard-seeded board, respectively.
 
 Drag the board from any unoccupied part of its surface. Buttons, menus, and staged-item interactions
 keep their own behavior, and window movement is disabled while a staged item or selection is being
@@ -95,7 +98,9 @@ operation; Shelf reports the failure instead of assuming it succeeded.
 ## Settings
 
 Shelf stays visible across application focus and Space changes until explicitly closed. Its generic
-**Settings → Applications** configuration schema includes:
+**Settings → Applications** row expands to show the independently searchable **New Shelf** and **New
+Shelf From Clipboard** tools. Each tool owns its tags, enablement, and editable global shortcut. The
+Shelf application configuration schema includes:
 
 - **Close when empty** dismisses a board after its last staged item is explicitly removed or
   trashed. Copy-only drag-out does not empty the board. A newly opened empty board does not
@@ -111,14 +116,14 @@ These values are non-secret preferences. They do not contain paths or staged con
 
 | Piece | Role |
 |-------|------|
-| `ShelfApplication` | Registration, settings schema, launcher open action, and in-app documentation |
-| `ShelfLaunchController` / `AppRuntime` | Routes launcher, menu-bar, and fixed global-shortcut requests into per-presentation generations while capturing the active display before activation |
+| `ShelfApplication` | Registration, settings schema, launcher open action, two background-invoking tool definitions with default shortcuts, and in-app documentation |
+| `ShelfLaunchController` / `AppRuntime` | Routes application/tool execution and menu-bar requests into per-presentation generations while capturing the active display before activation |
 | `ShelfBoardModel` | Owns one board's external references, board-private clipboard files, selection, actions, security-scoped access, and cleanup |
 | `ShelfBoardView` and focused subviews | Compact/detail presentation, whole-surface window movement, drag destinations and sources, native previews, opening motion, and accessible feedback |
 | `ShelfApplicationServices` | Focused initializer-injected metadata, file action, Finder, URL, pasteboard, preview, and sound boundaries |
 | `WorkspaceShelfFileActionService` and related adapters | AppKit/FileManager implementations behind Infrastructure protocols |
 | `LocalShelfTemporaryContentStore` | Actor-confined, per-board materialization and deletion of private clipboard text/image files |
-| `ShelfWindowConfigurator` | Borderless floating-window behavior, rounded host-layer masking, focus handling, keyboard dispatch, active-display placement, and active-Space behavior |
+| `ShelfWindowConfigurator` | Borderless floating-window behavior, rounded host-layer masking, focus handling, keyboard dispatch, active-display placement, active-Space following, and display-reconfiguration recovery |
 
 The app target owns the concrete macOS adapters. Collection-aware file metadata, sharing, preview,
 and mutation contracts live in `Infrastructure` with in-memory implementations for tests.
@@ -138,8 +143,8 @@ and mutation contracts live in `Infrastructure` with in-memory implementations f
 - Dropping a file URL or explicitly importing clipboard content does not introduce a new automatic
   TCC prompt. The App Sandbox can still deny protected locations or operations outside granted
   scope.
-- Active-display placement reads macOS screen geometry and the fixed global shortcuts use the
-  existing Carbon hot-key adapter. Neither requires Screen Recording or Accessibility permission.
+- Active-display placement reads macOS screen geometry and the tools' editable default shortcuts use
+  the shared Carbon hot-key adapter. Neither requires Screen Recording or Accessibility permission.
 - Native sharing is user initiated. The selected macOS service or receiving application—not
   Commandly—controls recipients, sign-in, transfer, and any network use.
 - Destructive on-disk behavior is separate from clearing Shelf. Moving originals to Trash requires a
@@ -168,10 +173,9 @@ and mutation contracts live in `Infrastructure` with in-memory implementations f
   one standalone image representation, or plain text; it does not preserve rich-text formatting,
   materialize promised files from apps such as Photos or a browser, or stage arbitrary pasteboard
   representations.
-- There is no notch/menu-bar drop zone, shake gesture, modifier-key activation, folder monitoring, or
-  automatic activation while dragging elsewhere on screen. Shelf opens only through its launcher,
-  menu-bar commands, the two fixed global shortcuts, or a configured registered-application
-  shortcut.
+- There is no notch/menu-bar drop zone, shake gesture, modifier-key activation while dragging,
+  folder monitoring, or automatic activation while dragging elsewhere on screen. Shelf opens only
+  through its launcher, menu-bar commands, or the two registered tool shortcuts.
 - Commandly does not provide hosted links, cloud-provider OAuth/upload destinations, team sharing,
   image transformations, archive/transcode/OCR actions, custom scripts, or shell commands in Shelf.
   System sharing services may expose their own capabilities independently.

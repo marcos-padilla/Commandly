@@ -13,20 +13,34 @@ struct CommandlyApp: App {
         @Bindable var runtime = runtime
 
         MenuBarExtra(isInserted: $runtime.showMenuBarIcon) {
-            StatusBarMenu(runtime: runtime)
+            StatusPanelView(runtime: runtime)
                 .commandlyContentSize(runtime.textSize)
                 .commandlyViewMode(runtime.viewMode)
         } label: {
-            Label("Commandly", systemImage: "command")
+            StatusBarIconLabel(keepAwake: runtime.keepAwake)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
 
         Window("", id: AppWindowID.presentationHost) {
             WindowPresentationHost(runtime: runtime)
+                .onAppear {
+                    appDelegate.floatingNotes = runtime.floatingNotes
+                    appDelegate.screenRecording = runtime.screenRecording
+                    appDelegate.displayResolution = runtime.displayResolution.coordinator
+                    appDelegate.writingServices = runtime.writingServiceProvider
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultSize(width: 1, height: 1)
+        // AppKit refuses to make a titled window as small as a point and clamps its height. With
+        // `.contentSize` resizability SwiftUI keeps asking for the size it was given, AppKit keeps
+        // returning the clamped one, and the two never agree — an endless Update Constraints pass
+        // that AppKit eventually ends by throwing. The host is invisible, offscreen, and ordered
+        // out either way, so it is sized to something the window server will honor.
+        .defaultSize(
+            width: WindowPresentationHost.hostLength,
+            height: WindowPresentationHost.hostLength
+        )
         .defaultLaunchBehavior(.presented)
 
         Window("Commandly", id: AppWindowID.launcher) {
@@ -94,7 +108,7 @@ struct CommandlyApp: App {
         }
 
         Settings {
-            SettingsRootView(viewModel: runtime.makeSettingsViewModel())
+            SettingsRootView(viewModel: runtime.makeSettingsViewModel(), systemIntegrationModel: runtime.systemCompanion.settings, keyboardTriggerSettings: runtime.keyboardTriggerSettings)
                 .commandlyContentSize(runtime.textSize)
                 .commandlyViewMode(runtime.viewMode)
         }
@@ -111,6 +125,18 @@ struct CommandlyApp: App {
 
 enum CommandlyDebugLaunchOptions {
     #if DEBUG
+    static let usesProductivityFixture = ProcessInfo.processInfo.arguments.contains(
+        "--commandly-productivity-fixture"
+    )
+    /// Opts only the companion setup into native acceptance; registration still requires its UI action.
+    static let usesLiveCompanion = ProcessInfo.processInfo.arguments.contains(
+        "--commandly-live-companion"
+    )
+    /// Signed Finder acceptance keeps other productivity services on generated data.
+    /// This selects the real adapter; it never requests Finder access by itself.
+    static let usesLiveFinderPath = ProcessInfo.processInfo.arguments.contains(
+        "--commandly-live-finder-path"
+    )
     static let showsLauncherAtLaunch = ProcessInfo.processInfo.arguments.contains(
         "--commandly-show-launcher"
     )
@@ -135,6 +161,9 @@ enum CommandlyDebugLaunchOptions {
         CommandWheelDebugFixture.settingsArgument
     )
     #else
+    static let usesProductivityFixture = false
+    static let usesLiveCompanion = false
+    static let usesLiveFinderPath = false
     static let showsLauncherAtLaunch = false
     static let fileSearchQuery: String? = nil
     static let usesFileSearchFixture = false
@@ -174,6 +203,13 @@ private struct DocumentationCommands: Commands {
 
 /// Keeps scene actions available for global shortcuts even when the menu-bar icon is hidden.
 private struct WindowPresentationHost: View {
+    /// Side of the invisible host window.
+    ///
+    /// Large enough that AppKit does not clamp it, which is what keeps SwiftUI's content-size
+    /// extrema satisfiable. Nothing is ever drawn here: the window is transparent, offscreen,
+    /// noninteractive, and ordered out.
+    static let hostLength: CGFloat = 40
+
     @Bindable var runtime: AppRuntime
     @State private var hasInstalledActions = false
     #if DEBUG
@@ -200,7 +236,7 @@ private struct WindowPresentationHost: View {
             )
             #endif
         }
-        .frame(width: 1, height: 1)
+        .frame(width: Self.hostLength, height: Self.hostLength)
         .accessibilityHidden(true)
     }
 }
@@ -310,8 +346,15 @@ private struct PresentationHostWindowHider: NSViewRepresentable {
         window.ignoresMouseEvents = true
         window.isExcludedFromWindowsMenu = true
         window.collectionBehavior = [.ignoresCycle]
+        // Moved offscreen at the size SwiftUI is driving. Resizing it here instead would put the
+        // manual frame and the content-size extrema back into disagreement.
         window.setFrame(
-            NSRect(x: -10_000, y: -10_000, width: 1, height: 1),
+            NSRect(
+                x: -10_000,
+                y: -10_000,
+                width: WindowPresentationHost.hostLength,
+                height: WindowPresentationHost.hostLength
+            ),
             display: false
         )
         // Leave the attachment transaction before ordering out. The host is already transparent,
@@ -325,6 +368,7 @@ private struct PresentationHostWindowHider: NSViewRepresentable {
 /// Hosts the launcher panel and keeps runtime visibility in sync when the window closes.
 private struct LauncherWindowHost: View {
     @Bindable var runtime: AppRuntime
+    @State private var didOpenProductivityFixture = false
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -341,6 +385,11 @@ private struct LauncherWindowHost: View {
         .onAppear {
             runtime.showsLauncher = true
             runtime.consumePendingApplicationLaunch(using: viewModel)
+            if CommandlyDebugLaunchOptions.usesProductivityFixture,
+               didOpenProductivityFixture == false, viewModel.route == .root {
+                didOpenProductivityFixture = true
+                viewModel.launch(ProductivityLibraryApplication.id)
+            }
             if let query = CommandlyDebugLaunchOptions.fileSearchQuery,
                viewModel.route == .root {
                 viewModel.launch(BuiltInCommandID.searchFiles)
@@ -413,20 +462,26 @@ private struct ShelfWindowHost: View {
             onKeyDown: handleKeyDown
         )
         .onAppear {
-            runtime.showsShelf = true
+            guard runtime.showsShelf else {
+                runtime.hideShelf()
+                return
+            }
             boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
         }
         .onChange(of: runtime.shelfPresentationRequest.generation) { _, generation in
             _ = generation
             boardModel?.tearDown()
             interaction.endShelfItemDrag()
-            boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
+            if runtime.showsShelf {
+                boardModel = runtime.makeShelfBoardModel(onClose: { runtime.hideShelf() })
+            } else {
+                boardModel = nil
+            }
         }
         .onDisappear {
             boardModel?.tearDown()
-            if runtime.showsShelf {
-                runtime.showsShelf = false
-            }
+            boardModel = nil
+            interaction.endShelfItemDrag()
         }
     }
 
@@ -447,13 +502,13 @@ private struct ShelfWindowHost: View {
             return true
         }
         if event.keyCode == 8, modifiers == .command {
-            Task {
+            boardModel.perform { boardModel in
                 await boardModel.copyItemsToClipboard()
             }
             return true
         }
         if event.keyCode == 9, modifiers == .command {
-            Task {
+            boardModel.perform { boardModel in
                 await boardModel.addFromClipboard()
             }
             return true

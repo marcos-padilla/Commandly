@@ -99,6 +99,8 @@ public struct AIProviderState: Sendable, Equatable, CustomStringConvertible,
 /// A normalized request sent through a provider adapter.
 public struct AICompletionRequest: Sendable, Equatable {
     public let modelID: String
+    /// Optional single-turn image; callers must obtain preview-and-send consent separately.
+    public let imageInput: AIImageInput?
     public let messages: [AIMessage]
     public let tools: [AIToolDefinition]
     public let toolChoice: AIToolChoice
@@ -113,9 +115,11 @@ public struct AICompletionRequest: Sendable, Equatable {
         toolChoice: AIToolChoice = .automatic,
         maximumOutputTokens: Int? = nil,
         temperature: Double? = nil,
-        state: AIProviderState? = nil
+        state: AIProviderState? = nil,
+        imageInput: AIImageInput? = nil
     ) {
         self.modelID = modelID
+        self.imageInput = imageInput
         self.messages = messages
         self.tools = tools
         self.toolChoice = toolChoice
@@ -150,6 +154,12 @@ public struct AICompletionRequest: Sendable, Equatable {
             throw AIProviderError.configurationMismatch
         }
 
+        if imageInput != nil {
+            guard AIImageInput.supports(providerID: providerID, modelID: modelID), state == nil, tools.isEmpty,
+                  toolChoice == .none, messages.filter({ $0.role == .user }).count == 1,
+                  messages.allSatisfy({ [.system, .user].contains($0.role) && $0.content.allSatisfy { if case .text = $0 { return true }; return false } }),
+                  messages.reduce(0, { $0 + $1.content.reduce(0, { sum, part in if case .text(let text) = part { return sum + text.utf8.count }; return sum }) }) <= 65_536 else { throw AIProviderError.invalidRequest }
+        }
         for message in messages {
             try message.validate()
         }

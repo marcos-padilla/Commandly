@@ -12,7 +12,7 @@ struct ShelfActionMenu: View {
     var body: some View {
         Group {
             Button("Open", systemImage: "arrow.up.forward.app") {
-                preparedTask { await model.openSelected() }
+                preparedTask { await $0.openSelected() }
             }
 
             Menu("Open With", systemImage: "app.badge") {
@@ -23,7 +23,7 @@ struct ShelfActionMenu: View {
                 } else {
                     ForEach(model.openWithOptions) { option in
                         Button(option.title) {
-                            preparedTask {
+                            preparedTask { model in
                                 await model.openSelected(withApplication: option.id)
                             }
                         }
@@ -32,7 +32,7 @@ struct ShelfActionMenu: View {
             }
 
             Button("Show in Finder", systemImage: "finder") {
-                preparedTask { await model.revealSelected() }
+                preparedTask { await $0.revealSelected() }
             }
 
             Button("Quick Look", systemImage: "eye") {
@@ -44,7 +44,7 @@ struct ShelfActionMenu: View {
 
             ForEach(NativeShareDestination.allCases, id: \.rawValue) { destination in
                 Button(destination.shelfTitle, systemImage: destination.shelfSystemImage) {
-                    preparedTask { await model.share(to: destination) }
+                    preparedTask { await $0.share(to: destination) }
                 }
                 .disabled(model.canShare(to: destination) == false)
             }
@@ -57,7 +57,7 @@ struct ShelfActionMenu: View {
                 } else {
                     ForEach(model.sharingOptions) { option in
                         Button(option.title) {
-                            preparedTask {
+                            preparedTask { model in
                                 await model.shareSelected(withService: option.id)
                             }
                         }
@@ -68,27 +68,27 @@ struct ShelfActionMenu: View {
             Divider()
 
             Button("Add From Clipboard", systemImage: "clipboard.badge.plus") {
-                preparedTask { await model.addFromClipboard() }
+                preparedTask { await $0.addFromClipboard() }
             }
 
             Button("Copy Items", systemImage: "doc.on.clipboard") {
-                preparedTask { await model.copyItemsToClipboard() }
+                preparedTask { await $0.copyItemsToClipboard() }
             }
 
             Button("Copy Paths", systemImage: "text.document") {
-                preparedTask { await model.copyPathsToClipboard() }
+                preparedTask { await $0.copyPathsToClipboard() }
             }
 
             Button("Copy To…", systemImage: "folder.badge.plus") {
-                preparedTask { await model.copySelectedToChosenFolder() }
+                preparedTask { await $0.copySelectedToChosenFolder() }
             }
 
             Button("Move To…", systemImage: "folder") {
-                preparedTask { await model.moveSelectedToChosenFolder() }
+                preparedTask { await $0.moveSelectedToChosenFolder() }
             }
 
             Button("Duplicate", systemImage: "plus.square.on.square") {
-                preparedTask { await model.duplicateSelected() }
+                preparedTask { await $0.duplicateSelected() }
             }
 
             if allowsRename {
@@ -117,9 +117,10 @@ struct ShelfActionMenu: View {
                 }
             }
         }
+        .disabled(model.isPerformingAction)
         .onAppear {
             prepare()
-            Task {
+            model.perform { model in
                 async let openWith: Void = model.refreshOpenWithOptions()
                 async let sharing: Void = model.refreshSharingOptions()
                 _ = await (openWith, sharing)
@@ -127,10 +128,10 @@ struct ShelfActionMenu: View {
         }
     }
 
-    private func preparedTask(_ operation: @escaping @MainActor () async -> Void) {
+    private func preparedTask(
+        _ operation: @escaping @MainActor (ShelfBoardModel) async -> Void
+    ) {
         prepare()
-        Task {
-            await operation()
-        }
+        model.perform(operation)
     }
 }

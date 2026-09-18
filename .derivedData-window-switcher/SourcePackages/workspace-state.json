@@ -1,0 +1,27 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "packages",
+          "kind" : "fileSystem",
+          "location" : "/Users/marcos/Projects/Commandly/Packages",
+          "name" : "CommandlyPackages"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/marcos/Projects/Commandly/Packages"
+        },
+        "subpath" : "packages"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

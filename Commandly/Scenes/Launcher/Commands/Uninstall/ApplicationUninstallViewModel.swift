@@ -45,6 +45,8 @@ final class ApplicationUninstallViewModel {
     private let onCancel: () -> Void
     @ObservationIgnored
     private var loadTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var uninstallTask: Task<Void, Never>?
 
     init(
         applicationName: String,
@@ -166,8 +168,9 @@ final class ApplicationUninstallViewModel {
             }
             .map(\.path)
 
-        Task { @MainActor [weak self] in
+        uninstallTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { uninstallTask = nil }
             var failures = 0
             var trashedApp = false
             for path in paths {
@@ -196,4 +199,8 @@ final class ApplicationUninstallViewModel {
             }
         }
     }
+
+    // Await real operation completion in tests instead of relying on a wall-clock polling budget.
+    func waitForLoadingForTesting() async { await loadTask?.value }
+    func waitForUninstallForTesting() async { await uninstallTask?.value }
 }

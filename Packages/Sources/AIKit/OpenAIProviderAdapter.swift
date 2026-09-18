@@ -58,7 +58,7 @@ public struct OpenAIProviderAdapter: AIProviderAdapter {
                 providerID: .openAI,
                 id: id,
                 displayName: id,
-                capabilities: [.textInput, .textOutput, .toolCalling],
+                capabilities: Set<AIModelCapability>([.textInput, .textOutput, .toolCalling]).union(AIImageInput.supports(providerID: .openAI, modelID: id) ? [.imageInput] : []),
                 capabilityEvidence: .curated
             )
         }
@@ -150,7 +150,7 @@ public struct OpenAIProviderAdapter: AIProviderAdapter {
         if let temperature = request.temperature {
             body["temperature"] = .number(temperature)
         }
-        return .object(body)
+        return try request.attachingImage(to: .object(body), providerID: .openAI)
     }
 
     private func makeInputItems(

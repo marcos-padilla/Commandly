@@ -12,6 +12,7 @@ import DesignSystem
 import SearchKit
 import CalculatorKit
 import SwiftUI
+import Synchronization
 
 struct CommandlyTests {
     @Test @MainActor func compactWindowChromeRehidesAWindowTitleRestoredBySwiftUI() {
@@ -229,7 +230,8 @@ struct CommandlyTests {
             permissionService: InMemoryPermissionService(),
             privacySettingsOpener: InMemoryPrivacySettingsOpener(),
             initialStep: .ready,
-            onFinished: { finished = true }
+            onFinished: { finished = true },
+            celebrationDelay: {}
         )
 
         viewModel.handleOptionSpaceHotkey()
@@ -238,7 +240,7 @@ struct CommandlyTests {
         #expect(settings.load().hasConfirmedOptionSpaceHotkey)
         #expect(viewModel.showsPrimaryAction == false)
 
-        await waitUntil(timeoutNanoseconds: 2_500_000_000) { finished }
+        await viewModel.waitForActivationForTesting()
         #expect(finished)
         #expect(viewModel.hotkeyPhase == .finished)
     }
@@ -421,6 +423,20 @@ struct CommandlyTests {
         #expect(viewModel.footerActions.contains { $0.id == BuiltInCommandActionID.copy })
     }
 
+    @Test @MainActor func launcherStartsRegisteredApplicationExecutionDuringConfirmation() {
+        let coordinator = ImmediateRecordingCommandCoordinator()
+        let viewModel = LauncherViewModel(
+            clipboardHistoryStore: ClipboardHistoryStore(),
+            commandCoordinator: coordinator
+        )
+        viewModel.selectedID = BuiltInCommandID.clipboardHistory.rawValue
+
+        viewModel.confirmSelection()
+
+        #expect(coordinator.executedCommandIDs == [BuiltInCommandID.clipboardHistory])
+        #expect(coordinator.invocationSources == [.search])
+    }
+
     @Test @MainActor func launcherOpensFileSearchApplication() async throws {
         let item = FileSearchItem(
             url: URL(fileURLWithPath: "/Users/test/Documents/Plan.pdf"),
@@ -469,6 +485,11 @@ struct CommandlyTests {
         #expect(registry.children(of: groupID).map(\.id) == [TestLauncherApplication.id])
         #expect(registry.definition(for: groupID)?.kind == .group)
         #expect(registry.definition(for: TestLauncherApplication.id)?.kind == .application)
+        let tool = try #require(registry.children(of: TestLauncherApplication.id).first)
+        #expect(tool.kind == .tool)
+        #expect(tool.parentID == TestLauncherApplication.id)
+        #expect(registry.owningApplicationID(for: tool.id) == TestLauncherApplication.id)
+        #expect(registry.isLaunchableCommand(tool.id))
     }
 
     @Test @MainActor func launcherRegistryRejectsMissingParents() {
@@ -499,15 +520,23 @@ struct CommandlyTests {
 
         var appPreferences = LauncherApplicationPreferences.empty
         appPreferences.alias = "rocket"
+        appPreferences.tags = ["launch pad", "ROCKET"]
         registry.savePreferences(appPreferences, for: TestLauncherApplication.id)
 
-        let result = try await CommandSearchProvider(manifests: registry.allManifests())
+        let aliasResult = try await CommandSearchProvider(manifests: registry.allManifests())
             .search(SearchQuery(text: "rocket"))
-        #expect(result.items.map(\.id) == [TestLauncherApplication.id.rawValue])
+        #expect(aliasResult.items.map(\.id) == [TestLauncherApplication.id.rawValue])
+        let tagResult = try await CommandSearchProvider(manifests: registry.allManifests())
+            .search(SearchQuery(text: "launch pad"))
+        #expect(tagResult.items.map(\.id) == [TestLauncherApplication.id.rawValue])
         let aliasedManifest = try #require(
             registry.allManifests().first(where: { $0.id == TestLauncherApplication.id })
         )
         #expect(aliasedManifest.arguments == TestLauncherApplication().manifest.arguments)
+        #expect(aliasedManifest.keywords.contains("launch pad"))
+        #expect(aliasedManifest.keywords.filter {
+            $0.caseInsensitiveCompare("rocket") == .orderedSame
+        }.count == 1)
 
         var groupPreferences = LauncherApplicationPreferences.empty
         groupPreferences.isEnabled = false
@@ -553,6 +582,10 @@ struct CommandlyTests {
 
         model.select(BuiltInCommandID.searchFiles)
         model.setAlias("finder", for: BuiltInCommandID.searchFiles)
+        model.setTags(
+            ["documents", "Needle", " needle ", "custom files"],
+            for: BuiltInCommandID.searchFiles
+        )
         let hotKey = LauncherHotKey(keyCode: 3, modifiers: [.command, .option])
         model.setHotKey(hotKey, for: BuiltInCommandID.searchFiles)
         model.setConfiguration(
@@ -562,10 +595,18 @@ struct CommandlyTests {
         )
 
         let settings = try #require(registry.resolvedSettings(for: BuiltInCommandID.searchFiles))
-        #expect(settings.alias == "finder")
+        #expect(settings.alias.isEmpty)
+        #expect(settings.tags.contains("Needle"))
+        #expect(settings.tags.contains("custom files"))
+        #expect(settings.tags.filter {
+            $0.caseInsensitiveCompare("needle") == .orderedSame
+        }.count == 1)
+        #expect(settings.tags.filter {
+            $0.caseInsensitiveCompare("documents") == .orderedSame
+        }.count == 1)
         #expect(settings.hotKey == hotKey)
         #expect(settings.value(for: "showsDetails") == .boolean(false))
-        #expect(changeCount == 3)
+        #expect(changeCount == 4)
     }
 
     @Test @MainActor func applicationHotkeyPlanRejectsDuplicatesAndInvalidShortcuts() {
@@ -598,6 +639,7 @@ struct CommandlyTests {
         )
         let expected = LauncherApplicationPreferences(
             alias: "voice",
+            tags: ["audio", "meeting"],
             hotKey: hotKey,
             hasHotKeyOverride: true,
             isEnabled: false,
@@ -808,7 +850,7 @@ struct CommandlyTests {
 
         viewModel.presentActions(for: item.id)
         viewModel.performPanelAction(BuiltInCommandActionID.copyFile)
-        await waitUntil { pasteboard.currentFileURLs == [item.url] }
+        await viewModel.waitForFileCopyForTesting()
         #expect(pasteboard.currentFileURLs == [item.url])
 
         viewModel.presentActions(for: item.id)
@@ -1440,12 +1482,13 @@ struct CommandlyTests {
             return
         }
         uninstall.load()
-        await waitUntil { uninstall.isLoading == false }
+        await uninstall.waitForLoadingForTesting()
         #expect(uninstall.items.count == 2)
         #expect(uninstall.selectedPaths.count == 2)
 
         uninstall.confirmUninstall()
-        await waitUntil { viewModel.route == .root }
+        await uninstall.waitForUninstallForTesting()
+        #expect(viewModel.route == .root)
         #expect(bundles.trashedPaths.contains("/Applications/TrashMe.app"))
         #expect(bundles.trashedPaths.contains("/Users/test/Library/Caches/com.example.trash"))
         #expect(prefs.load().favoriteBundleIDs.contains(app.bundleIdentifier) == false)
@@ -1991,10 +2034,10 @@ struct CommandlyTests {
         let secondTarget = WindowPresentationTarget(
             visibleFrame: CGRect(x: 0, y: 25, width: 1_512, height: 982)
         )
-        var activeTarget = firstTarget
+        let activeTarget = MutableWindowPresentationTarget(firstTarget)
         let runtime = AppRuntime(
             container: makeTestContainer(hasCompletedOnboarding: true),
-            windowPresentationTargetProvider: { activeTarget }
+            windowPresentationTargetProvider: { activeTarget.value }
         )
         var requestsObservedByOpen: [WindowPresentationRequest] = []
         runtime.openLauncherWindow = {
@@ -2007,7 +2050,7 @@ struct CommandlyTests {
         #expect(requestsObservedByOpen == [runtime.launcherPresentationRequest])
 
         runtime.hideLauncher()
-        activeTarget = secondTarget
+        activeTarget.value = secondTarget
         runtime.showLauncher()
         #expect(runtime.launcherPresentationRequest.generation == 2)
         #expect(runtime.launcherPresentationRequest.screenTarget == secondTarget)
@@ -2153,10 +2196,10 @@ struct CommandlyTests {
         let secondTarget = WindowPresentationTarget(
             visibleFrame: CGRect(x: 0, y: 25, width: 1_512, height: 982)
         )
-        var activeTarget = firstTarget
+        let activeTarget = MutableWindowPresentationTarget(firstTarget)
         let runtime = AppRuntime(
             container: makeTestContainer(hasCompletedOnboarding: true),
-            windowPresentationTargetProvider: { activeTarget }
+            windowPresentationTargetProvider: { activeTarget.value }
         )
         var requestsObservedByOpen: [ShelfPresentationRequest] = []
         runtime.openShelfWindow = {
@@ -2170,7 +2213,7 @@ struct CommandlyTests {
         #expect(requestsObservedByOpen == [runtime.shelfPresentationRequest])
 
         runtime.hideShelf()
-        activeTarget = secondTarget
+        activeTarget.value = secondTarget
         runtime.openNewShelfFromClipboard()
         #expect(runtime.shelfPresentationRequest.generation == 2)
         #expect(runtime.shelfPresentationRequest.entryMode == .fromClipboard)
@@ -2556,12 +2599,16 @@ struct CommandlyTests {
         #expect(openedSettings)
     }
 
-    @Test @MainActor func launcherPlaceholderActionSurfacesHonestStatus() async {
+    @Test @MainActor func launcherScheduleOpensARegisteredApplicationInsteadOfAPlaceholder() async {
         let viewModel = LauncherViewModel()
+        viewModel.query = "My Schedule"
         await viewModel.flushSearchForTesting()
-        viewModel.selectedID = "my-schedule"
-        viewModel.confirmSelection()
-        #expect(viewModel.statusMessage?.contains("not implemented") == true)
+        #expect(viewModel.rootItems.contains { $0.id == ScheduleApplication.id.rawValue })
+        #expect(!viewModel.rootItems.contains { $0.id == "my-schedule" })
+        viewModel.selectedID = ScheduleApplication.id.rawValue
+        await viewModel.confirmSelectionAndWaitForTesting()
+        #expect(viewModel.route == .application(ScheduleApplication.id))
+        #expect(viewModel.activeApplicationModel(as: ScheduleViewModel.self) != nil)
     }
 
     @Test @MainActor func launcherSearchRanksCommandsAndAppsWithAutocomplete() async {
@@ -2714,19 +2761,11 @@ struct CommandlyTests {
     }
 
     @Test @MainActor func launcherOpensApplicationViaOpener() async {
-        final class Recorder: ApplicationOpening, @unchecked Sendable {
+        actor Recorder: ApplicationOpening {
             private(set) var opened: String?
-            private var continuation: CheckedContinuation<Void, Never>?
 
             func openApplication(bundleIdentifier: String) async throws {
                 opened = bundleIdentifier
-                continuation?.resume()
-                continuation = nil
-            }
-
-            func waitUntilOpened() async {
-                if opened != nil { return }
-                await withCheckedContinuation { continuation = $0 }
             }
         }
         let recorder = Recorder()
@@ -2743,12 +2782,8 @@ struct CommandlyTests {
         viewModel.query = "Example"
         await viewModel.flushSearchForTesting()
         viewModel.selectedID = "app:com.example.app"
-        viewModel.confirmSelection()
-        await recorder.waitUntilOpened()
-        #expect(recorder.opened == "com.example.app")
-        // `dismiss()` runs on the MainActor after `openApplication` returns; yield so
-        // the confirming task can finish before we assert.
-        await yieldMainQueue()
+        await viewModel.confirmSelectionAndWaitForTesting()
+        #expect(await recorder.opened == "com.example.app")
         #expect(dismissed)
     }
 
@@ -2871,18 +2906,14 @@ struct CommandlyTests {
         #expect(settings.load().prefersCommandlyEmojiPicker)
 
         viewModel.setOpensAtLogin(true)
-        await waitUntil {
-            await loginItems.status() == .enabled && settings.load().opensAtLogin
-        }
+        await viewModel.waitForLoginItemUpdateForTesting()
 
         #expect(viewModel.opensAtLogin)
         #expect(settings.load().opensAtLogin)
         #expect(await loginItems.status() == .enabled)
 
         viewModel.setOpensAtLogin(false)
-        await waitUntil {
-            await loginItems.status() == .disabled && settings.load().opensAtLogin == false
-        }
+        await viewModel.waitForLoginItemUpdateForTesting()
 
         #expect(viewModel.opensAtLogin == false)
         #expect(settings.load().opensAtLogin == false)
@@ -2902,9 +2933,7 @@ struct CommandlyTests {
         )
 
         viewModel.setOpensAtLogin(true)
-        await waitUntil {
-            viewModel.loginItemErrorMessage != nil
-        }
+        await viewModel.waitForLoginItemUpdateForTesting()
 
         #expect(viewModel.opensAtLogin == false)
         #expect(settings.load().opensAtLogin == false)
@@ -3056,6 +3085,34 @@ private final class RecordingPrivacySettingsOpener: PrivacySettingsOpening, @unc
     }
 }
 
+private final class ImmediateRecordingCommandCoordinator: SharedCommandExecutionCoordinating {
+    private struct State: Sendable {
+        var executedCommandIDs: [CommandID] = []
+        var invocationSources: [CommandInvocationSource] = []
+    }
+
+    private let state = Mutex(State())
+
+    var executedCommandIDs: [CommandID] {
+        state.withLock { $0.executedCommandIDs }
+    }
+
+    var invocationSources: [CommandInvocationSource] {
+        state.withLock { $0.invocationSources }
+    }
+
+    func execute(
+        reference: CommandReference,
+        context: CommandInvocationContext
+    ) async throws -> CommandResult {
+        state.withLock {
+            $0.executedCommandIDs.append(reference.commandID)
+            $0.invocationSources.append(context.source)
+        }
+        return .success(message: nil)
+    }
+}
+
 private struct MissingAccessFileSearchService: FileSearching {
     func search(_ request: FileSearchRequest) async throws -> [FileSearchItem] {
         _ = request
@@ -3067,11 +3124,15 @@ private actor FileEventRecorder {
     private var paths: Set<String> = []
 
     func record(_ newPaths: [String]) {
-        paths.formUnion(newPaths)
+        paths.formUnion(newPaths.map(Self.canonicalPath))
     }
 
     func contains(path: String) -> Bool {
-        paths.contains(path)
+        paths.contains(Self.canonicalPath(path))
+    }
+
+    private nonisolated static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 }
 

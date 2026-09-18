@@ -4,20 +4,28 @@ import CommandKit
 /// Visual grouping inside the launcher list.
 enum LauncherSectionKind: String, CaseIterable, Identifiable, Sendable {
     case calculator
+    case color
     case gettingStarted
     case suggestions
     case commands
     case applications
+    case tools
+    case clipboard
+    case files
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .calculator: return "Calculator"
+        case .color: return "Color"
         case .gettingStarted: return "Getting Started"
         case .suggestions: return "Suggestions"
         case .commands: return "Commands"
         case .applications: return "Applications"
+        case .tools: return "Tools"
+        case .clipboard: return "Clipboard History"
+        case .files: return "Files"
         }
     }
 }
@@ -30,8 +38,12 @@ enum LauncherItemBadge: String, Sendable, Equatable {
     case settings
     case placeholder
     case calculator
+    case color
     case favorite
     case disabled
+    case tool
+    case clipboard
+    case file
 
     var title: String {
         switch self {
@@ -41,8 +53,12 @@ enum LauncherItemBadge: String, Sendable, Equatable {
         case .settings: return "Settings"
         case .placeholder: return "Soon"
         case .calculator: return "Calculator"
+        case .color: return "Color"
         case .favorite: return "Favorite"
         case .disabled: return "Disabled"
+        case .tool: return "Tool"
+        case .clipboard: return "Clipboard"
+        case .file: return "File"
         }
     }
 }
@@ -50,12 +66,17 @@ enum LauncherItemBadge: String, Sendable, Equatable {
 /// What happens when a launcher row is confirmed.
 enum LauncherItemAction: Sendable, Equatable {
     case openSettings
+    case openFileSearchPermissions
     case dismiss
     case launchApplication(CommandID)
+    case executeCommand(CommandReference)
     case openInstalledApplication(bundleIdentifier: String)
     case placeholder(message: String)
     case copyText(String)
     case calculatorPrimary(resultID: String)
+    case colorPrimary(resultID: String)
+    case copyClipboardEntry(UUID)
+    case openFile(URL)
 }
 
 /// Visual icon for a launcher row.
@@ -153,16 +174,6 @@ enum LauncherPlaceholderCatalog {
             badge: .walkthrough,
             keywords: ["tour", "onboarding", "help", "start"],
             action: .placeholder(message: "Walkthrough will arrive in a later build.")
-        ),
-        LauncherItem(
-            id: "my-schedule",
-            section: .suggestions,
-            title: "My Schedule",
-            subtitle: "Upcoming calendar events",
-            systemImage: "calendar",
-            badge: .command,
-            keywords: ["calendar", "meetings"],
-            action: .placeholder(message: "Calendar commands are not implemented yet.")
         ),
         LauncherItem(
             id: "quit-commandly",

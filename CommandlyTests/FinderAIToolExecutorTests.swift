@@ -25,9 +25,10 @@ struct FinderAIToolExecutorTests {
             "finder_duplicate",
             "finder_copy",
             "finder_move",
-            "finder_trash"
+            "finder_trash",
+            "finder_convert_image"
         ])
-        #expect(definitions.count == 12)
+        #expect(definitions.count == 13)
 
         for definition in definitions {
             try definition.validate()

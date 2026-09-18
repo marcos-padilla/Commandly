@@ -43,6 +43,7 @@ final class WindowLayoutsViewModel {
     var customWidth = 0.8
     var customHeight = 0.8
 
+    @ObservationIgnored private var applyGeneration = UUID()
     @ObservationIgnored private var applyTask: Task<Void, Never>?
 
     init(
@@ -147,6 +148,8 @@ final class WindowLayoutsViewModel {
 
     var customDraftIsValid: Bool {
         customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && customTitle.utf8.count <= 160 && customLayouts.count < 256
+            && !customTitle.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
             && customDraftRect.isValid
     }
 
@@ -192,15 +195,21 @@ final class WindowLayoutsViewModel {
         statusMessage = nil
         showsActionsMenu = false
         applyTask?.cancel()
+        let invocation = applyGeneration
         applyTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await service.apply(rect: preset.rect)
-                guard Task.isCancelled == false else { return }
+                guard Task.isCancelled == false, applyGeneration == invocation else { return }
                 statusMessage = "Applied \(preset.title)."
+            } catch let error as CompanionWindowLayoutApplicationError {
+                guard Task.isCancelled == false, applyGeneration == invocation else { return }
+                statusMessage = error.localizedDescription
             } catch let error as WindowLayoutServiceError {
+                guard Task.isCancelled == false, applyGeneration == invocation else { return }
                 statusMessage = error.message
             } catch {
+                guard Task.isCancelled == false, applyGeneration == invocation else { return }
                 statusMessage = WindowLayoutServiceError.operationFailed.message
             }
             isApplying = false
@@ -264,6 +273,9 @@ final class WindowLayoutsViewModel {
     }
 
     func stop() {
+        applyGeneration = UUID()
+        service.cancelPending()
+        isApplying = false
         applyTask?.cancel()
         applyTask = nil
     }

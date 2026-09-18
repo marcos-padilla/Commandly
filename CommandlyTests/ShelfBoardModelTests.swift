@@ -246,6 +246,33 @@ struct ShelfBoardModelTests {
     }
 
     @Test @MainActor
+    func clipboardImportFinishingAfterTearDownCannotReviveClosedShelfState() async throws {
+        let fixture = try ShelfTemporaryFixture()
+        defer { fixture.remove() }
+        let pasteboard = SuspendedShelfPasteboard()
+        let model = makeShelfModel(pasteboard: pasteboard)
+
+        model.perform { model in
+            await model.addFromClipboard()
+        }
+        for _ in 0..<100 {
+            if await pasteboard.hasPendingRead { break }
+            await Task.yield()
+        }
+        #expect(await pasteboard.hasPendingRead)
+
+        model.tearDown()
+        await pasteboard.finishRead(with: .fileURLs([fixture.file]))
+        await Task.yield()
+
+        #expect(model.items.isEmpty)
+        #expect(model.statusMessage == nil)
+        #expect(model.errorMessage == nil)
+        #expect(model.isPerformingAction == false)
+        #expect(model.isLoadingActionOptions == false)
+    }
+
+    @Test @MainActor
     func clipboardEntryModeMaterializesTextExactlyOnceAsTemporaryContent() async throws {
         let fixture = try ShelfTemporaryFixture()
         defer { fixture.remove() }
@@ -651,7 +678,7 @@ private func makeShelfModel(
     fileActions: InMemoryFileCollectionActionService = InMemoryFileCollectionActionService(),
     fileRevealer: any FileRevealing = InMemoryFileRevealer(),
     urlOpener: any URLOpening = NoOpURLOpener(),
-    pasteboard: InMemoryPasteboard = InMemoryPasteboard(),
+    pasteboard: any PasteboardAccessing = InMemoryPasteboard(),
     previewPresenter: InMemoryFilePreviewPresenter = InMemoryFilePreviewPresenter(),
     dropFeedback: any ShelfDropFeedbackPlaying = NoOpShelfDropFeedbackPlayer(),
     temporaryContentStore: any ShelfTemporaryContentStoring = InMemoryShelfTemporaryContentStore(),
@@ -715,6 +742,41 @@ private actor RecordingShelfURLOpener: URLOpening {
 
     func openURL(_ url: URL) async throws {
         urls.append(url)
+    }
+}
+
+private actor SuspendedShelfPasteboard: PasteboardAccessing {
+    private var continuation: CheckedContinuation<PasteboardContent?, Never>?
+
+    var hasPendingRead: Bool {
+        continuation != nil
+    }
+
+    func readString() -> String? {
+        nil
+    }
+
+    func readFileURLs() -> [URL] {
+        []
+    }
+
+    func readContent() async -> PasteboardContent? {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func writeString(_ string: String) {
+        _ = string
+    }
+
+    func writeFileURLs(_ urls: [URL]) {
+        _ = urls
+    }
+
+    func finishRead(with content: PasteboardContent?) {
+        continuation?.resume(returning: content)
+        continuation = nil
     }
 }
 

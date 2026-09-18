@@ -29,22 +29,67 @@ protocol ColorSampling: AnyObject {
 @MainActor
 final class SystemColorSampler: ColorSampling {
     func sample() async -> CommandlyColor? {
-        await withCheckedContinuation { continuation in
-            NSColorSampler().show { color in
-                guard let color, let converted = color.usingColorSpace(.sRGB) else {
-                    continuation.resume(returning: nil)
+        let continuationGate = ColorSamplingContinuationGate()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                continuationGate.install(continuation)
+                guard Task.isCancelled == false else {
+                    continuationGate.resume(returning: nil)
                     return
                 }
-                continuation.resume(
-                    returning: CommandlyColor(
-                        red: converted.redComponent,
-                        green: converted.greenComponent,
-                        blue: converted.blueComponent,
-                        alpha: converted.alphaComponent
+                NSColorSampler().show { color in
+                    guard let color, let converted = color.usingColorSpace(.sRGB) else {
+                        continuationGate.resume(returning: nil)
+                        return
+                    }
+                    continuationGate.resume(
+                        returning: CommandlyColor(
+                            red: converted.redComponent,
+                            green: converted.greenComponent,
+                            blue: converted.blueComponent,
+                            alpha: converted.alphaComponent
+                        )
                     )
-                )
+                }
             }
+        } onCancel: {
+            continuationGate.resume(returning: nil)
         }
+    }
+}
+
+/// Bridges AppKit's callback and task cancellation into one continuation result.
+///
+/// `@unchecked Sendable` is safe here because every read and write of the
+/// continuation and completion flag is serialized by `lock`. The winning path
+/// removes the continuation while holding the lock and resumes it afterward,
+/// so the AppKit callback and cancellation handler cannot resume it twice.
+private nonisolated final class ColorSamplingContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<CommandlyColor?, Never>?
+    private var isCompleted = false
+
+    func install(_ continuation: CheckedContinuation<CommandlyColor?, Never>) {
+        let shouldResumeImmediately = lock.withLock {
+            guard isCompleted == false else { return true }
+            self.continuation = continuation
+            return false
+        }
+        if shouldResumeImmediately {
+            continuation.resume(returning: nil)
+        }
+    }
+
+    func resume(returning color: CommandlyColor?) {
+        let continuation = lock.withLock {
+            guard isCompleted == false else {
+                return Optional<CheckedContinuation<CommandlyColor?, Never>>.none
+            }
+            isCompleted = true
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume(returning: color)
     }
 }
 

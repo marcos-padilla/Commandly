@@ -33,7 +33,8 @@ enum BinaryOperator: Sendable, Equatable {
 ///
 /// Precedence (low → high):
 /// 1. `+` `-` (left-associative)
-/// 2. `*` `/` `%`(modulo) (left-associative); contextual `+ %` / `- %` handled specially
+/// 2. `*` `/` `%`(modulo) and `% of` (left-associative);
+///    contextual `+ %` / `- %` handled specially
 /// 3. unary `+` `-`
 /// 4. `^` (right-associative)
 /// 5. postfix `%`
@@ -97,6 +98,16 @@ struct CalculatorParser: Sendable {
                 } else {
                     left = .binary(op, left, right)
                 }
+                continue
+            }
+
+            // Percentage-of is part of the expression grammar so either side
+            // can be grouped, calculated, or supplied by a function.
+            if check(.percent), nextTokenIsIdentifier("of") {
+                advance()
+                advance()
+                let right = try parseUnary()
+                left = .percentOf(left, right)
                 continue
             }
 
@@ -182,12 +193,17 @@ struct CalculatorParser: Sendable {
                 var args: [Expression] = []
                 if !check(.rightParen) {
                     repeat {
-                        // Argument lists use commas; stop an argument before comma/paren.
-                        args.append(try parseExpressionStoppingAtComma())
-                    } while match(.comma)
+                        // Argument lists stop before commas, semicolons
+                        // (normalized to commas), conjunctions, or `)`.
+                        args.append(try parseExpressionStoppingAtArgumentSeparator())
+                    } while matchArgumentSeparator()
                 }
                 try consume(.rightParen, message: "Expected ')' after arguments")
                 return .call(name, args)
+            }
+
+            if CalculatorScientific.prefixFunctionNames.contains(name), canStartPrefixArgument() {
+                return .call(name, [try parseUnary()])
             }
 
             // Constant or bare identifier (unit names handled outside expression parser).
@@ -203,9 +219,9 @@ struct CalculatorParser: Sendable {
         throw CalculatorError.unexpectedToken(peek.lexeme.isEmpty ? "end" : peek.lexeme, peek.location)
     }
 
-    private mutating func parseExpressionStoppingAtComma() throws -> Expression {
-        // Same as parseExpression, but callers stop at comma via check in the arg loop.
-        // The additive parser naturally stops before comma because comma is not an operator.
+    private mutating func parseExpressionStoppingAtArgumentSeparator() throws -> Expression {
+        // The additive parser naturally stops before a separator because
+        // commas and conjunctions are not expression operators.
         try parseAdditive()
     }
 
@@ -215,8 +231,8 @@ struct CalculatorParser: Sendable {
         switch peek.kind {
         case .leftParen:
             return true
-        case .identifier:
-            return true
+        case .identifier(let name):
+            return name != "and"
         case .number:
             // 2 3 is ambiguous — disallow bare number juxtaposition.
             return false
@@ -246,6 +262,38 @@ struct CalculatorParser: Sendable {
         default:
             return false
         }
+    }
+
+    private func nextTokenIsIdentifier(_ name: String) -> Bool {
+        guard current + 1 < tokens.count,
+              case .identifier(let identifier) = tokens[current + 1].kind
+        else {
+            return false
+        }
+        return identifier == name
+    }
+
+    private func canStartPrefixArgument() -> Bool {
+        switch peek.kind {
+        case .number, .identifier, .leftParen, .plus, .minus:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private mutating func matchArgumentSeparator() -> Bool {
+        if match(.comma) {
+            if check(.identifier("and")) {
+                advance()
+            }
+            return true
+        }
+        guard check(.identifier("and")) else {
+            return false
+        }
+        advance()
+        return true
     }
 
     private var isAtEnd: Bool {
@@ -331,14 +379,11 @@ struct CalculatorParser: Sendable {
     }
 }
 
-/// Phrase-level percentage rewriter for `20% of 350`, tip/tax/discount forms.
+/// Phrase-level percentage rewriter for tip/tax/discount and business forms.
 enum PercentagePhraseParser {
     static func parse(_ text: String) -> (expression: Expression, tag: String?)? {
         let lowered = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s*%\s*of\s*([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
-            return makePercentOf(percent: match.0, base: match.1, tagged: nil)
-        }
         if let match = matchPattern(#"^([-+]?[0-9][0-9.,]*)\s*%\s*tip\s+on\s*([-+]?[0-9][0-9.,]*)$"#, in: lowered) {
             return makePercentOf(percent: match.0, base: match.1, tagged: "tip")
         }

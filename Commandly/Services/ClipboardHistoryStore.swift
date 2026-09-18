@@ -28,7 +28,7 @@ enum ClipboardContentType: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// One captured clipboard entry. Contents must never be logged.
-struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
+nonisolated struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     let id: UUID
     let createdAt: Date
     let contentType: ClipboardContentType
@@ -43,6 +43,8 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     /// Vision classification labels (e.g. Flower). Indexed at capture time.
     var classificationLabels: [String]
     var enrichmentStatus: ClipboardEnrichmentStatus
+    /// Names, collections, and pins share the entry's in-memory lifetime.
+    var organization: ClipboardEntryOrganization
 
     init(
         id: UUID,
@@ -56,7 +58,8 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
         sourceBundleIdentifier: String?,
         searchableText: String? = nil,
         classificationLabels: [String] = [],
-        enrichmentStatus: ClipboardEnrichmentStatus = .notNeeded
+        enrichmentStatus: ClipboardEnrichmentStatus = .notNeeded,
+        organization: ClipboardEntryOrganization = ClipboardEntryOrganization()
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -70,7 +73,10 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
         self.searchableText = searchableText
         self.classificationLabels = classificationLabels
         self.enrichmentStatus = enrichmentStatus
+        self.organization = organization
     }
+
+    var displayTitle: String { organization.name ?? preview }
 
     var characterCount: Int {
         text?.count ?? 0
@@ -88,7 +94,7 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
 }
 
 /// Helpers for recognizing image paths among clipboard file URLs.
-enum ClipboardImageFile {
+nonisolated enum ClipboardImageFile {
     private static let imageExtensions: Set<String> = [
         "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp", "ico"
     ]
@@ -135,7 +141,7 @@ final class ClipboardHistoryStore {
         uuidProvider: @escaping () -> UUID = UUID.init,
         enricher: any ClipboardContentEnriching = NoOpClipboardContentEnricher()
     ) {
-        self.maxEntries = maxEntries
+        self.maxEntries = max(1, maxEntries)
         self.pasteboard = pasteboard
         self.lastChangeCount = pasteboard.changeCount
         self.dateProvider = dateProvider
@@ -189,6 +195,62 @@ final class ClipboardHistoryStore {
 
     func entry(id: UUID) -> ClipboardHistoryEntry? {
         entries.first { $0.id == id }
+    }
+
+    /// Searches only values captured or enriched when the clipboard entry was recorded.
+    ///
+    /// This never reads the live pasteboard and never reruns Vision, PDFKit, or file extraction.
+    func searchEntries(matching query: String, limit: Int) -> [ClipboardHistoryEntry] {
+        let needle = query
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        guard needle.isEmpty == false, limit > 0 else { return [] }
+
+        return entries
+            .compactMap { entry -> (ClipboardHistoryEntry, Int)? in
+                let primary = [entry.organization.name, entry.preview, entry.text]
+                    .compactMap { $0 }
+                    .map(Self.normalizedSearchValue)
+                let secondary = [
+                    entry.sourceAppName,
+                    entry.organization.collection,
+                    entry.searchableText,
+                    entry.fileURLs.first?.lastPathComponent
+                ]
+                .compactMap { $0 }
+                .map(Self.normalizedSearchValue)
+                + entry.classificationLabels.map(Self.normalizedSearchValue)
+
+                let score: Int
+                if primary.contains(needle) {
+                    score = 4
+                } else if primary.contains(where: { $0.hasPrefix(needle) }) {
+                    score = 3
+                } else if primary.contains(where: { $0.contains(needle) }) {
+                    score = 2
+                } else if secondary.contains(where: { $0.contains(needle) }) {
+                    score = 1
+                } else {
+                    return nil
+                }
+                return (entry, score)
+            }
+            .sorted { left, right in
+                if left.1 != right.1 { return left.1 > right.1 }
+                if left.0.organization.isPinned != right.0.organization.isPinned {
+                    return left.0.organization.isPinned
+                }
+                return left.0.createdAt > right.0.createdAt
+            }
+            .prefix(limit)
+            .map(\.0)
+    }
+
+    private static func normalizedSearchValue(_ value: String) -> String {
+        value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
     }
 
     /// Writes `entry` back to the pasteboard without appending a new history item.
@@ -247,7 +309,8 @@ final class ClipboardHistoryStore {
             fileURLs: [],
             sourceAppName: original.sourceAppName,
             sourceBundleIdentifier: original.sourceBundleIdentifier,
-            enrichmentStatus: .notNeeded
+            enrichmentStatus: .notNeeded,
+            organization: original.organization
         )
         writeTextToPasteboard(normalized)
         return true
@@ -265,6 +328,42 @@ final class ClipboardHistoryStore {
     func delete(id: UUID) {
         enrichmentCoordinator.cancel(id: id)
         entries.removeAll { $0.id == id }
+    }
+
+    /// Changes display metadata without rewriting the clipboard or its captured payload.
+    func updateOrganization(id: UUID, name: String, collection: String) throws {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else {
+            throw ClipboardOrganizationError.entryMissing
+        }
+        let normalizedName = ClipboardEntryOrganization.normalized(name)
+        let normalizedCollection = ClipboardEntryOrganization.normalized(collection)
+        guard (normalizedName?.count ?? 0) <= ClipboardEntryOrganization.maximumNameLength else {
+            throw ClipboardOrganizationError.nameTooLong
+        }
+        guard (normalizedCollection?.count ?? 0)
+            <= ClipboardEntryOrganization.maximumCollectionLength else {
+            throw ClipboardOrganizationError.collectionTooLong
+        }
+        entries[index].organization.name = normalizedName
+        // Reuse the first spelling of an existing collection for a stable filter identity.
+        entries[index].organization.collection = normalizedCollection.map { candidate in
+            entries.compactMap(\.organization.collection).first {
+                $0.compare(candidate, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            } ?? candidate
+        }
+    }
+
+    /// Pins keep their payload in the bounded history until explicitly removed or unpinned.
+    /// One slot is reserved for fresh captures so a fully pinned history cannot stop recording.
+    func setPinned(_ isPinned: Bool, id: UUID) throws {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else {
+            throw ClipboardOrganizationError.entryMissing
+        }
+        if isPinned, entries[index].organization.isPinned == false,
+           entries.filter({ $0.organization.isPinned }).count >= maxEntries - 1 {
+            throw ClipboardOrganizationError.pinLimitReached
+        }
+        entries[index].organization.isPinned = isPinned
     }
 
     func clear() {
@@ -321,12 +420,12 @@ final class ClipboardHistoryStore {
             stored.enrichmentStatus = .pending
         }
         entries.insert(stored, at: 0)
-        if entries.count > maxEntries {
-            let removed = entries.suffix(from: maxEntries)
-            for stale in removed {
-                enrichmentCoordinator.cancel(id: stale.id)
-            }
-            entries = Array(entries.prefix(maxEntries))
+        while entries.count > maxEntries {
+            // Preserve pinned entries without changing chronological storage or copy deduplication.
+            let removalIndex = entries.lastIndex { $0.organization.isPinned == false }
+                ?? entries.index(before: entries.endIndex)
+            enrichmentCoordinator.cancel(id: entries[removalIndex].id)
+            entries.remove(at: removalIndex)
         }
         if stored.enrichmentStatus == .pending {
             enrichmentCoordinator.enqueue(stored)

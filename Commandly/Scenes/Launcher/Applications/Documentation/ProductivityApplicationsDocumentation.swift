@@ -67,6 +67,12 @@ extension RegisteredApplicationDocumentation {
                 id: "downloads.browse",
                 title: "Browse Recent Downloads",
                 blocks: [
+                    .bullets("downloads.browse.tools", [
+                        "Open Recent Downloads opens the bounded Downloads list for browsing.",
+                        "Open Newest Download waits for that same list to load successfully, then opens its newest available file through Commandly's existing local open behavior.",
+                        "Copy Newest Download also waits for the bounded list, then writes the newest file URL through the existing local pasteboard behavior. It does not read file contents or bypass the normal Downloads provider.",
+                        "All three tools are searchable and can receive individual global shortcuts in Settings → Applications."
+                    ]),
                     .paragraph(
                         "downloads.browse.summary",
                         "Recent Downloads scans visible regular files at the top level of your Downloads folder. It orders items by date added, then uses creation and modification dates as fallbacks."
@@ -117,6 +123,10 @@ extension RegisteredApplicationDocumentation {
                 id: "timers.create",
                 title: "Start a Timer",
                 blocks: [
+                    .bullets("timers.create.tools", [
+                        "Open Timers opens the timer list so you can review and manage existing countdowns and focus sessions.",
+                        "New Timer is a focused launcher tool that opens a blank countdown draft. It does not start a timer until you enter valid details and press Return."
+                    ]),
                     .steps("timers.create.steps", [
                         "Open Timers & Focus. Choose the 25-minute Focus preset, the 5-minute Short Break preset, or New Timer.",
                         "For a custom timer, enter a nonempty name and a duration from 1 to 1,440 minutes.",
@@ -190,8 +200,8 @@ extension RegisteredApplicationDocumentation {
                 title: "Four Reusable Item Types",
                 blocks: [
                     .bullets("library.types.items", [
-                        "Snippet stores reusable text or code. Every {{clipboard}} token is replaced with the current clipboard string when the snippet is copied.",
-                        "Quick Note stores persistent local text that can be searched and copied.",
+                        "Snippet stores reusable text or code. Use {{clipboard}}, {{date}}, {{time}}, {{datetime}}, and {{uuid}} for copy-time values, or {{input:Name}} to prompt for a value. Inserted text is never expanded again.",
+                        "Quick Note stores persistent local text that can be searched and copied. Open Floating Note keeps an existing note in an independent window; New Floating Note opens a blank one. Save with Command-S or Save & Close with Command-Return. Unsaved close/quit requests offer save, discard, or keep editing.",
                         "Quicklink opens a validated HTTP or HTTPS URL, file URL, absolute or ~/ path, folder path, or custom application deep link.",
                         "Emoji Keyword pairs a searchable title or keyword with an emoji value that is copied on use."
                     ]),
@@ -219,13 +229,20 @@ extension RegisteredApplicationDocumentation {
                 id: "library.manage",
                 title: "Create, Find, and Manage Items",
                 blocks: [
+                    .bullets("library.manage.tools", [
+                        "Open Productivity Library opens the searchable library without starting an edit.",
+                        "New Snippet, New Quick Note, New Quicklink, and New Emoji Keyword each open the matching blank editor.",
+                        "The focused New tools do not save automatically. Required-field and Quicklink validation still run, and you must choose Save to create the item."
+                    ]),
                     .steps("library.manage.steps", [
                         "Use the plus menu to choose Snippet, Quick Note, Quicklink, or Emoji Keyword.",
                         "Enter a title and content, then choose Save in the editor. Return inserts a new line in multiline content.",
-                        "Search titles, contents, and type names, or choose a type filter.",
+                        "Add comma-separated tags to organize snippets, Quicklinks, and notes. Search titles, contents, type names, and tags, or combine the type and Tag filters.",
                         "Use the selected item's primary action to copy text and emoji items or open a Quicklink. Use Command-K for Edit, Delete, and New Item."
                     ]),
                     .bullets("library.manage.details", [
+                        "Tags are limited to 12 per item and 32 characters each. Duplicate tags ignore capitalization.",
+                        "Named snippet fields open a temporary form. Fill every field, then choose Copy Snippet. Cancel or Escape discards those values without changing the clipboard.",
                         "Delete requires confirmation.",
                         "The detail pane can share an item's content through the native macOS share sheet.",
                         "Escape closes confirmation, actions, or the editor before it clears search or returns to the launcher."
@@ -273,7 +290,7 @@ extension RegisteredApplicationDocumentation {
                 title: "Open, Stage, and Use Items",
                 blocks: [
                     .steps("shelf.open.steps", [
-                        "Use the system-wide New Shelf or New Shelf From Clipboard shortcut, choose either command from Commandly's menu bar item, or search for Shelf in the launcher and press Return. Each new board opens on the display that is active when you invoke it.",
+                        "Use the system-wide New Shelf or New Shelf From Clipboard shortcut, choose either command from Commandly's menu bar item, or search for Shelf in the launcher and press Return. Each new board opens on the display that is active when you invoke it, follows active desktops across displays while open, and stays reachable after display changes.",
                         "Drop one or more files or folders on the board. A blue outline and an incoming-item prompt confirm the target without relying on color alone. New Shelf From Clipboard accepts text, standalone images, files, and folders.",
                         "Choose the semantic item count, such as 2 images or 3 PDFs, to inspect the grid, toggle a multi-item selection, and drag the active items into Finder or another compatible app. Drag-out is copy-only, so originals are never moved or deleted and the Shelf references remain.",
                         "When a drag enters Shelf, drop directly on the native AirDrop, Messages, or Mail targets below the board to open that sharing service without first staging the files."

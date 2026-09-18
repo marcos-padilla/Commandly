@@ -30,5 +30,20 @@ Status legend: ✅ done · 🚧 in progress · 🔜 next · ⏳ later
 21. ✅ **Command Wheel** — configurable radial profiles over the shared command engine, with
     hold/release and toggle input, keyboard navigation, submenus, context rules, dynamic
     recent/frequent commands, multi-display placement, accessible Settings, and versioned transfer
+22. ✅ **Recurring finance foundation** — local subscription ledger, normalized dashboard metrics,
+    category spending, renewal calendar, and subscription-backed category budgets; bank accounts,
+    transactions, investments, debt, tax, goals, and sync remain later privacy-reviewed work
+23. 🚧 **Window Switcher foundation/prototype** — contracts, in-memory adapters, a 28-field settings
+    schema, original presentation work, and deterministic tests exist, but the production runtime is
+    unregistered and disabled. Apple's
+    [App Sandbox guidance](https://developer.apple.com/documentation/security/protecting-user-data-with-app-sandbox)
+    makes the needed cross-application assistive Accessibility/termination boundary incompatible
+    with sandboxed Commandly. A separately signed non-sandboxed companion or disabling App Sandbox
+    for direct distribution requires a new
+    explicit architecture, security, and distribution decision; neither is currently authorized.
+24. ✅ **Markdown Preview foundation** — original registered reader, dependency-free safe renderer,
+    schema-driven appearance/rendering/navigation settings, bounded local images, search/source/
+    outline/reload/HTML/PDF/print workflows, and a sandboxed Finder Quick Look extension; signed
+    Finder registration and release-matrix validation remain distribution work
 
 Do not implement later phases under the guise of foundation work.
