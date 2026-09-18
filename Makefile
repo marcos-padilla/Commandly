@@ -1,4 +1,4 @@
-.PHONY: doctor bootstrap build test lint format verify clean open
+.PHONY: doctor bootstrap build test lint format verify boundaries new-module clean open
 
 doctor:
 	./scripts/doctor.sh
@@ -20,6 +20,12 @@ format:
 
 verify:
 	./scripts/verify.sh
+
+boundaries:
+	./scripts/check-module-boundaries.sh
+
+new-module:
+	./scripts/new-module.sh $(NAME)
 
 clean:
 	./scripts/clean.sh

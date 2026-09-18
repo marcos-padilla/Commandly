@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 /// Lifecycle of a Commandly countdown.
-enum CountdownTimerPhase: String, Sendable, Equatable, CaseIterable {
+public enum CountdownTimerPhase: String, Sendable, Equatable, CaseIterable {
     case ready
     case running
     case paused
@@ -11,18 +11,18 @@ enum CountdownTimerPhase: String, Sendable, Equatable, CaseIterable {
 }
 
 /// One named countdown managed by ``TimerStore``.
-struct CountdownTimer: Identifiable, Sendable, Equatable {
-    let id: UUID
-    let createdAt: Date
-    let totalDuration: TimeInterval
-    private(set) var name: String
-    private(set) var phase: CountdownTimerPhase
-    private(set) var completedAt: Date?
+public struct CountdownTimer: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let createdAt: Date
+    public let totalDuration: TimeInterval
+    public private(set) var name: String
+    public private(set) var phase: CountdownTimerPhase
+    public private(set) var completedAt: Date?
 
     private var remainingWhenStopped: TimeInterval
     private var runningSince: Date?
 
-    init(
+    public init(
         id: UUID,
         name: String,
         duration: TimeInterval,
@@ -40,7 +40,7 @@ struct CountdownTimer: Identifiable, Sendable, Equatable {
     }
 
     /// Remaining duration derived from an absolute start time, avoiding per-tick drift.
-    func remaining(at date: Date) -> TimeInterval {
+    public func remaining(at date: Date) -> TimeInterval {
         guard phase == .running, let runningSince else {
             return max(0, remainingWhenStopped)
         }
@@ -48,7 +48,7 @@ struct CountdownTimer: Identifiable, Sendable, Equatable {
         return max(0, remainingWhenStopped - elapsed)
     }
 
-    func elapsedProgress(at date: Date) -> Double {
+    public func elapsedProgress(at date: Date) -> Double {
         guard totalDuration > 0 else { return 1 }
         let elapsed = totalDuration - remaining(at: date)
         return min(1, max(0, elapsed / totalDuration))
@@ -96,13 +96,13 @@ struct CountdownTimer: Identifiable, Sendable, Equatable {
 /// remaining value and therefore cannot accumulate timer drift.
 @Observable
 @MainActor
-final class TimerStore {
-    typealias NowProvider = @MainActor () -> Date
-    typealias CompletionHandler = @MainActor (CountdownTimer) -> Void
+public final class TimerStore {
+    public typealias NowProvider = @MainActor () -> Date
+    public typealias CompletionHandler = @MainActor (CountdownTimer) -> Void
 
-    private(set) var timers: [CountdownTimer] = []
-    private(set) var displayDate: Date
-    private(set) var isCompletionSoundEnabled: Bool
+    public private(set) var timers: [CountdownTimer] = []
+    public private(set) var displayDate: Date
+    public private(set) var isCompletionSoundEnabled: Bool
 
     @ObservationIgnored private let nowProvider: NowProvider
     @ObservationIgnored private let uuidProvider: @MainActor () -> UUID
@@ -110,7 +110,7 @@ final class TimerStore {
     @ObservationIgnored private let automaticallySchedulesTicks: Bool
     @ObservationIgnored private var tickTimer: Foundation.Timer?
 
-    init(
+    public init(
         now: @escaping NowProvider = Date.init,
         uuid: @escaping @MainActor () -> UUID = UUID.init,
         automaticallySchedulesTicks: Bool = true,
@@ -128,12 +128,12 @@ final class TimerStore {
         }
     }
 
-    var hasRunningTimers: Bool {
+    public var hasRunningTimers: Bool {
         timers.contains { $0.phase == .running }
     }
 
     @discardableResult
-    func createTimer(
+    public func createTimer(
         name: String,
         duration: TimeInterval,
         startsImmediately: Bool = true
@@ -153,24 +153,24 @@ final class TimerStore {
         return timer.id
     }
 
-    func timer(id: UUID) -> CountdownTimer? {
+    public func timer(id: UUID) -> CountdownTimer? {
         timers.first { $0.id == id }
     }
 
-    func remainingTime(for timer: CountdownTimer) -> TimeInterval {
+    public func remainingTime(for timer: CountdownTimer) -> TimeInterval {
         timer.remaining(at: displayDate)
     }
 
-    func remainingTime(for id: UUID) -> TimeInterval? {
+    public func remainingTime(for id: UUID) -> TimeInterval? {
         timer(id: id)?.remaining(at: displayDate)
     }
 
-    func elapsedProgress(for timer: CountdownTimer) -> Double {
+    public func elapsedProgress(for timer: CountdownTimer) -> Double {
         timer.elapsedProgress(at: displayDate)
     }
 
     /// Recomputes all running timers from the injected date source.
-    func refresh() {
+    public func refresh() {
         let currentDate = nowProvider()
         displayDate = currentDate
 
@@ -192,7 +192,7 @@ final class TimerStore {
     }
 
     @discardableResult
-    func pause(id: UUID) -> Bool {
+    public func pause(id: UUID) -> Bool {
         refresh()
         guard let index = timers.firstIndex(where: { $0.id == id }),
               timers[index].phase == .running else {
@@ -206,7 +206,7 @@ final class TimerStore {
     }
 
     @discardableResult
-    func start(id: UUID) -> Bool {
+    public func start(id: UUID) -> Bool {
         refresh()
         guard let index = timers.firstIndex(where: { $0.id == id }),
               timers[index].phase == .ready || timers[index].phase == .paused else {
@@ -220,7 +220,7 @@ final class TimerStore {
     }
 
     @discardableResult
-    func reset(id: UUID) -> Bool {
+    public func reset(id: UUID) -> Bool {
         guard let index = timers.firstIndex(where: { $0.id == id }) else { return false }
         displayDate = nowProvider()
         var timer = timers[index]
@@ -231,19 +231,19 @@ final class TimerStore {
     }
 
     @discardableResult
-    func delete(id: UUID) -> Bool {
+    public func delete(id: UUID) -> Bool {
         guard let index = timers.firstIndex(where: { $0.id == id }) else { return false }
         timers.remove(at: index)
         updateAutomaticTicking()
         return true
     }
 
-    func setCompletionSoundEnabled(_ isEnabled: Bool) {
+    public func setCompletionSoundEnabled(_ isEnabled: Bool) {
         isCompletionSoundEnabled = isEnabled
     }
 
     /// Stops only the store's refresh source. Countdown state remains available to its owner.
-    func stopAutomaticUpdates() {
+    public func stopAutomaticUpdates() {
         tickTimer?.invalidate()
         tickTimer = nil
     }

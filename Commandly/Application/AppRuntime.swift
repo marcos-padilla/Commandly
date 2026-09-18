@@ -1,3 +1,4 @@
+import AICommandBridge
 import AIKit
 import AppCore
 import Foundation
@@ -6,7 +7,10 @@ import Infrastructure
 import AppKit
 import CommandKit
 import MarkdownPreviewKit
+import ModuleKit
+import ModuleRuntime
 import Observability
+import TimersModule
 
 /// Observable app runtime for scene-level UI that must react to onboarding completion.
 @Observable
@@ -100,6 +104,15 @@ final class AppRuntime {
     private let installedApplicationQuery: any InstalledApplicationQuerying
     @ObservationIgnored
     let commandCoordinator: SharedCommandExecutionCoordinator
+    /// Generic host for compiled-in feature modules.
+    ///
+    /// `AppRuntime` retains the host itself, not a property per feature: a module's services are
+    /// created by its own assembly when the host first needs them.
+    @ObservationIgnored
+    let moduleHost: ModuleHost
+    /// Default-deny projection of module commands onto the AI tool contracts.
+    @ObservationIgnored
+    let aiCommandBridge: AICommandBridge
     @ObservationIgnored
     let commandWheelProfileStore: CommandWheelProfileStore
     @ObservationIgnored
@@ -452,6 +465,9 @@ final class AppRuntime {
             presenter: NativeMenuBarShortcutPresenter()
         )
         self.menuBarShortcuts = menuBarShortcuts
+        // One store backs both the Timers module's `timers.start` handler and the launcher's
+        // Timers UI, so a countdown started from either side is the same countdown.
+        let timerStore = TimerStore()
         let applicationRegistry = LauncherApplicationRegistry.makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: fileSearchApplicationServices,
@@ -459,7 +475,7 @@ final class AppRuntime {
                 ? InMemoryFolderAccessStore() : container.dependencies.folderAccessStore,
             fileBrowserServiceOverride: fileBrowserOverride,
             calculatorSessionStore: calculatorSessionStore,
-            timerStore: TimerStore(),
+            timerStore: timerStore,
             financeServices: financeServices,
             markdownPreviewServices: markdownPreviewServices,
             productivityLibraryServices: productivityLibraryServices,
@@ -534,6 +550,22 @@ final class AppRuntime {
             availabilityEvaluator: commandAvailabilityEvaluator
         )
         self.commandCoordinator = commandCoordinator
+        let moduleHost = BuiltInModules.makeHost(
+            timerStore: timerStore,
+            enablement: LauncherRegistryModuleEnablementProvider(
+                registry: applicationRegistry,
+                manifests: BuiltInModules.assemblies(timerStore: timerStore).map(\.manifest)
+            )
+        )
+        self.moduleHost = moduleHost
+        self.aiCommandBridge = AICommandBridge(
+            definitions: { moduleHost.commandDefinitions() },
+            dispatcher: SharedCommandModuleDispatcher(
+                coordinator: commandCoordinator,
+                host: moduleHost
+            ),
+            eligibility: ModuleHostAIEligibilityEvaluator(host: moduleHost)
+        )
         self.keyboardTriggerSettings = KeyboardTriggerSettingsModel(operation: systemCompanion.keyboardTriggers,
             persistence: CommandlyDebugLaunchOptions.usesProductivityFixture ? InMemoryKeyboardTriggerPreferencesStore() : JSONKeyboardTriggerPreferencesStore(),
             library: productivityLibraryServices.persistence, executor: commandCoordinator,
@@ -654,6 +686,17 @@ final class AppRuntime {
 
     /// Brings the mixer up and keeps the two preferences that reach outside it — the finer
     /// volume steps event tap and the output-cycling shortcut — in step with its settings.
+    /// Starts modules whose activation policy is `atLaunchWhenEnabled`.
+    ///
+    /// Called once after SwiftUI installs its scene actions, not during `AppRuntime.init`, so
+    /// constructing the runtime never starts background behavior. Modules that fail are isolated:
+    /// the host records the failure as availability and the rest still start.
+    ///
+    /// No shipping module uses this policy yet; Clipboard History is its first intended consumer.
+    func startBackgroundModules() async {
+        await moduleHost.activateLaunchModules()
+    }
+
     private func startVolumeMixer() {
         volumeMixer.onFinerVolumeStepsChange = { [weak self] enabled in
             self?.preciseVolumeSteps.setEnabled(enabled)

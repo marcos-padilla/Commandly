@@ -17,5 +17,6 @@ ADRs capture significant technical decisions for Commandly.
 | [ADR-0009](ADR-0009-markdown-preview-quick-look-boundary.md) | Original Markdown Preview and Finder Quick Look boundary | Accepted |
 | [ADR-0010](ADR-0010-application-tools-tags-and-inline-discovery.md) | Application-owned tools, tags, typed commands, and inline local discovery | Accepted |
 | [ADR-0011](ADR-0011-optional-system-companion.md) | Optional signed system companion for cross-application features | Accepted |
+| [ADR-0012](ADR-0012-feature-modules-and-command-operations.md) | Feature modules, command operations, and default-deny AI exposure | Accepted |
 
 Open items live in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).

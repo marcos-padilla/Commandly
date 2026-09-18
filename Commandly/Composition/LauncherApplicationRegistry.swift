@@ -3,6 +3,7 @@ import CommandKit
 import Foundation
 import Infrastructure
 import SearchKit
+import TimersModule
 
 /// A registered application that can be discovered and launched from Commandly.
 ///

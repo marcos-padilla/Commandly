@@ -1,6 +1,7 @@
 import CommandKit
 import Foundation
 import Observation
+import TimersModule
 
 enum TimersActionID {
     static let beginNew = CommandActionID(rawValue: "timers.new")
@@ -74,6 +75,8 @@ enum TimerFilter: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 final class TimersViewModel {
     private let store: TimerStore
+    /// The module's one timer-starting operation, shared with the `timers.start` command.
+    private let operations: TimerOperations
     private let onGoBack: () -> Void
 
     var query = "" {
@@ -91,6 +94,7 @@ final class TimersViewModel {
 
     init(store: TimerStore, onGoBack: @escaping () -> Void) {
         self.store = store
+        self.operations = TimerOperations(store: store)
         self.onGoBack = onGoBack
         self.isCreating = store.timers.isEmpty
         self.selectedID = store.timers.first?.id
@@ -286,12 +290,11 @@ final class TimersViewModel {
             statusMessage = "Enter a name and a duration from 1 to 1,440 minutes."
             return
         }
-        let id = store.createTimer(
-            name: normalizedName,
-            duration: TimeInterval(draftMinutes * 60)
+        let started = operations.start(
+            TimerStartRequest(durationSeconds: draftMinutes * 60, title: normalizedName)
         )
         isCreating = false
-        selectedID = id
+        selectedID = started.id
         filter = .all
         query = ""
         statusMessage = "\(normalizedName) started."

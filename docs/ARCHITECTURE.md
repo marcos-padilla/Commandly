@@ -20,6 +20,10 @@ Commandly uses a thin macOS app target and a local Swift package of focused modu
 | SecurityKit | Secure storage and permission contracts | AppCore |
 | ExtensionKit | Experimental extension manifests (no loading) | AppCore |
 | Observability | OSLog-based structured logging | AppCore |
+| ModuleKit | Data-only module metadata; command, settings, documentation, lifecycle, availability contracts | AppCore, CommandKit |
+| ModuleRuntime | Generic module host: validation, catalog projection, lazy activation, ownership-scoped cleanup | ModuleKit, CommandKit |
+| AICommandBridge | Default-deny projection of module commands onto AIKit tool contracts | ModuleKit, CommandKit, AIKit |
+| TimersModule | Timers & Focus feature: countdown domain, commands, settings schema, documentation | ModuleKit, CommandKit, AppCore |
 
 ## Dependency graph
 
@@ -36,7 +40,11 @@ Commandly App
 ├── Persistence
 ├── SecurityKit
 ├── ExtensionKit
-└── Observability
+├── Observability
+├── ModuleKit
+├── ModuleRuntime ──► ModuleKit
+├── AICommandBridge ──► ModuleKit, AIKit
+└── TimersModule ──► ModuleKit            (feature module)
 ```
 
 Rules:
@@ -46,6 +54,161 @@ Rules:
 - No circular dependencies.
 - Production modules do not depend on test code.
 - Concrete services are assembled only in the composition root.
+- `ModuleRuntime` and `AICommandBridge` never import a feature target.
+- A feature target never imports `ModuleRuntime`, `AICommandBridge`, the app target, or another
+  feature target.
+- `ModuleKit` never imports SwiftUI, AppKit, or AIKit.
+
+`scripts/check-module-boundaries.sh` enforces these rules and runs inside `make verify`. It combines
+manifest assertions (authoritative: SwiftPM will not link an undeclared dependency) with an import
+scanner for rules a manifest cannot express. The scanner is a line scanner, not a compiler: it does
+not resolve conditional compilation or transitive imports, which is why the manifest checks carry
+the weight.
+
+## Feature modules
+
+See [ADR-0012](decisions/ADR-0012-feature-modules-and-command-operations.md) for the accepted
+decision and [the migration ledger](MODULARIZATION_PROGRESS.md) for what has actually migrated.
+
+### Layout
+
+```text
+Packages/Modules/<Feature>/
+  Sources/<Feature>Module/
+    <Feature>Module.swift     # identifiers, canonical command definitions, manifest
+    <Feature>Assembly.swift   # narrow assembly + lifecycle
+    Domain/                   # feature types and services
+    Commands/                 # operations and handlers
+    Settings/                 # typed configuration schema
+    Documentation/            # authored articles
+  Tests/<Feature>ModuleTests/
+  Docs/README.md
+```
+
+Directories are created only when a module needs them. A small feature stays small.
+
+### Module ownership rules
+
+- A module owns its implementation, commands, settings schema, documentation, storage and tests.
+- An assembly receives only the interfaces it needs, through its own initializer. There is no
+  service container and no dependency-injection framework.
+- Metadata is side-effect free. Reading a manifest, command list, settings schema or documentation
+  must not construct a service, prompt for a permission, connect an account, start capture, or index
+  a folder. Services exist only after `activate()`.
+- `activate()` runs at most once per registration generation, including under concurrent requests.
+- Cross-feature implementation imports are avoided. A justified dependency must be narrow, explicit,
+  acyclic and documented; prefer extracting a shared capability.
+
+### Lifetimes
+
+| Lifetime | Examples | Owner |
+|----------|----------|-------|
+| Application infrastructure | Registry, shared execution, shortcut coordination, presentation infrastructure | `AppRuntime` |
+| Enabled-module | Timer refresh source, clipboard monitoring, indexing | `ModuleLifecycle` |
+| Presentation session | Query, selection, drafts, preview state | `LauncherApplicationSession` |
+| Independent operation | Recording, export, pending display transaction | The module's own operation state |
+
+Deactivating a module stops its retained behavior. It does **not** delete the module's data:
+deactivate, disconnect, clear history and permanently delete are four different actions.
+
+### Command execution
+
+There is one authoritative execution path. It did not change shape; modules plug into it.
+
+```text
+feature UI / launcher / shortcut / wheel / menu bar / AI bridge
+  → CommandReference + trusted invocation context
+  → canonical resolution and input validation   (CommandRegistry)
+  → availability and authorization checks        (availability snapshot + ModuleCallerGrants)
+  → module activation and revalidation           (ModuleHost)
+  → one module-owned operation handler           (ModuleCommandHandling)
+  → typed outcome                                (ModuleCommandOutcome)
+  → caller-specific presentation + privacy-safe history
+```
+
+`SharedCommandExecutionCoordinator` remains the engine. `ModuleHost` resolves handlers; it does not
+execute on its own behalf. The AI bridge reaches commands only through `ModuleCommandDispatching`,
+implemented in `Commandly/Composition/SharedCommandModuleDispatcher.swift`.
+
+#### Presentation commands versus operations
+
+A command that opens a surface declares `executionMode: .requiresUserInterface` and reports
+`interactionRequired` to a non-interactive caller. It never reports success for a mutation it did
+not perform. `timers.new` still means "open a countdown draft"; `timers.start` is the operation that
+starts one.
+
+### AI exposure
+
+Default-deny, in two stages:
+
+1. A command is hidden unless its module authors `aiExposure: .reviewed`. The policy initializer
+   defaults to `.hidden`, so nothing is exposed by omission.
+2. A reviewed command is offered only while its module is available. Disabled, permission-blocked,
+   disconnected and failed modules withdraw their tools, and `requiresUserInterface` commands are
+   never offered.
+
+Module enablement is not an AI grant. Access, mutation authority and remote disclosure consent stay
+separate decisions (see [ADR-0006](decisions/ADR-0006-byok-ai-and-finder-tool-safety.md)).
+
+The bridge rejects malformed, unknown, oversized and mistyped input before dispatch; internal IDs
+map to provider-safe names deterministically with collision detection.
+
+### Settings ownership
+
+| Category | Owner |
+|----------|-------|
+| Effective enablement, aliases/tags, shortcut overrides, automation grants | Host (launcher preferences) |
+| Typed feature configuration and defaults | Module (`ModuleSettingsContribution`) |
+| Secrets and revision-bound credentials | Secure storage boundary — never ordinary preferences |
+
+Modules author preferences once as a typed schema. `ModuleSettingsProjection.swift` projects that
+schema onto the launcher's existing settings model so there is one authored source rather than two
+hand-maintained copies. That projection is a migration adapter and is removed when the launcher
+adopts the module schema directly.
+
+### Platform exceptions
+
+These cannot register at runtime and are declared at build time. Nothing in the module system
+pretends otherwise:
+
+- `CommandlyMarkdownQuickLook` — Finder Quick Look app extension (Xcode target + Info.plist).
+- `CommandlySystemCompanion` — separately signed helper app and its LaunchAgent.
+- Info.plist usage strings, entitlements, App Groups, and login-item registration.
+- SwiftUI `Scene` declarations that must exist at compile time.
+
+### Adding a module
+
+```bash
+./scripts/new-module.sh Bookmarks
+```
+
+This creates the target, tests and docs, and wires both targets into `Packages/Package.swift`. It
+refuses to overwrite an existing module and rejects colliding names. Then:
+
+1. Replace the generated example command with the real operation.
+2. Add **one line** to `Commandly/Composition/BuiltInModules.swift`.
+3. Add the product to the Commandly target in `Commandly.xcodeproj` only if the app target imports
+   it directly.
+4. Run `./scripts/check-module-boundaries.sh` and `make verify`.
+
+No edit to a feature switch in `AppRuntime`, `SettingsRootView`, launcher search, the documentation
+catalog, or the AI executor is required.
+
+### Migrating an existing feature
+
+1. Add a row to [the ledger](MODULARIZATION_PROGRESS.md) recording its files, lifetime, storage,
+   capabilities and command IDs.
+2. Add characterization tests for the behavior you must not change: command IDs and meanings,
+   preference keys, storage locations, history decoding.
+3. Scaffold the module target and move the feature's domain into it, raising only the API the shell
+   genuinely needs to `public`.
+4. Author the canonical command definitions. Keep existing IDs. Give presentation commands
+   `requiresUserInterface`, and add direct operations where a caller currently has to open a window
+   to get work done.
+5. Route the feature's own UI action through the same operation the command uses.
+6. Register the assembly in `BuiltInModules` and delete the feature's parameters from
+   `LauncherApplicationRegistry.makeBuiltIn`.
+7. Run the boundary check and `make verify`; update the ledger with the evidence.
 
 ## Composition root
 
@@ -234,7 +397,15 @@ Prefer initializer injection. Do not introduce a DI framework.
   bounds, and no content/path/query is logged. Non-secret rendering settings cross the process
   boundary through the signed Commandly App Group. See `docs/MARKDOWN_PREVIEW.md` and
   [ADR-0009](decisions/ADR-0009-markdown-preview-quick-look-boundary.md).
-- **Timers & Focus** retains a single `TimerStore` through the registered application instance. It derives remaining time from absolute dates so UI refresh cadence cannot introduce countdown drift; leaving the launcher does not stop active timers.
+- **Timers & Focus** is the reference feature module (`Packages/Modules/Timers`). Its countdown
+  domain, canonical command definitions, settings schema and documentation live in `TimersModule`;
+  the launcher keeps the SwiftUI surface. `AppRuntime` retains a single `TimerStore` that backs both
+  the module's command handlers and the launcher's Timers UI, so a countdown started from either
+  side is the same countdown. Remaining time is derived from absolute dates, so UI refresh cadence
+  cannot introduce countdown drift, and leaving the launcher does not stop active timers.
+  `timers.new` opens a draft; `timers.start` is a direct operation that starts a countdown without
+  presenting the launcher and is the module's only AI-exposed command. See
+  `Packages/Modules/Timers/Docs/README.md`.
 - **Finance** keeps Decimal subscription records and category budgets behind an actor-backed `FinancePersisting` boundary. Calendar-safe recurrence helpers derive monthly/yearly commitments, seven-day alerts, category summaries, and calendar occurrences without a network service or bank permission. See `docs/FINANCE.md`.
 - **Productivity Library** stores user-authored snippets, quick notes, Quicklinks, and emoji keywords as versioned JSON under Application Support. Its actor-backed persistence contract is injected, content is never logged, and mutations publish to UI only after a successful save.
   All interactive editors share one persistence actor and use expected-version item transactions.

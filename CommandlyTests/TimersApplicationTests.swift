@@ -1,6 +1,7 @@
 import CommandKit
 import Foundation
 import Testing
+import TimersModule
 @testable import Commandly
 
 struct TimersApplicationTests {
@@ -159,7 +160,8 @@ struct TimersApplicationTests {
 
         #expect(tools.map(\.id) == [
             TimersApplication.openToolID,
-            TimersApplication.newTimerToolID
+            TimersApplication.newTimerToolID,
+            TimersApplication.startToolID
         ])
         #expect(tools.allSatisfy { $0.kind == .tool })
         #expect(tools.allSatisfy { $0.parentID == TimersApplication.applicationID })
@@ -211,5 +213,182 @@ struct TimersApplicationTests {
         #expect(model.draftName == TimerPreset.focus.title)
         #expect(model.draftMinutes == TimerPreset.focus.minutes)
         #expect(store.timers.map(\.name) == ["Existing"])
+    }
+
+    // MARK: - timers.start as a shared direct operation
+
+    @MainActor
+    private func makeStartContext(
+        registry: LauncherApplicationRegistry
+    ) throws -> LauncherApplicationResolvedSettings {
+        try #require(registry.resolvedSettings(for: TimersApplication.applicationID))
+    }
+
+    @Test @MainActor
+    func startToolRunsWithoutPresentingASessionAndKeepsTheTimerRunning() async throws {
+        let start = Date(timeIntervalSince1970: 1_800_400_000)
+        var now = start
+        let store = TimerStore(
+            now: { now },
+            automaticallySchedulesTicks: false,
+            onCompletion: { _ in }
+        )
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+        let application = try #require(
+            registry.application(for: TimersApplication.applicationID)
+                as? LauncherApplicationToolBackgroundInvoking
+        )
+
+        // The shared executor dispatches start through the background-tool path, not a session.
+        #expect(application.backgroundToolIDs.contains(TimersApplication.startToolID))
+        #expect(registry.isBackgroundInvokingCommand(TimersApplication.startToolID))
+
+        let result = await application.invokeToolInBackground(
+            toolID: TimersApplication.startToolID,
+            arguments: CommandArguments([
+                "durationSeconds": .integer(1_500),
+                "title": .string("Deep Work")
+            ]),
+            settings: try makeStartContext(registry: registry)
+        )
+
+        guard case .success = result else {
+            Issue.record("Expected timers.start to succeed. Got \(result).")
+            return
+        }
+        #expect(store.timers.count == 1)
+        #expect(store.timers.first?.name == "Deep Work")
+        #expect(store.timers.first?.phase == .running)
+
+        // No launcher session exists; the countdown still advances.
+        now = start.addingTimeInterval(500)
+        store.refresh()
+        let id = try #require(store.timers.first?.id)
+        #expect(store.remainingTime(for: id) == 1_000)
+        #expect(store.timer(id: id)?.phase == .running)
+    }
+
+    @Test @MainActor func startToolRejectsInvalidDurationsWithoutCreatingATimer() async throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+        let application = try #require(
+            registry.application(for: TimersApplication.applicationID)
+                as? LauncherApplicationToolBackgroundInvoking
+        )
+        let settings = try makeStartContext(registry: registry)
+
+        for invalid in [0, -5, 86_401] {
+            let result = await application.invokeToolInBackground(
+                toolID: TimersApplication.startToolID,
+                arguments: CommandArguments(["durationSeconds": .integer(invalid)]),
+                settings: settings
+            )
+            guard case .failure = result else {
+                Issue.record("Expected \(invalid) seconds to be rejected. Got \(result).")
+                continue
+            }
+        }
+        let missing = await application.invokeToolInBackground(
+            toolID: TimersApplication.startToolID,
+            arguments: CommandArguments(),
+            settings: settings
+        )
+        guard case .failure = missing else {
+            Issue.record("Expected a missing duration to be rejected. Got \(missing).")
+            return
+        }
+        #expect(store.timers.isEmpty)
+    }
+
+    @Test @MainActor func startToolIsNeverPresentedAsASession() throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let application = TimersApplication(store: store)
+        let context = LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: {}, openSettings: {}, goBack: {}
+            ),
+            settings: LauncherApplicationResolvedSettings(
+                alias: "", hotKey: nil, isEnabled: true, configuration: [:]
+            )
+        )
+
+        // Falling back to opening the surface would report success while no timer had started.
+        let launch = application.launch(
+            toolID: TimersApplication.startToolID,
+            arguments: CommandArguments(["durationSeconds": .integer(60)]),
+            in: context
+        )
+        guard case .message = launch else {
+            Issue.record("Expected timers.start not to present a session. Got \(launch).")
+            return
+        }
+        #expect(store.timers.isEmpty)
+    }
+
+    @Test @MainActor func newTimerStillOnlyOpensADraft() throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let application = TimersApplication(store: store)
+        let context = LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: {}, openSettings: {}, goBack: {}
+            ),
+            settings: LauncherApplicationResolvedSettings(
+                alias: "", hotKey: nil, isEnabled: true, configuration: [:]
+            )
+        )
+
+        guard case .present(let session) = application.launch(
+            toolID: TimersApplication.newTimerToolID,
+            arguments: CommandArguments(),
+            in: context
+        ) else {
+            Issue.record("Expected New Timer to present a session")
+            return
+        }
+        #expect(session.model(as: TimersViewModel.self)?.isCreating == true)
+        // The shipped meaning of timers.new is unchanged: it opens a draft, it does not start.
+        #expect(store.timers.isEmpty)
+    }
+
+    @Test @MainActor func theUIDraftAndTheStartCommandShareOneOperation() async throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+        let application = try #require(
+            registry.application(for: TimersApplication.applicationID)
+        )
+        let settings = try makeStartContext(registry: registry)
+        let context = LauncherApplicationContext(
+            navigation: LauncherApplicationNavigation(
+                dismissLauncher: {}, openSettings: {}, goBack: {}
+            ),
+            settings: settings
+        )
+
+        guard case .present(let session) = application.launch(in: context) else {
+            Issue.record("Expected a Timers session")
+            return
+        }
+        let model = try #require(session.model(as: TimersViewModel.self))
+        model.draftName = "From UI"
+        model.draftMinutes = 5
+        model.startDraftTimer()
+
+        let backgroundApplication = try #require(
+            application as? LauncherApplicationToolBackgroundInvoking
+        )
+        _ = await backgroundApplication.invokeToolInBackground(
+            toolID: TimersApplication.startToolID,
+            arguments: CommandArguments([
+                "durationSeconds": .integer(300),
+                "title": .string("From command")
+            ]),
+            settings: settings
+        )
+
+        // Both paths produced an equivalent running countdown through TimerOperations.
+        #expect(store.timers.count == 2)
+        #expect(store.timers.allSatisfy { $0.phase == .running })
+        #expect(store.timers.allSatisfy { $0.totalDuration == 300 })
+        #expect(Set(store.timers.map(\.name)) == ["From UI", "From command"])
     }
 }

@@ -1,6 +1,7 @@
 import DesignSystem
 import Foundation
 import SwiftUI
+import TimersModule
 
 struct TimersView: View {
     private enum HeaderFocus: Hashable {

@@ -305,6 +305,9 @@ private struct LauncherPresentationBridge: View {
                 )
                 onInstalled()
             }
+            .task {
+                await runtime.startBackgroundModules()
+            }
             .onDisappear {
                 runtime.uninstallWindowPresentationActions(owner: owner)
             }

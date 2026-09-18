@@ -41,6 +41,9 @@ Every future agent must:
 |---------|----------|
 | App entry, AppKit delegate, app state | `Commandly/Application` |
 | Dependency assembly | `Commandly/Composition` |
+| Built-in feature module registration (one line per module) | `Commandly/Composition/BuiltInModules.swift` |
+| Module settings schema projection | `Commandly/Composition/ModuleSettingsProjection.swift` |
+| AI bridge dispatch over the shared executor | `Commandly/Composition/SharedCommandModuleDispatcher.swift` |
 | Navigation / routing | `Commandly/Navigation` |
 | SwiftUI scenes and feature UI | `Commandly/Scenes` |
 | Launcher application contract, sessions, and shared application screens | `Commandly/Scenes/Launcher/Applications` |
@@ -76,11 +79,21 @@ Every future agent must:
 | Markdown Preview file, watcher, rendering, and reading-state adapters | `Commandly/Services/MarkdownPreview` |
 | Finder Markdown Quick Look app extension | `CommandlyMarkdownQuickLook` |
 | Logging | `Packages/Sources/Observability` |
+| Module metadata and contribution contracts | `Packages/Sources/ModuleKit` |
+| Generic module host (activation, catalog, cleanup) | `Packages/Sources/ModuleRuntime` |
+| AI tool projection and call adaptation | `Packages/Sources/AICommandBridge` |
+| Feature modules | `Packages/Modules/<Feature>/Sources/<Feature>Module` |
+| Feature module tests | `Packages/Modules/<Feature>/Tests/<Feature>ModuleTests` |
+| Timers & Focus domain, commands, settings, documentation | `Packages/Modules/Timers` |
 | App target tests | `CommandlyTests` |
 | Package tests | `Packages/Tests` |
 | Reusable test doubles | package test targets or a future TestSupport module |
 
 Domain modules must never import the Commandly app target.
+
+Feature modules must additionally never import `ModuleRuntime`, `AICommandBridge`, or another
+feature module. `ModuleRuntime` and `AICommandBridge` must never import a feature module.
+`scripts/check-module-boundaries.sh` enforces this and runs inside `make verify`.
 
 ## Coding standards
 
@@ -108,6 +121,10 @@ Domain modules must never import the Commandly app target.
 - Empty `catch` blocks / swallowed errors
 - Arbitrary `Task.sleep` used as synchronization
 - Dependency cycles between modules
+- A feature module importing the app target, the module host, the AI bridge, or another feature
+- Constructing services, prompting for permissions, or reading private data in module metadata
+- Reporting `.success` for a command that only opened a window or started long-running work
+- Exposing a command to AI without an explicit `.reviewed` decision
 - Production code depending on test-support modules
 - `@unchecked Sendable` without a documented justification
 - Copying competitor branding or UI
@@ -125,15 +142,33 @@ Domain modules must never import the Commandly app target.
 ## Adding features
 
 1. Define expected user behavior.
-2. Identify the owning module.
+2. Identify the owning module. If the feature needs a new one, scaffold it:
+   `./scripts/new-module.sh <Name>` (see `docs/ARCHITECTURE.md`).
 3. Add or extend domain contracts first.
-4. Implement system adapters behind protocols in Infrastructure / Persistence / SecurityKit.
-5. Compose dependencies in `Commandly/Composition`.
-6. Add tests that do not touch real clipboard, Keychain, network, or permissions.
-7. Update documentation when behavior or architecture changes.
-8. Review accessibility (VoiceOver labels, keyboard, Dynamic Type where applicable).
-9. Review privacy and permissions.
-10. Measure critical-path performance when touching launch or search paths.
+4. Author canonical command definitions in the module. Give a command that opens a surface
+   `executionMode: .requiresUserInterface`; add a `direct` operation when a caller should be able
+   to do the work without opening a window.
+5. Implement system adapters behind protocols in Infrastructure / Persistence / SecurityKit.
+6. Register the module with **one line** in `Commandly/Composition/BuiltInModules.swift`. Do not
+   add a feature branch to `AppRuntime`, `SettingsRootView`, launcher search, the documentation
+   catalog, or the AI executor.
+7. Add tests that do not touch real clipboard, Keychain, network, or permissions.
+8. Update documentation when behavior or architecture changes.
+9. Review accessibility (VoiceOver labels, keyboard, Dynamic Type where applicable).
+10. Review privacy and permissions.
+11. Measure critical-path performance when touching launch or search paths.
+
+### AI exposure is default-deny
+
+A command is never offered to an AI model unless its module explicitly declares
+`aiExposure: .reviewed`. Changing a command to `.reviewed` is a reviewed decision, not a
+convenience:
+
+- It must be completable without native UI. `requiresUserInterface` commands are never exposed.
+- Record the review in the module's `Docs/README.md`: what it does, what it can disclose, and why a
+  model may call it.
+- `CommandlyTests/ModuleCompositionTests.swift` asserts the exact exposed tool set. Extending it is
+  a deliberate change that must be justified in the pull request.
 
 ## Adding dependencies
 
@@ -192,3 +227,8 @@ Agents must never claim:
 - Project format requires **Xcode 27+**.
 - Scripts resolve a compatible `DEVELOPER_DIR` automatically; override with `COMMANDLY_DEVELOPER_DIR` if needed.
 - SwiftLint / SwiftFormat are optional; missing tools must not fail bootstrap/build, but `make verify` fails if an installed tool reports violations.
+- `make boundaries` runs the module boundary check on its own; `make verify` runs it as step 2.
+- `make new-module NAME=<Name>` scaffolds a feature module.
+- `swift test --package-path Packages` needs `DEVELOPER_DIR` pointing at Xcode 27. The
+  default Command Line Tools toolchain cannot build the package. `scripts/verify.sh` exports
+  the correct one via `scripts/common.sh`.
