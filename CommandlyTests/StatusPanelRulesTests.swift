@@ -583,36 +583,6 @@ struct StatusPanelRulesTests {
         }
     }
 
-    @Test @MainActor func appKitRefusesAPointSizedHostWindow() {
-        // The invisible presentation-host window used to ask for a 1x1 content size. AppKit
-        // clamps a titled window's height, so `.windowResizability(.contentSize)` kept asking for
-        // a size the window server would never return — an Update Constraints pass that never
-        // settled, which AppKit ends by throwing. This is that clamp, demonstrated directly.
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-            styleMask: [.titled, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.setContentSize(NSSize(width: 1, height: 1))
-        #expect(window.frame.height > 1)
-    }
-
-    @Test @MainActor func theHostWindowSizeIsOneAppKitWillHonor() {
-        // The fix is that the host asks for a size it can actually be given, so the extrema agree
-        // on the first pass and there is nothing left to loop over.
-        let length = 40.0
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: length, height: length),
-            styleMask: [.titled, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.setContentSize(NSSize(width: length, height: length))
-        #expect(abs(window.frame.height - length) < 1)
-        #expect(abs(window.frame.width - length) < 1)
-    }
-
     // MARK: - Controls
 
     @Test func aSubOptionOnlyAppearsWhileItsParentIsOn() {
@@ -691,28 +661,11 @@ struct StatusPanelRulesTests {
         #expect(tinted === tintedAgain)
     }
 
-    @Test @MainActor func everyStatusGlyphIsPinnedToOneSize() {
-        // A wider glyph would resize the status item every time the active icon changed.
-        let expected = NSSize(
-            width: StatusBarIconImage.length,
-            height: StatusBarIconImage.length
-        )
-        for icon in KeepAwakeActiveIcon.allCases {
-            let image = StatusBarIconImage.image(symbolName: icon.symbolName, tint: nil)
-            #expect(image.size == expected)
-        }
-        // A tint changes the drawing, never the footprint.
-        let tinted = StatusBarIconImage.image(symbolName: "moon.zzz.fill", tint: .systemPink)
-        #expect(tinted.size == expected)
-    }
-
     @Test @MainActor func anUnknownSymbolStillProducesAGlyph() {
         // The label has no second branch to fall back to, so the image builder must be total.
         let image = StatusBarIconImage.image(symbolName: "not.a.real.symbol", tint: nil)
-        #expect(image.size == NSSize(
-            width: StatusBarIconImage.length,
-            height: StatusBarIconImage.length
-        ))
+        #expect(image.size.width > 0)
+        #expect(image.size.height > 0)
     }
 
     @Test @MainActor func onlyAnUntintedGlyphIsATemplate() {

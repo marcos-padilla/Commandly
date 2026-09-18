@@ -17,8 +17,11 @@ struct StatusBarIconLabel: View {
     @Bindable var keepAwake: KeepAwakeCoordinator
 
     var body: some View {
+        // No frame and no imposed size. The status item's window is sized by what this label
+        // reports, so asking for dimensions it cannot be given leaves SwiftUI and AppKit
+        // negotiating a size they never agree on. The symbol configuration below is the only
+        // thing that decides how big the glyph is, exactly as a plain `Label` would.
         Image(nsImage: StatusBarIconImage.image(symbolName: symbolName, tint: tintColor))
-            .frame(width: StatusBarIconImage.length, height: StatusBarIconImage.length)
             .accessibilityLabel(accessibilityLabel)
     }
 
@@ -47,15 +50,10 @@ struct StatusBarIconLabel: View {
 /// cache is small and never needs eviction.
 @MainActor
 enum StatusBarIconImage {
-    /// Fixed square the glyph is drawn into.
-    ///
-    /// Every symbol is pinned to it so the status item's width does not change when the active
-    /// icon does — a wider glyph would otherwise resize the window on each switch.
-    static let length: CGFloat = 18
-
+    /// Point size the glyph is rendered at, which is what gives it its natural menu bar size.
     private static let pointSize: CGFloat = 15
     /// Used when even the fallback symbol is missing, so the view always has an image to draw.
-    private static let blank = NSImage(size: NSSize(width: length, height: length))
+    private static let blank = NSImage(size: NSSize(width: pointSize, height: pointSize))
 
     private struct Key: Hashable {
         let symbolName: String
@@ -97,8 +95,8 @@ enum StatusBarIconImage {
         }
         guard let image = base.withSymbolConfiguration(configuration) else { return nil }
 
-        // Pinning the size is what keeps the status item a fixed width across icon changes.
-        image.size = NSSize(width: length, height: length)
+        // The symbol keeps the size its configuration produced. Overriding it here would hand the
+        // status item a size it may not be able to honor.
         image.isTemplate = tint == nil
         return image
     }

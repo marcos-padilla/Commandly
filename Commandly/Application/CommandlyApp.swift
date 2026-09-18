@@ -32,11 +32,9 @@ struct CommandlyApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        // AppKit refuses to make a titled window as small as a point and clamps its height. With
-        // `.contentSize` resizability SwiftUI keeps asking for the size it was given, AppKit keeps
-        // returning the clamped one, and the two never agree — an endless Update Constraints pass
-        // that AppKit eventually ends by throwing. The host is invisible, offscreen, and ordered
-        // out either way, so it is sized to something the window server will honor.
+        // Deliberately not a point: a window that small leaves `.contentSize` resizability with
+        // almost no room to resolve its extrema against whatever AppKit reports back, and this
+        // host is invisible, offscreen, and ordered out regardless of its size.
         .defaultSize(
             width: WindowPresentationHost.hostLength,
             height: WindowPresentationHost.hostLength
@@ -205,9 +203,8 @@ private struct DocumentationCommands: Commands {
 private struct WindowPresentationHost: View {
     /// Side of the invisible host window.
     ///
-    /// Large enough that AppKit does not clamp it, which is what keeps SwiftUI's content-size
-    /// extrema satisfiable. Nothing is ever drawn here: the window is transparent, offscreen,
-    /// noninteractive, and ordered out.
+    /// Nothing is ever drawn here: the window is transparent, offscreen, noninteractive, and
+    /// ordered out. The size exists only so the window has ordinary dimensions to resolve against.
     static let hostLength: CGFloat = 40
 
     @Bindable var runtime: AppRuntime
