@@ -5,13 +5,29 @@ import Infrastructure
 import Testing
 
 @MainActor struct MenuControllerTests {
+    /// Controls the clock `CompanionMenuController` reads, so request deadlines never depend on
+    /// real elapsed time.
+    ///
+    /// These tests previously built deadlines from `ContinuousClock.now` while the controller
+    /// compared them against its own real-time reads. A parallel full-suite run can starve the
+    /// main actor for seconds, so a request could exceed its budget between the deadline being
+    /// computed and the controller checking it, and `handle` would return
+    /// `.failure(.timedOut)` instead of the expected reply.
+    ///
+    /// The clock is never advanced here, so every `now()` the controller performs returns the same
+    /// instant and `now() < deadline` is decided by arithmetic rather than by machine load. A test
+    /// that needs an expired deadline derives it from this clock too, so it is deterministic in the
+    /// other direction. Advancing time on purpose is covered by
+    /// ``handleExpiryIsCheckedSynchronouslyWithInjectedClock()``, which drives its own clock.
+    private let clock = MenuClock()
     private func setup() -> (CompanionMenuController, CompanionMenuLease, MenuWorker, MenuEnvironment, UUID) {
         let lease = CompanionMenuLease(); let worker = MenuWorker(); let environment = MenuEnvironment(lease)
-        let controller = CompanionMenuController(lease: lease, worker: worker, environment: environment)
+        let controller = CompanionMenuController(lease: lease, worker: worker, environment: environment,
+                                                 now: { [clock] in clock.now() })
         let session = UUID(); controller.connect(session: session)
         return (controller, lease, worker, environment, session)
     }
-    private var deadline: ContinuousClock.Instant { .now.advanced(by: .seconds(5)) }
+    private var deadline: ContinuousClock.Instant { clock.now().advanced(by: .seconds(5)) }
     @Test func constructionAndDisabledReadsNeverObserveOrCapture() async {
         let (controller, _, worker, environment, session) = setup()
         #expect(environment.starts == 0)
@@ -47,7 +63,8 @@ import Testing
         #expect(await controller.handle(.snapshot, session: session, deadline: deadline) == .failure(.stale))
         #expect(await worker.captures == 1)
         _ = await controller.handle(.release, session: session, deadline: deadline)
-        guard case .snapshot(let fresh) = await controller.handle(.snapshot, session: session, deadline: deadline) else { Issue.record("fresh open missing"); return }
+        let reopened = await controller.handle(.snapshot, session: session, deadline: deadline)
+        guard case .snapshot(let fresh) = reopened else { Issue.record("fresh open missing: \(reopened)"); return }
         #expect(fresh.bundleIdentifier == "generated.other")
         await controller.disconnect()
     }
@@ -92,7 +109,7 @@ import Testing
         _ = await controller.handle(.setEnabled(true), session: session, deadline: deadline)
         await worker.set(values: (0...500).map { candidate("Action \($0)") })
         #expect(await controller.handle(.snapshot, session: session, deadline: deadline) == .failure(.tooLarge))
-        #expect(await controller.handle(.snapshot, session: session, deadline: .now.advanced(by: .seconds(-1))) == .failure(.timedOut))
+        #expect(await controller.handle(.snapshot, session: session, deadline: clock.now().advanced(by: .seconds(-1))) == .failure(.timedOut))
         #expect(await worker.captures == 1)
         await controller.disconnect()
     }
