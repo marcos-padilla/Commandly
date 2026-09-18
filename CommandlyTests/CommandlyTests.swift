@@ -1194,7 +1194,9 @@ struct CommandlyTests {
         let changedFile = root.appendingPathComponent("changed.txt")
         try Data("changed".utf8).write(to: changedFile)
 
-        await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+        // FSEvents delivers from its own dispatch source, so this is one of the few conditions
+        // that reaches the helper's real-time backstop rather than settling on scheduler turns.
+        await waitUntil {
             await recorder.contains(path: changedFile.path)
         }
 
@@ -2391,13 +2393,7 @@ struct CommandlyTests {
         store.replaceEntriesForTesting([entry])
         store.enqueueEnrichmentForTesting(entry)
 
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if store.entry(id: entryID)?.enrichmentStatus == .ready {
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(20))
-        }
+        await waitUntil { store.entry(id: entryID)?.enrichmentStatus == .ready }
 
         let enriched = store.entry(id: entryID)
         #expect(enriched?.enrichmentStatus == .ready)
@@ -3055,17 +3051,57 @@ struct CommandlyTests {
     }
 
     @MainActor
+    /// Waits for `condition`, measuring progress in scheduler turns rather than elapsed time.
+    ///
+    /// This helper used to poll against a one-second wall-clock budget and then **return silently**
+    /// when the budget expired, so the caller's next `#expect` failed with a confusing message
+    /// about the value instead of saying the wait had given up. Under a parallel full-suite run the
+    /// main actor is shared with every other `@MainActor` suite, so a second of wall-clock could
+    /// elapse while the work being awaited was still queued — which is why these tests failed under
+    /// load and passed in isolation.
+    ///
+    /// Almost everything awaited here is a chain of `Task` continuations on the main actor, so
+    /// `Task.yield()` is the correct progress signal: it lets the executor drain queued work and is
+    /// bounded by the number of hops the code under test needs, not by how busy the machine is.
+    ///
+    /// A few conditions genuinely depend on real elapsed time — an FSEvents delivery, for example —
+    /// and cannot be advanced by yielding. Those fall through to a generous real-time backstop,
+    /// which is the correct mechanism for an externally driven event and is never reached by
+    /// ordinary in-process work.
+    ///
+    /// Either way the wait now **fails loudly**, reporting the caller's source location, instead of
+    /// letting a later expectation fail for a reason that looks unrelated.
+    ///
+    /// - Parameters:
+    ///   - turns: scheduler turns given to in-process work. Ample for any `Task` chain under test,
+    ///     while staying small enough not to spin the main actor needlessly.
+    ///   - timeout: backstop for conditions an external source drives, reached only when the turn
+    ///     phase could not settle the condition. It is deliberately generous: it exists to bound a
+    ///     genuine hang, not to pace normal work.
     private func waitUntil(
-        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        turns: Int = 500,
+        timeout: Duration = .seconds(10),
+        sourceLocation: Testing.SourceLocation = #_sourceLocation,
         condition: @escaping @MainActor () async -> Bool
     ) async {
-        let started = ContinuousClock.now
-        while ContinuousClock.now - started < .nanoseconds(timeoutNanoseconds) {
-            if await condition() {
-                return
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
+        // Scheduler turns settle everything driven by in-process `Task` continuations, which is
+        // what almost every caller here awaits. This phase does not consult the clock at all.
+        for _ in 0 ..< turns {
+            if await condition() { return }
+            await Task.yield()
         }
+        // Only a condition an external source drives — an FSEvents delivery, say — can still be
+        // false here, and yielding cannot advance one of those. Fall back to real time.
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if await condition() { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        if await condition() { return }
+        Issue.record(
+            "waitUntil gave up before its condition became true",
+            sourceLocation: sourceLocation
+        )
     }
 
     private nonisolated func milliseconds(_ duration: Duration) -> String {
