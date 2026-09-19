@@ -157,7 +157,6 @@ struct PlaceholderSearchRecord: Sendable, Equatable {
     let systemImage: String
     let badge: LauncherItemBadge
     let section: LauncherSectionKind
-    let message: String
 }
 
 /// Merges provider results by score with cancellation support.

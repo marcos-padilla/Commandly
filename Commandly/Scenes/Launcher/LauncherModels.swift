@@ -72,6 +72,8 @@ enum LauncherItemAction: Sendable, Equatable {
     case executeCommand(CommandReference)
     case openInstalledApplication(bundleIdentifier: String)
     case placeholder(message: String)
+    /// Quits Commandly through the app's normal termination path, so unsaved-work review runs.
+    case quitApplication
     case copyText(String)
     case calculatorPrimary(resultID: String)
     case colorPrimary(resultID: String)
@@ -182,8 +184,8 @@ enum LauncherPlaceholderCatalog {
             subtitle: "Stop the menu bar agent",
             systemImage: "power",
             badge: .command,
-            keywords: ["exit", "stop"],
-            action: .placeholder(message: "Use Quit Commandly from the menu bar for now.")
+            keywords: ["exit", "stop", "quit"],
+            action: .quitApplication
         )
     ]
 
@@ -196,12 +198,13 @@ enum LauncherPlaceholderCatalog {
                 keywords: item.keywords,
                 systemImage: item.systemImage,
                 badge: item.badge,
-                section: item.section,
-                message: {
-                    if case .placeholder(let message) = item.action { return message }
-                    return "Not implemented yet."
-                }()
+                section: item.section
             )
         }
+    }
+
+    /// The catalog row for a search hit, so a row keeps the action it was declared with.
+    static func item(id: String) -> LauncherItem? {
+        nonCommandItems.first { $0.id == id }
     }
 }

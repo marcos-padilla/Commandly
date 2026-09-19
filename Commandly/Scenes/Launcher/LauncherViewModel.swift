@@ -631,6 +631,8 @@ final class LauncherViewModel {
             onDismiss()
         case .placeholder(let message):
             statusMessage = message
+        case .quitApplication:
+            onQuit()
         case .copyText(let value):
             await pasteboard.writeString(value)
             statusMessage = nil
@@ -1341,19 +1343,9 @@ final class LauncherViewModel {
                 action: .openInstalledApplication(bundleIdentifier: item.id)
             )
         case BuiltInSearchProviderID.placeholders:
-            guard let record = LauncherPlaceholderCatalog.searchRecords.first(where: { $0.id == item.id }) else {
-                return nil
-            }
-            return LauncherItem(
-                id: record.id,
-                section: record.section,
-                title: record.title,
-                subtitle: record.subtitle,
-                systemImage: record.systemImage,
-                badge: record.badge,
-                keywords: record.keywords,
-                action: .placeholder(message: record.message)
-            )
+            // Rebuilt from the catalog rather than from the search snapshot, so a row that is
+            // backed by a real action does not come back as a placeholder.
+            return LauncherPlaceholderCatalog.item(id: item.id)
         default:
             return nil
         }

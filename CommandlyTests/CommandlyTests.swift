@@ -2607,6 +2607,58 @@ struct CommandlyTests {
         #expect(viewModel.activeApplicationModel(as: ScheduleViewModel.self) != nil)
     }
 
+    @Test @MainActor func launcherQuitRowTerminatesThroughTheAppsNormalQuitPath() async {
+        var quitCount = 0
+        let viewModel = LauncherViewModel(onQuit: { quitCount += 1 })
+        await viewModel.flushSearchForTesting()
+
+        // The row is backed by a real action, not the old "not implemented" placeholder.
+        let quitRow = try? #require(viewModel.rootItems.first { $0.id == "quit-commandly" })
+        #expect(quitRow?.action == .quitApplication)
+
+        viewModel.selectedID = "quit-commandly"
+        await viewModel.confirmSelectionAndWaitForTesting()
+
+        // Quitting goes through the injected hook, which AppRuntime wires to
+        // NSApplication.terminate so the termination coordinator still reviews unsaved work.
+        #expect(quitCount == 1)
+        #expect(viewModel.statusMessage == nil)
+    }
+
+    @Test @MainActor func launcherQuitRowKeepsItsActionAfterASearchRoundTrip() async {
+        var quitCount = 0
+        let viewModel = LauncherViewModel(onQuit: { quitCount += 1 })
+        viewModel.query = "quit"
+        await viewModel.flushSearchForTesting()
+
+        // Rows that come back through the search provider are rebuilt from the catalog, so the
+        // declared action survives instead of degrading into a placeholder.
+        let quitRow = try? #require(viewModel.rootItems.first { $0.id == "quit-commandly" })
+        #expect(quitRow?.action == .quitApplication)
+
+        viewModel.selectedID = "quit-commandly"
+        await viewModel.confirmSelectionAndWaitForTesting()
+        #expect(quitCount == 1)
+    }
+
+    @Test @MainActor func launcherWelcomeRowStillReportsItsPlaceholderHonestly() async {
+        let viewModel = LauncherViewModel()
+        viewModel.query = "Welcome"
+        await viewModel.flushSearchForTesting()
+
+        // The walkthrough genuinely is not built yet, so it must keep saying so rather than
+        // silently doing nothing.
+        guard let welcome = viewModel.rootItems.first(where: { $0.id == "welcome" }) else {
+            Issue.record("Expected the welcome row to be searchable")
+            return
+        }
+        guard case .placeholder(let message) = welcome.action else {
+            Issue.record("Expected the welcome row to stay a placeholder. Got \(welcome.action).")
+            return
+        }
+        #expect(message.isEmpty == false)
+    }
+
     @Test @MainActor func launcherSearchRanksCommandsAndAppsWithAutocomplete() async {
         let apps = [
             InstalledApplication(bundleIdentifier: "com.example.alpha", name: "Alpha Editor", path: "/Applications/Alpha.app"),
