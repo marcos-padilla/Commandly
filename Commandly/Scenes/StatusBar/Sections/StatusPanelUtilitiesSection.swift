@@ -3,10 +3,13 @@ import CommandKit
 import DesignSystem
 import SwiftUI
 
-/// Utilities tab: the Commandly windows and Shelf actions the menu bar used to list directly.
+/// Utilities tab: the Commandly windows and Shelf actions the menu bar used to list directly,
+/// followed by every enabled application.
 ///
-/// These rows carry the same actions and shortcuts the older dropdown menu had, so nothing was
-/// lost when the menu became a panel.
+/// The first rows carry the same actions and shortcuts the older dropdown menu had, so nothing
+/// was lost when the menu became a panel. The application rows are projected from registry
+/// metadata rather than hand-listed, so a newly registered application appears here without
+/// anyone editing this view, and a disabled one disappears.
 struct StatusPanelUtilitiesSection: View {
     @Bindable var runtime: AppRuntime
     let onOpenSettings: () -> Void
@@ -82,6 +85,21 @@ struct StatusPanelUtilitiesSection: View {
                 )
             }
             .statusPanelCard(padding: 8)
+
+            if runtime.utilitiesPanelApplications.isEmpty == false {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(runtime.utilitiesPanelApplications) { definition in
+                        actionRow(
+                            title: definition.title,
+                            caption: definition.subtitle ?? "",
+                            symbolName: definition.systemImage,
+                            shortcut: runtime.resolvedHotKey(for: definition.id)?.displayTitle,
+                            action: { runtime.openRegisteredApplication(definition.id) }
+                        )
+                    }
+                }
+                .statusPanelCard(padding: 8)
+            }
 
             #if DEBUG
             VStack(alignment: .leading, spacing: 2) {

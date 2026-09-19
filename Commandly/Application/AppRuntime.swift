@@ -709,6 +709,20 @@ final class AppRuntime {
         await moduleHost.activateLaunchModules()
     }
 
+    /// Enabled applications shown in the menu bar panel's Utilities tab.
+    ///
+    /// Built from registry metadata only: no module is activated, no service is constructed, and
+    /// no permission is requested by reading this. Disabled applications are omitted, which keeps
+    /// the Window Switcher gate and every user enablement choice intact.
+    var utilitiesPanelApplications: [LauncherApplicationDefinition] {
+        applicationRegistry
+            .children(of: BuiltInLauncherApplicationGroup.catalogID)
+            .filter { definition in
+                definition.kind == .application
+                    && applicationRegistry.isEffectivelyEnabled(definition.id)
+            }
+    }
+
     private func startVolumeMixer() {
         volumeMixer.onFinerVolumeStepsChange = { [weak self] enabled in
             self?.preciseVolumeSteps.setEnabled(enabled)
@@ -1457,14 +1471,28 @@ final class AppRuntime {
         }
     }
 
-    private func openApplicationFromHotKey(_ id: CommandID) {
+    /// Opens a registered application from a surface other than a global shortcut.
+    ///
+    /// The menu-bar panel uses this so a panel click is recorded as a menu-bar invocation rather
+    /// than borrowing the shortcut path's provenance.
+    func openRegisteredApplication(
+        _ id: CommandID,
+        source: CommandInvocationSource = .menuBar
+    ) {
+        openApplicationFromHotKey(id, source: source)
+    }
+
+    private func openApplicationFromHotKey(
+        _ id: CommandID,
+        source: CommandInvocationSource = .applicationHotKey
+    ) {
         guard applicationRegistry.isEffectivelyEnabled(id) else { return }
         if id == ShelfApplication.applicationID {
             showFloatingShelf(entryMode: .empty)
             return
         }
         if applicationRegistry.isBackgroundInvokingCommand(id) {
-            executeBackgroundApplicationFromHotKey(id)
+            executeBackgroundApplicationFromHotKey(id, source: source)
             return
         }
         pendingCommandReference = CommandReference(commandID: id)
@@ -1475,8 +1503,11 @@ final class AppRuntime {
         }
     }
 
-    private func executeBackgroundApplicationFromHotKey(_ id: CommandID) {
-        let context = makeCommandInvocationContext(source: .applicationHotKey)
+    private func executeBackgroundApplicationFromHotKey(
+        _ id: CommandID,
+        source: CommandInvocationSource = .applicationHotKey
+    ) {
+        let context = makeCommandInvocationContext(source: source)
         let taskID = UUID()
         let task = Task { @MainActor [weak self] in
             guard let self else { return }

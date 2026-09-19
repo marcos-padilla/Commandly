@@ -109,6 +109,69 @@ struct ModuleCompositionTests {
     }
 }
 
+/// The menu bar panel's Utilities tab.
+@MainActor
+struct UtilitiesPanelTests {
+    @Test func panelListsEnabledApplicationsFromTheRegistry() throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+        let listed = registry
+            .children(of: BuiltInLauncherApplicationGroup.catalogID)
+            .filter { $0.kind == .application && registry.isEffectivelyEnabled($0.id) }
+
+        // The tab used to hand-list a handful of shell actions while the registry held dozens of
+        // applications that were unreachable from it.
+        #expect(listed.count > 10)
+        #expect(listed.contains { $0.id == TimersApplication.applicationID })
+        #expect(listed.contains { $0.id == ClipboardToolsApplication.id })
+    }
+
+    @Test func disabledApplicationsAreNotListed() throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+
+        var preferences = registry.preferences(for: TimersApplication.applicationID)
+        preferences.isEnabled = false
+        registry.savePreferences(preferences, for: TimersApplication.applicationID)
+
+        let listed = registry
+            .children(of: BuiltInLauncherApplicationGroup.catalogID)
+            .filter { $0.kind == .application && registry.isEffectivelyEnabled($0.id) }
+        #expect(listed.contains { $0.id == TimersApplication.applicationID } == false)
+    }
+
+    @Test func theWindowSwitcherGateIsPreserved() throws {
+        // Window Switcher is deliberately dark in the shipping app (ADR-0008). Surfacing every
+        // application in the panel must not quietly switch it on.
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let registry = LauncherApplicationRegistry.makeBuiltIn(
+            timerStore: store,
+            includesWindowSwitcher: false
+        )
+        let listed = registry
+            .children(of: BuiltInLauncherApplicationGroup.catalogID)
+            .filter { $0.kind == .application && registry.isEffectivelyEnabled($0.id) }
+        #expect(listed.contains { $0.id.rawValue.contains("window.switcher") } == false)
+    }
+
+    @Test func everyListedApplicationCanBeResolvedAndLaunched() throws {
+        let store = TimerStore(automaticallySchedulesTicks: false, onCompletion: { _ in })
+        let registry = LauncherApplicationRegistry.makeBuiltIn(timerStore: store)
+        let listed = registry
+            .children(of: BuiltInLauncherApplicationGroup.catalogID)
+            .filter { $0.kind == .application && registry.isEffectivelyEnabled($0.id) }
+
+        // A row that cannot resolve would be a dead entry in the panel.
+        for definition in listed {
+            #expect(
+                registry.enabledApplication(for: definition.id) != nil,
+                "\(definition.id.rawValue) is listed but cannot be launched"
+            )
+            #expect(definition.subtitle?.isEmpty == false)
+        }
+    }
+}
+
 /// AI exposure as the application composes it.
 @MainActor
 struct ModuleAIExposureCompositionTests {
