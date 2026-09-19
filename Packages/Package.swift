@@ -24,7 +24,8 @@ let package = Package(
         .library(name: "ModuleRuntime", targets: ["ModuleRuntime"]),
         .library(name: "AICommandBridge", targets: ["AICommandBridge"]),
         .library(name: "TimersModule", targets: ["TimersModule"]),
-        .library(name: "ClipboardToolsModule", targets: ["ClipboardToolsModule"])
+        .library(name: "ClipboardToolsModule", targets: ["ClipboardToolsModule"]),
+        .library(name: "ScreenToolsModule", targets: ["ScreenToolsModule"])
     ],
     targets: [
         .target(
@@ -97,6 +98,11 @@ let package = Package(
         ),
 
         .target(
+            name: "ScreenToolsModule",
+            dependencies: ["ModuleKit", "CommandKit", "AppCore", "Infrastructure"],
+            path: "Modules/ScreenTools/Sources/ScreenToolsModule"
+        ),
+        .target(
             name: "ClipboardToolsModule",
             dependencies: ["ModuleKit", "CommandKit", "AppCore", "Infrastructure"],
             path: "Modules/ClipboardTools/Sources/ClipboardToolsModule"
@@ -107,6 +113,11 @@ let package = Package(
         .testTarget(
             name: "AICommandBridgeTests",
             dependencies: ["AICommandBridge", "ModuleKit", "CommandKit", "AIKit"]
+        ),
+        .testTarget(
+            name: "ScreenToolsModuleTests",
+            dependencies: ["ScreenToolsModule", "ModuleKit", "ModuleRuntime", "CommandKit", "Infrastructure"],
+            path: "Modules/ScreenTools/Tests/ScreenToolsModuleTests"
         ),
         .testTarget(
             name: "ClipboardToolsModuleTests",

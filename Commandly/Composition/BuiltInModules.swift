@@ -3,6 +3,7 @@ import CommandKit
 import ModuleKit
 import Infrastructure
 import ModuleRuntime
+import ScreenToolsModule
 import TimersModule
 
 /// The application's explicit list of compiled-in feature modules.
@@ -23,7 +24,8 @@ enum BuiltInModules {
     /// the host activates the module.
     static func assemblies(
         timerStore: TimerStore,
-        clipboardTools: ClipboardToolsDependencies = .inMemory
+        clipboardTools: ClipboardToolsDependencies = .inMemory,
+        screenTools: ScreenToolsDependencies = .inMemory
     ) -> [any ModuleAssembly] {
         [
             TimersAssembly(makeStore: { timerStore }),
@@ -32,7 +34,8 @@ enum BuiltInModules {
                 clearing: clipboardTools.clearing,
                 configuration: clipboardTools.configuration,
                 makeObserver: clipboardTools.makeObserver
-            )
+            ),
+            screenTools.assembly
         ]
     }
 
@@ -46,10 +49,15 @@ enum BuiltInModules {
     static func makeHost(
         timerStore: TimerStore,
         clipboardTools: ClipboardToolsDependencies = .inMemory,
+        screenTools: ScreenToolsDependencies = .inMemory,
         enablement: any ModuleEnablementProviding
     ) -> ModuleHost {
         let host = ModuleHost(enablement: enablement)
-        for assembly in assemblies(timerStore: timerStore, clipboardTools: clipboardTools) {
+        for assembly in assemblies(
+            timerStore: timerStore,
+            clipboardTools: clipboardTools,
+            screenTools: screenTools
+        ) {
             do {
                 try host.register(assembly)
             } catch {
@@ -136,6 +144,53 @@ struct ClipboardToolsDependencies {
             clearing: pasteboard,
             configuration: LauncherRegistryClipboardToolsConfiguration(registry: registry),
             makeObserver: { WorkspaceClipboardAutoClearEventObserver() }
+        )
+    }
+}
+
+
+/// The narrow set of interfaces the Screen Tools module needs.
+@MainActor
+struct ScreenToolsDependencies {
+    let assembly: ScreenToolsAssembly
+    /// Retained so the registry can be bound after it is constructed.
+    let configuration: LauncherRegistryScreenToolsConfiguration?
+
+    init(
+        assembly: ScreenToolsAssembly,
+        configuration: LauncherRegistryScreenToolsConfiguration? = nil
+    ) {
+        self.assembly = assembly
+        self.configuration = configuration
+    }
+
+    /// Dependencies that capture nothing, for tests and previews.
+    static var inMemory: ScreenToolsDependencies {
+        ScreenToolsDependencies(
+            assembly: ScreenToolsAssembly(
+                makeCapture: { UnavailableScreenToolsCapture() },
+                recognizer: InMemoryImageRecognitionService(),
+                sampler: UnavailableScreenColorSampler(),
+                pasteboard: InMemoryPasteboard(),
+                configuration: StaticScreenToolsConfiguration()
+            )
+        )
+    }
+
+    /// Live dependencies: real region capture, on-device recognition, and the system sampler.
+    ///
+    /// The registry is bound later through ``LauncherRegistryScreenToolsConfiguration/install(registry:)``.
+    static func live() -> ScreenToolsDependencies {
+        let configuration = LauncherRegistryScreenToolsConfiguration()
+        return ScreenToolsDependencies(
+            assembly: ScreenToolsAssembly(
+                makeCapture: { NativeScreenshotCaptureService() },
+                recognizer: NativeImageRecognitionService(),
+                sampler: SystemScreenColorSampler(),
+                pasteboard: SystemPasteboard(),
+                configuration: configuration
+            ),
+            configuration: configuration
         )
     }
 }

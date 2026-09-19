@@ -11,6 +11,7 @@ import MarkdownPreviewKit
 import ModuleKit
 import ModuleRuntime
 import Observability
+import ScreenToolsModule
 import TimersModule
 
 /// Observable app runtime for scene-level UI that must react to onboarding completion.
@@ -469,6 +470,7 @@ final class AppRuntime {
         // One store backs both the Timers module's `timers.start` handler and the launcher's
         // Timers UI, so a countdown started from either side is the same countdown.
         let timerStore = TimerStore()
+        let screenToolsDependencies = ScreenToolsDependencies.live()
         let applicationRegistry = LauncherApplicationRegistry.makeBuiltIn(
             clipboardHistoryStore: clipboardHistoryStore,
             fileSearchServices: fileSearchApplicationServices,
@@ -481,6 +483,7 @@ final class AppRuntime {
                 pasteboard: SystemPasteboard(),
                 clearing: SystemPasteboard()
             ),
+            screenToolsOperations: screenToolsDependencies.assembly.makeOperations(),
             financeServices: financeServices,
             markdownPreviewServices: markdownPreviewServices,
             productivityLibraryServices: productivityLibraryServices,
@@ -527,6 +530,7 @@ final class AppRuntime {
             shelfLaunchController: shelfLaunchController
         )
         self.applicationRegistry = applicationRegistry
+        screenToolsDependencies.configuration?.install(registry: applicationRegistry)
         if let markdownSettings = applicationRegistry.resolvedSettings(
             for: MarkdownPreviewApplication.applicationID
         ) {
@@ -561,11 +565,13 @@ final class AppRuntime {
         let moduleHost = BuiltInModules.makeHost(
             timerStore: timerStore,
             clipboardTools: clipboardToolsDependencies,
+            screenTools: screenToolsDependencies,
             enablement: LauncherRegistryModuleEnablementProvider(
                 registry: applicationRegistry,
                 manifests: BuiltInModules.assemblies(
                     timerStore: timerStore,
-                    clipboardTools: clipboardToolsDependencies
+                    clipboardTools: clipboardToolsDependencies,
+                    screenTools: screenToolsDependencies
                 ).map(\.manifest)
             )
         )

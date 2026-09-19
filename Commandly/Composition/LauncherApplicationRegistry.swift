@@ -3,6 +3,7 @@ import CommandKit
 import Foundation
 import Infrastructure
 import ClipboardToolsModule
+import ScreenToolsModule
 import SearchKit
 import TimersModule
 
@@ -461,6 +462,7 @@ final class LauncherApplicationRegistry {
         imageRecognitionService: any ImageRecognizing = NativeImageRecognitionService(),
         timerStore: TimerStore = TimerStore(),
         clipboardToolsOperations: ClipboardToolsOperations? = nil,
+        screenToolsOperations: ScreenToolsOperations? = nil,
         financeServices: FinanceApplicationServices = .inMemory,
         markdownPreviewServices: MarkdownPreviewApplicationServices = .inMemory,
         productivityLibraryServices: ProductivityLibraryApplicationServices = .inMemory,
@@ -564,6 +566,16 @@ final class LauncherApplicationRegistry {
                         let board = InMemoryPasteboard()
                         return ClipboardToolsOperations(pasteboard: board, clearing: board)
                     }()
+                )
+            )
+            try registry.register(
+                ScreenToolsApplication(
+                    operations: screenToolsOperations ?? ScreenToolsOperations(
+                        capture: { UnavailableScreenToolsCapture() },
+                        recognizer: InMemoryImageRecognitionService(),
+                        sampler: UnavailableScreenColorSampler(),
+                        pasteboard: InMemoryPasteboard()
+                    )
                 )
             )
             try registry.register(FinanceApplication(services: financeServices))
