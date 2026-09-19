@@ -1,5 +1,7 @@
+import ClipboardToolsModule
 import CommandKit
 import ModuleKit
+import Infrastructure
 import ModuleRuntime
 import TimersModule
 
@@ -20,10 +22,17 @@ enum BuiltInModules {
     /// commands, settings, and documentation are all metadata, and services are created only when
     /// the host activates the module.
     static func assemblies(
-        timerStore: TimerStore
+        timerStore: TimerStore,
+        clipboardTools: ClipboardToolsDependencies = .inMemory
     ) -> [any ModuleAssembly] {
         [
-            TimersAssembly(makeStore: { timerStore })
+            TimersAssembly(makeStore: { timerStore }),
+            ClipboardToolsAssembly(
+                pasteboard: clipboardTools.pasteboard,
+                clearing: clipboardTools.clearing,
+                configuration: clipboardTools.configuration,
+                makeObserver: clipboardTools.makeObserver
+            )
         ]
     }
 
@@ -36,10 +45,11 @@ enum BuiltInModules {
     ///     and application inheritance is not duplicated.
     static func makeHost(
         timerStore: TimerStore,
+        clipboardTools: ClipboardToolsDependencies = .inMemory,
         enablement: any ModuleEnablementProviding
     ) -> ModuleHost {
         let host = ModuleHost(enablement: enablement)
-        for assembly in assemblies(timerStore: timerStore) {
+        for assembly in assemblies(timerStore: timerStore, clipboardTools: clipboardTools) {
             do {
                 try host.register(assembly)
             } catch {
@@ -80,5 +90,52 @@ final class LauncherRegistryModuleEnablementProvider: ModuleEnablementProviding 
             return true
         }
         return applicationIDs.contains { registry.isEffectivelyEnabled($0) }
+    }
+}
+
+
+/// The narrow set of interfaces the Clipboard Tools module needs.
+///
+/// Grouped so `BuiltInModules` stays a registration list rather than growing a parameter per
+/// feature. The module itself still receives only these interfaces, through its own initializer.
+@MainActor
+struct ClipboardToolsDependencies {
+    let pasteboard: any PasteboardAccessing
+    let clearing: any PasteboardClearing
+    let configuration: any ClipboardToolsConfigurationProviding
+    let makeObserver: @MainActor () -> any ClipboardAutoClearEventObserving
+
+    init(
+        pasteboard: any PasteboardAccessing,
+        clearing: any PasteboardClearing,
+        configuration: any ClipboardToolsConfigurationProviding,
+        makeObserver: @escaping @MainActor () -> any ClipboardAutoClearEventObserving
+    ) {
+        self.pasteboard = pasteboard
+        self.clearing = clearing
+        self.configuration = configuration
+        self.makeObserver = makeObserver
+    }
+
+    /// Dependencies that touch nothing real, for tests and previews.
+    static var inMemory: ClipboardToolsDependencies {
+        let pasteboard = InMemoryPasteboard()
+        return ClipboardToolsDependencies(
+            pasteboard: pasteboard,
+            clearing: pasteboard,
+            configuration: StaticClipboardToolsConfiguration(),
+            makeObserver: { InertClipboardAutoClearEventObserver() }
+        )
+    }
+
+    /// Live dependencies: the system pasteboard and real sleep/lock notifications.
+    static func live(registry: LauncherApplicationRegistry) -> ClipboardToolsDependencies {
+        let pasteboard = SystemPasteboard()
+        return ClipboardToolsDependencies(
+            pasteboard: pasteboard,
+            clearing: pasteboard,
+            configuration: LauncherRegistryClipboardToolsConfiguration(registry: registry),
+            makeObserver: { WorkspaceClipboardAutoClearEventObserver() }
+        )
     }
 }

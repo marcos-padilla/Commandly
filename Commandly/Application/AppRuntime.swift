@@ -1,4 +1,5 @@
 import AICommandBridge
+import ClipboardToolsModule
 import AIKit
 import AppCore
 import Foundation
@@ -476,6 +477,10 @@ final class AppRuntime {
             fileBrowserServiceOverride: fileBrowserOverride,
             calculatorSessionStore: calculatorSessionStore,
             timerStore: timerStore,
+            clipboardToolsOperations: ClipboardToolsOperations(
+                pasteboard: SystemPasteboard(),
+                clearing: SystemPasteboard()
+            ),
             financeServices: financeServices,
             markdownPreviewServices: markdownPreviewServices,
             productivityLibraryServices: productivityLibraryServices,
@@ -550,11 +555,18 @@ final class AppRuntime {
             availabilityEvaluator: commandAvailabilityEvaluator
         )
         self.commandCoordinator = commandCoordinator
+        let clipboardToolsDependencies = ClipboardToolsDependencies.live(
+            registry: applicationRegistry
+        )
         let moduleHost = BuiltInModules.makeHost(
             timerStore: timerStore,
+            clipboardTools: clipboardToolsDependencies,
             enablement: LauncherRegistryModuleEnablementProvider(
                 registry: applicationRegistry,
-                manifests: BuiltInModules.assemblies(timerStore: timerStore).map(\.manifest)
+                manifests: BuiltInModules.assemblies(
+                    timerStore: timerStore,
+                    clipboardTools: clipboardToolsDependencies
+                ).map(\.manifest)
             )
         )
         self.moduleHost = moduleHost

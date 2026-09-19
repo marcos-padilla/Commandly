@@ -39,6 +39,14 @@ struct SystemPasteboard: PasteboardAccessing {
     }
 }
 
+extension SystemPasteboard: PasteboardClearing {
+    func clear() async {
+        await MainActor.run {
+            NSPasteboard.general.clearContents()
+        }
+    }
+}
+
 /// In-memory pasteboard for tests.
 ///
 /// Every mutable value is protected by `lock`; the unchecked conformance only bridges this
@@ -105,6 +113,16 @@ final class InMemoryPasteboard: PasteboardAccessing, @unchecked Sendable {
 
     var currentFileURLs: [URL] {
         lock.withLock { files }
+    }
+}
+
+extension InMemoryPasteboard: PasteboardClearing {
+    func clear() async {
+        lock.withLock {
+            value = nil
+            files = []
+            image = nil
+        }
     }
 }
 

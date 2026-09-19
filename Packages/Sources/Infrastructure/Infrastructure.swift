@@ -405,6 +405,19 @@ public protocol PasteboardAccessing: Sendable {
     func writeFileURLs(_ urls: [URL]) async
 }
 
+/// Removes everything currently on a pasteboard.
+///
+/// Deliberately separate from ``PasteboardAccessing``: clearing is a narrower, more dangerous
+/// capability than reading or writing, and most collaborators have no business performing it.
+/// A type that only needs to read or write should not be handed this.
+public protocol PasteboardClearing: Sendable {
+    /// Removes every representation from the pasteboard.
+    ///
+    /// This affects only the system pasteboard. It must not be used to discard a feature's own
+    /// stored history: clearing the clipboard and deleting saved items are separate decisions.
+    func clear() async
+}
+
 extension PasteboardAccessing {
     /// Default for pasteboards that do not expose file URL reads.
     public func readFileURLs() async -> [URL] {

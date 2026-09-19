@@ -2,6 +2,7 @@ import AIKit
 import CommandKit
 import Foundation
 import Infrastructure
+import ClipboardToolsModule
 import SearchKit
 import TimersModule
 
@@ -459,6 +460,7 @@ final class LauncherApplicationRegistry {
         imageConversionService: any ImageConverting = NativeImageConversionService(),
         imageRecognitionService: any ImageRecognizing = NativeImageRecognitionService(),
         timerStore: TimerStore = TimerStore(),
+        clipboardToolsOperations: ClipboardToolsOperations? = nil,
         financeServices: FinanceApplicationServices = .inMemory,
         markdownPreviewServices: MarkdownPreviewApplicationServices = .inMemory,
         productivityLibraryServices: ProductivityLibraryApplicationServices = .inMemory,
@@ -556,6 +558,14 @@ final class LauncherApplicationRegistry {
             try registry.register(MenuBarShortcutsApplication(controller: menuBarShortcutController))
             try registry.register(CelebrationApplication())
             try registry.register(TimersApplication(store: timerStore))
+            try registry.register(
+                ClipboardToolsApplication(
+                    operations: clipboardToolsOperations ?? {
+                        let board = InMemoryPasteboard()
+                        return ClipboardToolsOperations(pasteboard: board, clearing: board)
+                    }()
+                )
+            )
             try registry.register(FinanceApplication(services: financeServices))
             try registry.register(
                 MarkdownPreviewApplication(
