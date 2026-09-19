@@ -128,10 +128,36 @@ else in this table should queue behind the capability it needs, not be attempted
 4. **Decide Dynamic Island explicitly** rather than letting it arrive as a backlog item.
 5. Revisit Group A's larger items (App updates, Homebrew, speed test) once 1–3 are settled.
 
+## Delivered since this analysis
+
+| Feature | How |
+|---|---|
+| Clean URL | `ClipboardToolsModule` — `clipboard.tools.clean-url` |
+| Paste as plain text | `ClipboardToolsModule` — `clipboard.tools.plain-text` (flattens the clipboard; see below) |
+| Auto-clear clipboard | `ClipboardToolsModule` — idle timer, sleep, display sleep, screen lock |
+| Copy text from screen | `ScreenToolsModule` — `screen.tools.copy-text` |
+| Color picker | `ScreenToolsModule` — `screen.tools.pick-color` |
+| Utilities panel completeness | The tab now lists every enabled application instead of six hand-written rows |
+
+The Utilities tab was the real complaint behind "features that aren't implemented": more than
+forty registered applications existed but were unreachable from it.
+
+### Still blocked, and on what
+
+| Feature | Blocker | Decision needed |
+|---|---|---|
+| **Homebrew manager** | `AGENTS.md` forbids arbitrary shell execution, and the sandbox blocks it | Amend the rule, or drop the feature |
+| **Uninstaller** | Needs broad filesystem reach and Full Disk Access | Accept an unsandboxed path, or drop |
+| **Cleaning Mode** | Keyboard lock needs an event tap | ADR-0011 companion capability |
+| **App updates** | None — unblocked, but multi-session (feed parsing, catalog matching, network privacy review) | Scheduling only |
+| Media (video compress, GIF) | None — image side exists; video is a large AVFoundation piece | Scheduling only |
+
 ## Status
 
 - Completed: launcher **Quit Commandly** now performs a real quit through the app's normal
   termination path instead of showing a placeholder.
+- Completed: **Clipboard Tools** and **Screen Tools** modules (see the table above).
+- Completed: the **Utilities panel** lists every enabled application.
 - Still a placeholder, honestly labelled: launcher **Welcome / walkthrough** row.
 - Still advertised as "Not implemented": **Selected text** in System Integration settings.
 - Menu-bar panel navbar: **all ten sections are implemented.** `StatusPanelPlaceholderSection`
